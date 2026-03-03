@@ -95,6 +95,15 @@ export interface AbastecimientoRow {
   enviar: 'SI' | 'NO';
 }
 
+export interface NotificationItem {
+  id: string;
+  type: 'entrada' | 'salida' | 'cambio' | 'abastecimiento' | 'producto';
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+}
+
 interface ToastItem {
   id: string;
   type: 'success' | 'error' | 'info' | 'warning';
@@ -109,6 +118,7 @@ interface MalvinasState {
   cambiosSalida: CambioSalida[];
   historialAbastecimiento: HistorialAbastecimiento[];
   toasts: ToastItem[];
+  notifications: NotificationItem[];
 }
 
 interface MalvinasContextType {
@@ -127,6 +137,9 @@ interface MalvinasContextType {
   // Toast
   showToast: (type: ToastItem['type'], message: string) => void;
   removeToast: (id: string) => void;
+  // Notifications
+  addNotification: (type: NotificationItem['type'], title: string, message: string) => void;
+  markNotificationsAsRead: () => void;
 }
 
 const MalvinasContext = createContext<MalvinasContextType | null>(null);
@@ -209,7 +222,27 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
     cambiosSalida: [],
     historialAbastecimiento: [],
     toasts: [],
+    notifications: [],
   });
+
+  const addNotification = useCallback((type: NotificationItem['type'], title: string, message: string) => {
+    const notify: NotificationItem = {
+      id: genId(),
+      type,
+      title,
+      message,
+      timestamp: fmtDate(new Date()),
+      read: false,
+    };
+    setState(s => ({ ...s, notifications: [notify, ...s.notifications] }));
+  }, []);
+
+  const markNotificationsAsRead = useCallback(() => {
+    setState(s => ({
+      ...s,
+      notifications: s.notifications.map(n => ({ ...n, read: true })),
+    }));
+  }, []);
 
   const showToast = useCallback((type: ToastItem['type'], message: string) => {
     const id = genId();
@@ -237,21 +270,22 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
   const addProducto = useCallback((p: Omit<Producto, 'id'>) => {
     const newP = { ...p, id: genId() };
     setState(s => ({ ...s, productos: [...s.productos, newP] }));
-  }, []);
+    addNotification('producto', 'Nuevo Producto', `Se registró el producto: ${p.nombre}`);
+  }, [addNotification]);
 
   const addEntrada = useCallback((e: Omit<RegistroEntrada, 'id' | 'fecha'>) => {
     const newE: RegistroEntrada = { ...e, id: genId(), fecha: fmtDate(new Date()) };
     setState(s => ({ ...s, entradas: [newE, ...s.entradas] }));
     // Afectar existencia
     updateExistencia(e.productoId, e.almacenIngreso, +e.cantidad);
-  }, [updateExistencia]);
+    addNotification('entrada', 'Nueva Entrada', `Ingreso de ${e.cantidad} ${e.unidadMedida} de ${e.producto} a ${e.almacenIngreso}`);
+  }, [updateExistencia, addNotification]);
 
   const updateEntrada = useCallback((id: string, data: Partial<RegistroEntrada>, motivo: string) => {
     setState(s => {
       const old = s.entradas.find(e => e.id === id);
       if (!old) return s;
       // Revertir existencia anterior
-      const oldP = s.productos.find(p => p.id === old.productoId);
       const updatedProductos = s.productos.map(p => {
         if (p.id === old.productoId) {
           const reverted = { ...p.existencia, [old.almacenIngreso]: Math.max(0, (p.existencia[old.almacenIngreso] || 0) - old.cantidad) };
@@ -271,14 +305,15 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
         cambiosEntrada: [cambio, ...s.cambiosEntrada],
       };
     });
-
-  }, []);
+    addNotification('cambio', 'Entrada Actualizada', `Se modificó un registro de entrada. Motivo: ${motivo}`);
+  }, [addNotification]);
 
   const addSalida = useCallback((e: Omit<RegistroSalida, 'id' | 'fecha'>) => {
     const newS: RegistroSalida = { ...e, id: genId(), fecha: fmtDate(new Date()) };
     setState(s => ({ ...s, salidas: [newS, ...s.salidas] }));
     updateExistencia(e.productoId, e.almacen, -e.cantidad);
-  }, [updateExistencia]);
+    addNotification('salida', 'Nueva Salida', `Salida de ${e.cantidad} ${e.unidadMedida} de ${e.producto} desde ${e.almacen}`);
+  }, [updateExistencia, addNotification]);
 
   const updateSalida = useCallback((id: string, data: Partial<RegistroSalida>, motivo: string) => {
     setState(s => {
@@ -303,7 +338,8 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
         cambiosSalida: [cambio, ...s.cambiosSalida],
       };
     });
-  }, []);
+    addNotification('cambio', 'Salida Actualizada', `Se modificó un registro de salida. Motivo: ${motivo}`);
+  }, [addNotification]);
 
   const guardarAbastecimiento = useCallback((nombre: string, registradoPor: string, items: AbastecimientoRow[]) => {
     const h: HistorialAbastecimiento = {
@@ -314,7 +350,8 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
       items,
     };
     setState(s => ({ ...s, historialAbastecimiento: [h, ...s.historialAbastecimiento] }));
-  }, []);
+    addNotification('abastecimiento', 'Carga de Stock', `Se guardó el abastecimiento: ${nombre}`);
+  }, [addNotification]);
 
   return (
     <MalvinasContext.Provider value={{
@@ -328,6 +365,8 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
       guardarAbastecimiento,
       showToast,
       removeToast,
+      addNotification,
+      markNotificationsAsRead,
     }}>
       {children}
     </MalvinasContext.Provider>

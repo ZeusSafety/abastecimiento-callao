@@ -1,14 +1,222 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { useMalvinas } from '../../context/MalvinasContext';
-import { Search } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+    useMalvinas,
+    TIENDAS,
+    OPERADORES,
+    REGISTRADORES,
+    OPS_ENTRADA,
+    ALMACENES_COMPLETO,
+    RegistroEntrada,
+    Tienda,
+    AlmacenCompleto,
+    UnidadMedida,
+} from '../../context/MalvinasContext';
+import { Search, PackagePlus, Edit3, X, Save, ChevronDown } from 'lucide-react';
+
+// ─── Modal Registro Entrada (Copia de seguridad para edición) ───────────────────
+function ModalEntrada({
+    isOpen,
+    onClose,
+    editData,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    editData?: RegistroEntrada | null;
+}) {
+    const { state, updateEntrada, showToast } = useMalvinas();
+
+    const [form, setForm] = useState({
+        productoId: editData?.productoId ?? '',
+        producto: editData?.producto ?? '',
+        operacion: editData?.operacion ?? OPS_ENTRADA[0],
+        almacenSalida: (editData?.almacenSalida ?? 'ALMACEN CALLAO') as AlmacenCompleto,
+        almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA 3006') as Tienda,
+        operador: editData?.operador ?? OPERADORES[0],
+        cantidad: editData?.cantidad ?? 0,
+        unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
+        entregado: editData?.entregado ?? OPERADORES[0],
+        registradoPor: editData?.registradoPor ?? REGISTRADORES[0],
+        observaciones: editData?.observaciones ?? '',
+        motivoCambio: '',
+    });
+
+    useEffect(() => {
+        if (editData) {
+            setForm({
+                productoId: editData.productoId,
+                producto: editData.producto,
+                operacion: editData.operacion,
+                almacenSalida: editData.almacenSalida as AlmacenCompleto,
+                almacenIngreso: editData.almacenIngreso as Tienda,
+                operador: editData.operador,
+                cantidad: editData.cantidad,
+                unidadMedida: editData.unidadMedida as UnidadMedida,
+                entregado: editData.entregado,
+                registradoPor: editData.registradoPor,
+                observaciones: editData.observaciones,
+                motivoCambio: '',
+            });
+        }
+    }, [editData]);
+
+    const handleProductoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const p = state.productos.find(pr => pr.id === e.target.value);
+        if (p) {
+            setForm(f => ({
+                ...f,
+                productoId: p.id,
+                producto: p.nombre,
+                unidadMedida: p.unidadMedidaRegCalculo,
+            }));
+        }
+    };
+
+    const selectedProducto = state.productos.find(p => p.id === form.productoId);
+
+    const handleSubmit = () => {
+        if (!form.productoId) { showToast('error', 'Selecciona un producto'); return; }
+        if (!form.cantidad || form.cantidad <= 0) { showToast('error', 'Ingresa una cantidad válida'); return; }
+        if (!form.motivoCambio.trim()) { showToast('error', 'Ingresa el motivo del cambio'); return; }
+
+        updateEntrada(editData!.id, {
+            productoId: form.productoId,
+            producto: form.producto,
+            operacion: form.operacion,
+            almacenSalida: form.almacenSalida,
+            almacenIngreso: form.almacenIngreso,
+            operador: form.operador,
+            cantidad: Number(form.cantidad),
+            unidadMedida: form.unidadMedida,
+            entregado: form.entregado,
+            registradoPor: form.registradoPor,
+            observaciones: form.observaciones,
+        }, form.motivoCambio);
+        showToast('success', 'Entrada actualizada correctamente');
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => e.target === e.currentTarget && onClose()}>
+            <div className="modal-box" style={{ maxWidth: 680, background: 'white', borderRadius: 16, padding: 0, overflow: 'hidden' }}>
+                <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 text-[#002D5A]">
+                            <PackagePlus className="w-4 h-4" />
+                        </div>
+                        <div>
+                            <h6 style={{ margin: 0, fontWeight: 700, fontSize: 14, color: '#002D5A' }}>Editar Entrada</h6>
+                            <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>Modifica los datos y registra el motivo del cambio</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-gray-500" />
+                    </button>
+                </div>
+
+                <div className="modal-body" style={{ padding: 20, maxHeight: '70vh', overflowY: 'auto' }}>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Producto *</label>
+                            <select
+                                value={form.productoId}
+                                onChange={handleProductoChange}
+                                className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                            >
+                                {state.productos.map(p => (
+                                    <option key={p.id} value={p.id}>{p.codigo} - {p.nombre}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Operación *</label>
+                            <select
+                                value={form.operacion}
+                                onChange={e => setForm(f => ({ ...f, operacion: e.target.value }))}
+                                className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                            >
+                                {OPS_ENTRADA.map(op => <option key={op}>{op}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Almacén Salida</label>
+                            <select
+                                value={form.almacenSalida}
+                                onChange={e => setForm(f => ({ ...f, almacenSalida: e.target.value as AlmacenCompleto }))}
+                                className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                            >
+                                {ALMACENES_COMPLETO.map(a => <option key={a}>{a}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Almacén Ingreso</label>
+                            <select
+                                value={form.almacenIngreso}
+                                onChange={e => setForm(f => ({ ...f, almacenIngreso: e.target.value as Tienda }))}
+                                className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                            >
+                                {TIENDAS.map(t => <option key={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Cantidad *</label>
+                            <input
+                                type="number"
+                                value={form.cantidad}
+                                onChange={e => setForm(f => ({ ...f, cantidad: Number(e.target.value) }))}
+                                className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                            />
+                        </div>
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Operador</label>
+                            <select
+                                value={form.operador}
+                                onChange={e => setForm(f => ({ ...f, operador: e.target.value }))}
+                                className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                            >
+                                {OPERADORES.map(o => <option key={o}>{o}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="col-span-2">
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#002D5A', display: 'block', marginBottom: 4 }}>Motivo del Cambio *</label>
+                            <textarea
+                                value={form.motivoCambio}
+                                onChange={e => setForm(f => ({ ...f, motivoCambio: e.target.value }))}
+                                className="form-input w-full p-2 border border-blue-200 rounded-lg text-xs bg-blue-50/30"
+                                placeholder="Explica por qué estás actualizando este registro..."
+                                rows={2}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="modal-footer" style={{ padding: '16px 20px', background: '#f8fafc', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                    <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-700 transition-colors uppercase">Cancelar</button>
+                    <button
+                        onClick={handleSubmit}
+                        className="flex items-center gap-2 px-6 py-2 bg-[#002D5A] hover:bg-[#001F3D] text-white rounded-xl font-bold text-xs shadow-lg transition-all active:scale-95"
+                    >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>ACTUALIZAR REGISTRO</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default function HistorialEntradasPage() {
     const { state } = useMalvinas();
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
     const PER_PAGE = 20;
+
+    const [modalOpen, setModalOpen] = useState(false);
+    const [editData, setEditData] = useState<RegistroEntrada | null>(null);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
@@ -24,94 +232,178 @@ export default function HistorialEntradasPage() {
     const pages = Math.max(1, Math.ceil(total / PER_PAGE));
     const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
+    const openEdit = (e: RegistroEntrada) => {
+        setEditData(e);
+        setModalOpen(true);
+    };
+
     return (
-        <div>
-            <div className="mb-5">
-                <h1 style={{ fontSize: 20, fontWeight: 700, color: '#002D5A', margin: 0 }}>Historial de Entradas</h1>
-                <p style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Registro completo de todos los ingresos</p>
-            </div>
+        <>
+            <div id="view-historial-entradas" className="animate-in fade-in duration-500 font-poppins">
+                <div className="container mx-auto">
+                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 transition-all">
+                        {/* Header Principal */}
+                        <header className="flex justify-between items-center flex-wrap gap-4 mb-8">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-11 h-11 bg-gradient-to-br from-[#002D5A] to-[#0056b3] rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-900/10 transition-transform hover:scale-110">
+                                    <PackagePlus className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
+                                        Historial de Entradas
+                                    </h1>
+                                    <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Registro completo de todos los ingresos</p>
+                                </div>
+                            </div>
+                        </header>
 
-            <div className="card">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#002D5A' }}>Total: {total} registros</div>
-                    <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Buscar..."
-                            value={search}
-                            onChange={e => { setSearch(e.target.value); setPage(1); }}
-                            className="form-input pl-8"
-                            style={{ width: 200, padding: '6px 10px 6px 28px', fontSize: 12 }}
-                        />
-                    </div>
-                </div>
+                        {/* Toolbar */}
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 bg-blue-50 rounded-lg">
+                                    <Search className="w-4 h-4 text-[#002D5A]" />
+                                </div>
+                                <span className="font-bold text-gray-800" style={{ fontSize: 13 }}>Total: {total} registros</span>
+                            </div>
+                            <div className="flex items-center gap-3 w-full sm:w-auto">
+                                <div className="relative flex-1 sm:w-72">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar..."
+                                        value={search}
+                                        onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                        className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
+                                    />
+                                </div>
+                            </div>
+                        </div>
 
-                <div className="table-container" style={{ borderRadius: 0, border: 'none' }}>
-                    <table className="data-table">
-                        <thead>
-                            <tr>
-                                <th>Fecha</th>
-                                <th>Producto</th>
-                                <th>Operación</th>
-                                <th>Almacén Salida</th>
-                                <th>Almacén Ingreso</th>
-                                <th>Operador</th>
-                                <th style={{ textAlign: 'center' }}>Cantidad</th>
-                                <th>Unidad Medida</th>
-                                <th>Entregado Por</th>
-                                <th>Registrado Por</th>
-                                <th>Observaciones</th>
-                                <th>Actualizado</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {paginated.map(e => (
-                                <tr key={e.id}>
-                                    <td style={{ fontSize: 11 }}>{e.fecha}</td>
-                                    <td>{e.producto}</td>
-                                    <td>
-                                        <span className="badge badge-entrada" style={{ fontSize: 10 }}>{e.operacion}</span>
-                                    </td>
-                                    <td style={{ fontSize: 11 }}>{e.almacenSalida}</td>
-                                    <td style={{ fontSize: 11 }}>{e.almacenIngreso}</td>
-                                    <td>{e.operador}</td>
-                                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{e.cantidad}</td>
-                                    <td><span className="badge badge-entrada" style={{ fontSize: 10 }}>{e.unidadMedida}</span></td>
-                                    <td>{e.entregado}</td>
-                                    <td>{e.registradoPor}</td>
-                                    <td style={{ fontSize: 11, color: '#6b7280' }}>{e.observaciones || '-'}</td>
-                                    <td style={{ fontSize: 10, color: '#9ca3af' }}>{e.updatedAt || '-'}</td>
-                                </tr>
-                            ))}
-                            {paginated.length === 0 && (
-                                <tr>
-                                    <td colSpan={12} style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>
-                                        No hay registros de entradas aún.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                        {/* Table card */}
+                        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
+                            <div className="overflow-x-auto" style={{ width: '100%' }}>
+                                <table className="w-full text-sm text-left" style={{ minWidth: 1400 }}>
+                                    <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                        <tr className="bg-[#002D5A] text-white">
+                                            <th className="px-4 py-4 whitespace-nowrap">Fecha</th>
+                                            <th className="px-4 py-4">Producto</th>
+                                            <th className="px-4 py-4">Operación</th>
+                                            <th className="px-4 py-4">Almacén Salida</th>
+                                            <th className="px-4 py-4">Almacén Ingreso</th>
+                                            <th className="px-4 py-4">Operador</th>
+                                            <th className="px-4 py-4 text-center">Cant.</th>
+                                            <th className="px-4 py-4">U. Medida</th>
+                                            <th className="px-4 py-4">Entregado</th>
+                                            <th className="px-4 py-4">Registrador</th>
+                                            <th className="px-4 py-4">Obs.</th>
+                                            <th className="px-4 py-4">Act.</th>
+                                            <th className="px-4 py-4 text-center">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {paginated.map(e => (
+                                            <tr key={e.id} className="hover:bg-blue-50/30 transition-colors">
+                                                <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{e.fecha}</td>
+                                                <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{e.producto}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold uppercase tracking-wider">
+                                                        {e.operacion}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.almacenSalida}</td>
+                                                <td className="px-4 py-3 text-[11px] font-medium text-[#002D5A] uppercase">{e.almacenIngreso}</td>
+                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.operador}</td>
+                                                <td className="px-4 py-3 text-center font-bold text-gray-900 text-[11px]">{e.cantidad}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[9px] font-bold uppercase">
+                                                        {e.unidadMedida}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase italic">{e.entregado}</td>
+                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.registradoPor}</td>
+                                                <td className="px-4 py-3 text-[10px] text-gray-400 italic max-w-[150px] truncate">{e.observaciones || '-'}</td>
+                                                <td className="px-4 py-3 text-[9px] text-gray-300 whitespace-nowrap">{e.updatedAt || '-'}</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <button
+                                                        onClick={() => openEdit(e)}
+                                                        className="p-1.5 rounded-lg bg-blue-50 text-[#002D5A] hover:bg-[#002D5A] hover:text-white transition-all shadow-sm"
+                                                        title="Editar"
+                                                    >
+                                                        <Edit3 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {paginated.length === 0 && (
+                                            <tr>
+                                                <td colSpan={13} className="px-4 py-20 text-center">
+                                                    <div className="flex flex-col items-center justify-center opacity-40">
+                                                        <Search className="w-12 h-12 mb-4" />
+                                                        <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">No hay registros de entradas aún.</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
 
-                {total > 0 && (
-                    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>
-                            Mostrando {Math.min((page - 1) * PER_PAGE + 1, total)}-{Math.min(page * PER_PAGE, total)} de {total}
-                        </span>
-                        <div className="flex gap-1">
-                            <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
-                            {Array.from({ length: Math.min(5, pages) }, (_, i) => {
-                                const pg = Math.max(1, Math.min(page - 2, pages - 4)) + i;
-                                if (pg > pages) return null;
-                                return <button key={pg} className={`page-btn ${pg === page ? 'active' : ''}`} onClick={() => setPage(pg)}>{pg}</button>;
-                            })}
-                            <button className="page-btn" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}>›</button>
+                            {/* Pagination */}
+                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setPage(1)}
+                                        disabled={page === 1}
+                                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                        style={{ fontFamily: 'var(--font-poppins)' }}
+                                    >
+                                        «
+                                    </button>
+                                    <button
+                                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                                        disabled={page === 1}
+                                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                        style={{ fontFamily: 'var(--font-poppins)' }}
+                                    >
+                                        ‹
+                                    </button>
+                                </div>
+
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
+                                        Página {page} de {pages}
+                                    </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setPage(p => Math.min(pages, p + 1))}
+                                        disabled={page === pages}
+                                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                        style={{ fontFamily: 'var(--font-poppins)' }}
+                                    >
+                                        ›
+                                    </button>
+                                    <button
+                                        onClick={() => setPage(pages)}
+                                        disabled={page === pages}
+                                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                        style={{ fontFamily: 'var(--font-poppins)' }}
+                                    >
+                                        »
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                )}
+                </div>
+
             </div>
-        </div>
+            <ModalEntrada
+                isOpen={modalOpen}
+                onClose={() => { setModalOpen(false); setEditData(null); }}
+                editData={editData}
+            />
+        </>
     );
 }

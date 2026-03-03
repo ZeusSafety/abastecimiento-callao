@@ -73,53 +73,52 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             <aside
                 className={`
           fixed inset-y-0 left-0 z-[1030]
+          w-60 bg-white
           flex flex-col
           transform transition-transform duration-300 ease-in-out
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
                 style={{
-                    width: '240px',
-                    background: 'white',
-                    boxShadow: '2px 0 8px rgba(0,0,0,0.08), 1px 0 2px rgba(0,0,0,0.04)',
+                    boxShadow: '2px 0 8px 0 rgba(0, 0, 0, 0.08), 1px 0 2px 0 rgba(0, 0, 0, 0.04)',
                 }}
             >
-                {/* Logo */}
-                <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
-                    <div className="flex items-center gap-2">
-                        <div
-                            className="flex items-center justify-center rounded-xl text-white font-black text-lg"
-                            style={{ width: 38, height: 38, background: 'linear-gradient(135deg, #002D5A, #0056b3)' }}
-                        >
-                            Z
+                {/* Logo Section */}
+                <div className="relative border-b border-gray-200 bg-white group">
+                    <button
+                        onClick={() => handleNav('/malvinas')}
+                        className="pt-2 pb-2 px-4 flex justify-center w-full bg-white hover:bg-white active:bg-white transition-colors duration-200"
+                        aria-label="Ir al menú"
+                    >
+                        <div className="relative w-32 h-32">
+                            <img
+                                src="/imagenes/zeus.logooo.png"
+                                alt="Zeus Safety Logo"
+                                className="w-full h-full object-contain"
+                            />
                         </div>
-                        <div>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: '#002D5A', lineHeight: 1.2 }}>
-                                ZEUS SAFETY
-                            </div>
-                            <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>
-                                Almacén Malvinas
-                            </div>
-                        </div>
-                    </div>
+                    </button>
+                    {/* Botón Cerrar Móvil */}
                     <button
                         onClick={onClose}
-                        className="lg:hidden p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                        className="lg:hidden absolute top-3 right-3 p-1.5 rounded-lg hover:bg-gray-100 transition-colors bg-white/80 backdrop-blur-sm shadow-sm"
                     >
                         <X className="w-4 h-4 text-gray-500" />
                     </button>
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 overflow-y-auto py-3 px-2" style={{ scrollbarWidth: 'thin' }}>
+                <nav className="flex-1 overflow-y-auto py-3 px-2 custom-scrollbar" style={{ scrollbarWidth: 'thin' }}>
                     {navItems.map((group) => (
-                        <div key={group.group} className="mb-4">
-                            <div
-                                className="px-3 mb-1.5"
-                                style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.8px' }}
-                            >
-                                {group.group}
+                        <div key={group.group} className="mb-6">
+                            <div className="px-4 mb-2 flex-shrink-0 bg-white">
+                                <h3
+                                    className="font-bold text-gray-800 uppercase tracking-widest"
+                                    style={{ fontFamily: 'var(--font-poppins)', fontSize: '11px' }}
+                                >
+                                    {group.group}
+                                </h3>
                             </div>
-                            <ul className="space-y-0.5">
+                            <ul className="space-y-1">
                                 {group.items.map((item) => {
                                     const Icon = item.icon;
                                     const isActive = pathname === item.href || (item.href !== '/malvinas' && pathname.startsWith(item.href));
@@ -127,14 +126,23 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                                         <li key={item.id}>
                                             <button
                                                 onClick={() => handleNav(item.href)}
-                                                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] transition-all duration-200 active:scale-[0.98] ${isActive
-                                                        ? 'bg-[#E9F1FF] text-[#002D5A] border-l-4 border-[#002D5A]'
-                                                        : 'text-gray-600 hover:bg-gray-50 hover:text-[#002D5A] border-l-4 border-transparent'
+                                                className={`w-full flex items-center justify-between px-3 py-2.5 transition-all duration-200 group hover:shadow-md active:scale-[0.98] border-l-4 ${isActive
+                                                    ? 'bg-[#E9F1FF] text-[#001F3D] border-[#002D5A] shadow-sm'
+                                                    : 'text-gray-700 hover:bg-[#E9F1FF] hover:text-[#001F3D] border-transparent'
                                                     }`}
-                                                style={{ fontSize: 12.5, fontWeight: isActive ? 600 : 500 }}
+                                                style={{ borderRadius: '10px' }}
                                             >
-                                                <Icon className="w-4 h-4 flex-shrink-0" />
-                                                <span className="text-left leading-tight">{item.label}</span>
+                                                <div className="flex items-center space-x-2.5">
+                                                    <span className={`transition-colors flex-shrink-0 ${isActive ? 'text-[#002D5A]' : 'text-gray-600 group-hover:text-[#002D5A]'}`}>
+                                                        <Icon className="w-5 h-5" />
+                                                    </span>
+                                                    <span
+                                                        className={`text-xs text-left leading-tight font-medium ${isActive ? 'text-[#001F3D]' : 'text-gray-800 group-hover:text-[#001F3D]'}`}
+                                                        style={{ fontFamily: 'var(--font-poppins)' }}
+                                                    >
+                                                        {item.label}
+                                                    </span>
+                                                </div>
                                             </button>
                                         </li>
                                     );
@@ -144,19 +152,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                     ))}
                 </nav>
 
-                {/* Footer */}
-                <div className="px-4 py-3 border-t border-gray-100">
-                    <div
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                        style={{ background: '#f0f4ff', fontSize: 11, color: '#374151' }}
-                    >
-                        <div
-                            className="w-2 h-2 rounded-full animate-pulse"
-                            style={{ background: '#22c55e' }}
-                        />
-                        <span style={{ fontWeight: 600 }}>Sistema activo</span>
-                    </div>
-                </div>
+
             </aside>
         </>
     );

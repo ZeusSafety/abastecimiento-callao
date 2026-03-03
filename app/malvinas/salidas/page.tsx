@@ -347,120 +347,165 @@ export default function SalidasPage() {
     const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
     return (
-        <div>
-            <div className="mb-5 flex items-center justify-between">
-                <div>
-                    <h1 style={{ fontSize: 20, fontWeight: 700, color: '#002D5A', margin: 0 }}>Salidas</h1>
-                    <p style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Registro de salidas de productos del almacén</p>
-                </div>
-                <button onClick={() => { setEditData(null); setModalOpen(true); }} className="btn btn-primary">
-                    <Plus className="w-4 h-4" />
-                    Registrar Salida
-                </button>
-            </div>
+        <div id="view-salidas" className="animate-in fade-in duration-500 font-poppins">
+            <div className="container mx-auto">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 transition-all">
+                    {/* Header Principal */}
+                    <header className="flex justify-between items-center flex-wrap gap-4 mb-8">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-11 h-11 bg-gradient-to-br from-[#dc2626] to-[#ef4444] rounded-xl flex items-center justify-center text-white shadow-md shadow-red-900/10 transition-transform hover:scale-110">
+                                <PackageMinus className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
+                                    Historial de Salidas
+                                </h1>
+                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Registro completo de todas las salidas</p>
+                            </div>
+                        </div>
+                        <div className="header-actions flex gap-3">
+                            <button
+                                onClick={() => { setEditData(null); setModalOpen(true); }}
+                                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-[#002D5A] hover:bg-[#001F3D] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95 border-b-2 border-black/20"
+                            >
+                                <Plus className="w-3.5 h-3.5 stroke-[3px]" />
+                                <span>REGISTRAR SALIDA</span>
+                            </button>
+                        </div>
+                    </header>
 
-            <div className="card">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#002D5A' }}>
-                        Listado de Salidas ({total})
-                    </div>
-                    <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Buscar..."
-                            value={search}
-                            onChange={e => { setSearch(e.target.value); setPage(1); }}
-                            className="form-input pl-8"
-                            style={{ width: 200, padding: '6px 10px 6px 28px', fontSize: 12 }}
-                        />
-                    </div>
-                </div>
-
-                <div className="table-container" style={{ borderRadius: 0, border: 'none' }}>
-                    <table className="data-table">
-                        <thead>
-                            <tr>
-                                <th>Fecha</th>
-                                <th>Producto</th>
-                                <th>Operación</th>
-                                <th>Comprobante</th>
-                                <th>Asesor</th>
-                                <th style={{ textAlign: 'center' }}>Cantidad</th>
-                                <th>U. Medida</th>
-                                <th>Almacén</th>
-                                <th>Entregado</th>
-                                <th>Registrado Por</th>
-                                <th>Observaciones</th>
-                                <th style={{ textAlign: 'center' }}>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {paginated.map(s => (
-                                <tr key={s.id}>
-                                    <td style={{ fontSize: 11 }}>{s.fecha}</td>
-                                    <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.producto}</td>
-                                    <td>
-                                        <span className="badge" style={{ background: '#fce7f3', color: '#9d174d', fontSize: 10 }}>
-                                            {s.operacion}
-                                        </span>
-                                    </td>
-                                    <td style={{ fontSize: 11 }}>{s.comprobante || '-'}</td>
-                                    <td>{s.asesor || '-'}</td>
-                                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{s.cantidad}</td>
-                                    <td>
-                                        <span className="badge badge-salida" style={{ fontSize: 10 }}>{s.unidadMedida}</span>
-                                    </td>
-                                    <td style={{ fontSize: 11 }}>{s.almacen}</td>
-                                    <td>{s.entregado || '-'}</td>
-                                    <td>{s.registradoPor}</td>
-                                    <td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11, color: '#6b7280' }}>
-                                        {s.observaciones || '-'}
-                                    </td>
-                                    <td style={{ textAlign: 'center' }}>
-                                        <button
-                                            onClick={() => { setEditData(s); setModalOpen(true); }}
-                                            className="btn btn-sm btn-icon"
-                                            style={{ background: '#fce7f3', color: '#9d174d' }}
-                                        >
-                                            <Edit3 className="w-3.5 h-3.5" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                            {paginated.length === 0 && (
-                                <tr>
-                                    <td colSpan={12} style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>
-                                        {state.salidas.length === 0
-                                            ? 'No hay salidas registradas. Haz clic en "Registrar Salida" para comenzar.'
-                                            : 'No se encontraron resultados.'}
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {total > 0 && (
-                    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>
-                            Mostrando {Math.min((page - 1) * PER_PAGE + 1, total)}-{Math.min(page * PER_PAGE, total)} de {total}
-                        </span>
-                        <div className="flex gap-1">
-                            <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
-                            {Array.from({ length: Math.min(5, pages) }, (_, i) => {
-                                const pg = Math.max(1, Math.min(page - 2, pages - 4)) + i;
-                                if (pg > pages) return null;
-                                return (
-                                    <button key={pg} className={`page-btn ${pg === page ? 'active' : ''}`} onClick={() => setPage(pg)}>
-                                        {pg}
-                                    </button>
-                                );
-                            })}
-                            <button className="page-btn" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}>›</button>
+                    {/* Toolbar - Moved out of the card table area */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                        <div className="flex items-center gap-2">
+                            <div className="p-2 bg-pink-50 rounded-lg">
+                                <Search className="w-4 h-4 text-[#9d174d]" />
+                            </div>
+                            <span className="font-bold text-gray-800" style={{ fontSize: 14 }}>
+                                Listado de Salidas
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <div className="relative flex-1 sm:w-72">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Buscar producto, asesor..."
+                                    value={search}
+                                    onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-pink-50 focus:border-[#9d174d] outline-none transition-all shadow-sm"
+                                />
+                            </div>
                         </div>
                     </div>
-                )}
+
+                    {/* Table card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
+
+                        {/* Table */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                    <tr className="bg-[#002D5A] text-white">
+                                        <th className="px-4 py-4">Fecha</th>
+                                        <th className="px-4 py-4">Producto</th>
+                                        <th className="px-4 py-4">Operación</th>
+                                        <th className="px-4 py-4">Comprobante</th>
+                                        <th className="px-4 py-4 text-center">Cant.</th>
+                                        <th className="px-4 py-4">U. Medida</th>
+                                        <th className="px-4 py-4">Almacén</th>
+                                        <th className="px-4 py-4">Asesor</th>
+                                        <th className="px-4 py-4 text-center">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {paginated.map(s => (
+                                        <tr key={s.id} className="hover:bg-pink-50/30 transition-colors">
+                                            <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{s.fecha}</td>
+                                            <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{s.producto}</td>
+                                            <td className="px-4 py-3">
+                                                <span className="px-2 py-0.5 rounded-full bg-pink-50 text-pink-700 text-[9px] font-bold uppercase tracking-wider">
+                                                    {s.operacion}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-[11px] text-gray-600 font-medium uppercase">{s.comprobante || '-'}</td>
+                                            <td className="px-4 py-3 text-center font-bold text-gray-900 text-[11px]">{s.cantidad}</td>
+                                            <td className="px-4 py-3">
+                                                <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[9px] font-bold uppercase">
+                                                    {s.unidadMedida}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-[11px] text-gray-600 font-medium uppercase">{s.almacen}</td>
+                                            <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{s.asesor || '-'}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <button
+                                                    onClick={() => { setEditData(s); setModalOpen(true); }}
+                                                    className="p-1.5 rounded-lg bg-pink-50 text-pink-700 hover:bg-pink-700 hover:text-white transition-all shadow-sm"
+                                                    title="Editar"
+                                                >
+                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {paginated.length === 0 && (
+                                        <tr>
+                                            <td colSpan={9} className="px-4 py-12 text-center text-gray-400 text-xs italic">
+                                                No se encontraron registros de salida.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination */}
+                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(1)}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    «
+                                </button>
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    ‹
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col items-center">
+                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
+                                    Página {page} de {pages}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    ›
+                                </button>
+                                <button
+                                    onClick={() => setPage(pages)}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    »
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <ModalSalida

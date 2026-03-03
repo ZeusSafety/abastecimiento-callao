@@ -201,117 +201,175 @@ export default function AbastecimientoPage() {
     const paraSI = rows.filter(r => r.enviar === 'SI').length;
 
     return (
-        <div>
-            <div className="mb-5 flex items-center justify-between">
-                <div>
-                    <h1 style={{ fontSize: 20, fontWeight: 700, color: '#002D5A', margin: 0 }}>Abastecimiento</h1>
-                    <p style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                        Calcula automáticamente qué productos necesitan reposición
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    {paraSI > 0 && (
-                        <div
-                            className="px-3 py-1.5 rounded-full text-xs font-bold"
-                            style={{ background: '#fef3c7', color: '#92400e', fontSize: 11 }}
-                        >
-                            {paraSI} productos para enviar
+        <div id="view-abastecimiento" className="animate-in fade-in duration-500 font-poppins">
+            <div className="container mx-auto">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 transition-all">
+                    {/* Header Principal */}
+                    <header className="flex justify-between items-center flex-wrap gap-4 mb-8">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-11 h-11 bg-gradient-to-br from-[#059669] to-[#10b981] rounded-xl flex items-center justify-center text-white shadow-md shadow-emerald-900/10 transition-transform hover:scale-110">
+                                <RefreshCw className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
+                                    Abastecimiento Automático
+                                </h1>
+                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Cálculo de reposición basado en stock mínimo de Malvinas</p>
+                            </div>
                         </div>
-                    )}
-                    <button onClick={() => setModalOpen(true)} className="btn btn-success">
-                        <Save className="w-4 h-4" />
-                        Guardar Abastecimiento
-                    </button>
-                </div>
-            </div>
-
-            <div className="card">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#002D5A' }}>
-                        Listado de Abastecimiento
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="relative">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Buscar producto..."
-                                value={search}
-                                onChange={e => { setSearch(e.target.value); setPage(1); }}
-                                className="form-input pl-8"
-                                style={{ width: 200, padding: '6px 10px 6px 28px', fontSize: 12 }}
-                            />
+                        <div className="header-actions flex items-center gap-4">
+                            {paraSI > 0 && (
+                                <div className="hidden lg:flex flex-col items-end mr-1">
+                                    <span className="text-[9px] uppercase font-black text-amber-600 tracking-widest opacity-60">Pendientes</span>
+                                    <span className="text-xl font-black text-amber-700 leading-none">{paraSI}</span>
+                                </div>
+                            )}
+                            <button
+                                onClick={() => setModalOpen(true)}
+                                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-[#059669] hover:bg-[#047857] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95 border-b-2 border-black/20"
+                            >
+                                <Save className="w-3.5 h-3.5 stroke-[3px]" />
+                                <span>GUARDAR REPORTE</span>
+                            </button>
                         </div>
-                        <button onClick={() => setSearch('')} className="btn btn-secondary btn-sm">
-                            <RefreshCw className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-                </div>
+                    </header>
 
-                <div className="table-container" style={{ borderRadius: 0, border: 'none' }}>
-                    <table className="data-table">
-                        <thead>
-                            <tr>
-                                <th rowSpan={2}>Código</th>
-                                <th rowSpan={2} style={{ minWidth: 200 }}>Nombre</th>
-                                <th rowSpan={2} style={{ textAlign: 'center' }}>Cantidad</th>
-                                <th rowSpan={2}>U. Medida</th>
-                                <th colSpan={4} className="section-header">Abastecer</th>
-                                <th rowSpan={2} style={{ textAlign: 'center' }}>Abastecer Cajas</th>
-                                <th rowSpan={2} style={{ textAlign: 'center' }}>Enviar</th>
-                            </tr>
-                            <tr>
-                                {TIENDAS.map(t => (
-                                    <th key={t} style={{ background: '#1a4a7a', textAlign: 'center' }}>{t}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {paginated.map(r => (
-                                <tr key={r.productoId}>
-                                    <td style={{ fontSize: 11, fontWeight: 600, color: '#002D5A' }}>{r.codigo}</td>
-                                    <td style={{ fontWeight: 500 }}>{r.nombre}</td>
-                                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{r.cantidad}</td>
-                                    <td>
-                                        <span className="badge badge-entrada" style={{ fontSize: 10 }}>{r.unidadMedida}</span>
-                                    </td>
-                                    {TIENDAS.map(t => (
-                                        <td key={t} style={{ textAlign: 'center' }}>
-                                            {r.tiendas[t] === 0 ? (
-                                                <span className="value-zero">0</span>
-                                            ) : r.tiendas[t] < 0 ? (
-                                                <span className="value-negative">{r.tiendas[t]}</span>
-                                            ) : (
-                                                <span className="value-positive">{r.tiendas[t]}</span>
-                                            )}
-                                        </td>
+                    {/* Toolbar - Moved out of the card table area */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                        <div className="flex items-center gap-2">
+                            <div className="p-2 bg-emerald-50 rounded-lg">
+                                <Search className="w-4 h-4 text-[#059669]" />
+                            </div>
+                            <span className="font-bold text-gray-800" style={{ fontSize: 14 }}>
+                                Listado de Reposición
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <div className="relative flex-1 sm:w-72">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Buscar producto..."
+                                    value={search}
+                                    onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-emerald-50 focus:border-[#059669] outline-none transition-all shadow-sm"
+                                />
+                            </div>
+                            <button onClick={() => setSearch('')} className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm active:scale-95">
+                                <RefreshCw className="w-4 h-4 text-gray-500" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Table card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
+
+                        {/* Table */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left border-collapse">
+                                <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                    <tr className="bg-[#002D5A] text-white">
+                                        <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a]">Código</th>
+                                        <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a] min-w-[200px]">Producto</th>
+                                        <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a] text-center">Cant.</th>
+                                        <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a]">U. Medida</th>
+                                        <th colSpan={4} className="px-4 py-2 text-center border-b border-[#ffffff1a] bg-[#001f3d]">Abastecer por Tienda</th>
+                                        <th rowSpan={2} className="px-4 py-4 border-l border-[#ffffff1a] text-center">Abastecer Cajas</th>
+                                        <th rowSpan={2} className="px-4 py-4 text-center">Enviar</th>
+                                    </tr>
+                                    <tr className="bg-[#001f3d] text-white">
+                                        {TIENDAS.map(t => (
+                                            <th key={t} className="px-2 py-3 text-center border-r border-[#ffffff1a] last:border-r-0">{t}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 font-poppins">
+                                    {paginated.map(r => (
+                                        <tr key={r.productoId} className="hover:bg-emerald-50/30 transition-colors">
+                                            <td className="px-4 py-3 font-bold text-[#002D5A] border-r border-gray-50 text-[11px] uppercase tracking-tight">{r.codigo}</td>
+                                            <td className="px-4 py-3 font-semibold text-gray-800 border-r border-gray-50 text-[11px] uppercase tracking-tight">{r.nombre}</td>
+                                            <td className="px-4 py-3 text-center text-gray-600 border-r border-gray-50 font-mono text-[11px]">{r.cantidad}</td>
+                                            <td className="px-4 py-3 border-r border-gray-50 text-center">
+                                                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold uppercase">
+                                                    {r.unidadMedida}
+                                                </span>
+                                            </td>
+                                            {TIENDAS.map(t => (
+                                                <td key={t} className="px-2 py-3 text-center border-r border-gray-50 text-[11px]">
+                                                    {r.tiendas[t] === 0 ? (
+                                                        <span className="text-gray-300">0</span>
+                                                    ) : r.tiendas[t] < 0 ? (
+                                                        <span className="text-red-500 font-bold">{r.tiendas[t]}</span>
+                                                    ) : (
+                                                        <span className="text-emerald-600 font-bold">+{r.tiendas[t]}</span>
+                                                    )}
+                                                </td>
+                                            ))}
+                                            <td className="px-4 py-3 text-center border-l border-gray-50 font-black text-base">
+                                                {r.abastecerCajas > 0 ? (
+                                                    <span className="text-[#059669]">{r.abastecerCajas}</span>
+                                                ) : (
+                                                    <span className="text-gray-300">0</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-widest ${r.enviar === 'SI' ? 'bg-emerald-100 text-emerald-700 shadow-sm' : 'bg-gray-100 text-gray-400 opacity-50'
+                                                    }`}>
+                                                    {r.enviar}
+                                                </span>
+                                            </td>
+                                        </tr>
                                     ))}
-                                    <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 14 }}>
-                                        {r.abastecerCajas > 0 ? (
-                                            <span style={{ color: '#059669' }}>{r.abastecerCajas}</span>
-                                        ) : (
-                                            <span className="value-zero">0</span>
-                                        )}
-                                    </td>
-                                    <td style={{ textAlign: 'center' }}>
-                                        <span className={`badge ${r.enviar === 'SI' ? 'badge-si' : 'badge-no'}`}>
-                                            {r.enviar}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                </tbody>
+                            </table>
+                        </div>
 
-                <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                    <span style={{ fontSize: 11, color: '#6b7280' }}>
-                        Mostrando {Math.min((page - 1) * PER_PAGE + 1, total)}-{Math.min(page * PER_PAGE, total)} de {total}
-                    </span>
-                    <div className="flex gap-1">
-                        <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
-                        {Array.from({ length: Math.min(5, pages) }, (_, i) => { const pg = Math.max(1, Math.min(page - 2, pages - 4)) + i; if (pg > pages) return null; return <button key={pg} className={`page-btn ${pg === page ? 'active' : ''}`} onClick={() => setPage(pg)}>{pg}</button>; })}
-                        <button className="page-btn" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}>›</button>
+                        {/* Pagination */}
+                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(1)}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    «
+                                </button>
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    ‹
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col items-center">
+                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
+                                    Página {page} de {pages}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    ›
+                                </button>
+                                <button
+                                    onClick={() => setPage(pages)}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    »
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
