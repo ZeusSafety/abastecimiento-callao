@@ -345,34 +345,6 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
   });
 
   // ─── Cargar datos iniciales ────────────────────────────────────────────────
-  useEffect(() => {
-    const cargarDatos = async () => {
-      setState(s => ({ ...s, loading: true, error: null }));
-      try {
-        const [productosDB, stockTotalDB] = await Promise.all([
-          api.getProductos(true),
-          api.getStockTotal(),
-        ]);
-
-        // Crear mapa de stock total por código
-        const stockMap = new Map<string, api.StockTotalDB>();
-        stockTotalDB.forEach(st => stockMap.set(st.codigo, st));
-
-        const productos = productosDB.map(p => {
-          const stock = stockMap.get(p.codigo);
-          return convertirProductoDB(p, stock);
-        });
-
-        setState(s => ({ ...s, productos, loading: false }));
-      } catch (error: any) {
-        console.error('Error cargando productos:', error);
-        setState(s => ({ ...s, error: error.message, loading: false }));
-      }
-    };
-
-    cargarDatos();
-  }, []);
-
   const addNotification = useCallback((type: NotificationItem['type'], title: string, message: string) => {
     const notify: NotificationItem = {
       id: genId(),
@@ -403,6 +375,42 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
   const removeToast = useCallback((id: string) => {
     setState(s => ({ ...s, toasts: s.toasts.filter(t => t.id !== id) }));
   }, []);
+
+  // Cargar datos iniciales después de que showToast esté definido
+  useEffect(() => {
+    const cargarDatos = async () => {
+      setState(s => ({ ...s, loading: true, error: null }));
+      try {
+        const [productosDB, stockTotalDB, entradasDB, salidasDB] = await Promise.all([
+          api.getProductos(true),
+          api.getStockTotal(),
+          api.getEntradas(),
+          api.getSalidas(),
+        ]);
+
+        // Crear mapa de stock total por código
+        const stockMap = new Map<string, api.StockTotalDB>();
+        stockTotalDB.forEach(st => stockMap.set(st.codigo, st));
+
+        const productos = productosDB.map(p => {
+          const stock = stockMap.get(p.codigo);
+          return convertirProductoDB(p, stock);
+        });
+
+        // Convertir entradas y salidas
+        const entradas = entradasDB.map(e => convertirEntradaDB(e, productos));
+        const salidas = salidasDB.map(s => convertirSalidaDB(s, productos));
+
+        setState(s => ({ ...s, productos, entradas, salidas, loading: false }));
+      } catch (error: any) {
+        console.error('Error cargando datos iniciales:', error);
+        setState(s => ({ ...s, error: error.message, loading: false }));
+        showToast('error', 'Error al cargar datos iniciales');
+      }
+    };
+
+    cargarDatos();
+  }, [showToast]);
 
   const refreshProductos = useCallback(async () => {
     try {
