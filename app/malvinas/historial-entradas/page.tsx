@@ -14,6 +14,7 @@ import {
     UnidadMedida,
 } from '../../context/MalvinasContext';
 import { Search, PackagePlus, Edit3, X, Save, ChevronDown } from 'lucide-react';
+import TableSkeleton from '../../components/TableSkeleton';
 
 // ─── Modal Registro Entrada (Copia de seguridad para edición) ───────────────────
 function ModalEntrada({
@@ -25,7 +26,7 @@ function ModalEntrada({
     onClose: () => void;
     editData?: RegistroEntrada | null;
 }) {
-    const { state, updateEntrada, showToast } = useMalvinas();
+    const { state, updateEntrada, showToast, refreshEntradas } = useMalvinas();
 
     const [form, setForm] = useState({
         productoId: editData?.productoId ?? '',
@@ -42,24 +43,30 @@ function ModalEntrada({
         motivoCambio: '',
     });
 
+    // Inicializar formulario cuando editData cambia
     useEffect(() => {
         if (editData) {
+            const producto = state.productos.find(p => 
+                p.codigo === editData.producto || 
+                p.nombre === editData.producto ||
+                p.id === editData.productoId
+            );
             setForm({
-                productoId: editData.productoId,
+                productoId: producto?.id || editData.productoId || '',
                 producto: editData.producto,
                 operacion: editData.operacion,
                 almacenSalida: editData.almacenSalida as AlmacenCompleto,
                 almacenIngreso: editData.almacenIngreso as Tienda,
                 operador: editData.operador,
                 cantidad: editData.cantidad,
-                unidadMedida: editData.unidadMedida as UnidadMedida,
+                unidadMedida: producto?.unidadMedidaRegCalculo || editData.unidadMedida as UnidadMedida,
                 entregado: editData.entregado,
                 registradoPor: editData.registradoPor,
                 observaciones: editData.observaciones,
                 motivoCambio: '',
             });
         }
-    }, [editData]);
+    }, [editData, state.productos]);
 
     const handleProductoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const p = state.productos.find(pr => pr.id === e.target.value);
@@ -75,26 +82,30 @@ function ModalEntrada({
 
     const selectedProducto = state.productos.find(p => p.id === form.productoId);
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!form.productoId) { showToast('error', 'Selecciona un producto'); return; }
         if (!form.cantidad || form.cantidad <= 0) { showToast('error', 'Ingresa una cantidad válida'); return; }
         if (!form.motivoCambio.trim()) { showToast('error', 'Ingresa el motivo del cambio'); return; }
 
-        updateEntrada(editData!.id, {
-            productoId: form.productoId,
-            producto: form.producto,
-            operacion: form.operacion,
-            almacenSalida: form.almacenSalida,
-            almacenIngreso: form.almacenIngreso,
-            operador: form.operador,
-            cantidad: Number(form.cantidad),
-            unidadMedida: form.unidadMedida,
-            entregado: form.entregado,
-            registradoPor: form.registradoPor,
-            observaciones: form.observaciones,
-        }, form.motivoCambio);
-        showToast('success', 'Entrada actualizada correctamente');
-        onClose();
+        try {
+            await updateEntrada(editData!.id, {
+                productoId: form.productoId,
+                producto: form.producto,
+                operacion: form.operacion,
+                almacenSalida: form.almacenSalida,
+                almacenIngreso: form.almacenIngreso,
+                operador: form.operador,
+                cantidad: Number(form.cantidad),
+                unidadMedida: form.unidadMedida,
+                entregado: form.entregado,
+                registradoPor: form.registradoPor,
+                observaciones: form.observaciones,
+            }, form.motivoCambio);
+            await refreshEntradas();
+            onClose();
+        } catch (error) {
+            // El error ya se maneja en las funciones del contexto
+        }
     };
 
     if (!isOpen) return null;
@@ -164,10 +175,14 @@ function ModalEntrada({
                         <div>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Cantidad *</label>
                             <input
-                                type="number"
-                                value={form.cantidad}
-                                onChange={e => setForm(f => ({ ...f, cantidad: Number(e.target.value) }))}
+                                type="text"
+                                value={form.cantidad === 0 ? '' : form.cantidad}
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    setForm(f => ({ ...f, cantidad: val === '' ? 0 : Number(val) }));
+                                }}
                                 className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                                placeholder="0"
                             />
                         </div>
                         <div>
@@ -210,13 +225,24 @@ function ModalEntrada({
 }
 
 export default function HistorialEntradasPage() {
-    const { state } = useMalvinas();
+    const { state, refreshEntradas } = useMalvinas();
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
+    const [loading, setLoading] = useState(true);
     const PER_PAGE = 20;
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroEntrada | null>(null);
+
+    // Cargar entradas al montar el componente
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            await refreshEntradas();
+            setLoading(false);
+        };
+        loadData();
+    }, [refreshEntradas]);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
@@ -301,7 +327,21 @@ export default function HistorialEntradasPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                        {paginated.map(e => (
+                                        {loading ? (
+                                            <TableSkeleton rows={1} cols={13} />
+                                        ) : paginated.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={13} className="px-4 py-20 text-center">
+                                                    <div className="flex flex-col items-center justify-center opacity-40">
+                                                        <Search className="w-12 h-12 mb-4" />
+                                                        <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">
+                                                            {search ? 'No se encontraron registros con ese criterio' : 'No hay registros de entradas aún.'}
+                                                        </p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            paginated.map(e => (
                                             <tr key={e.id} className="hover:bg-blue-50/30 transition-colors">
                                                 <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{e.fecha}</td>
                                                 <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{e.producto}</td>
@@ -333,17 +373,7 @@ export default function HistorialEntradasPage() {
                                                     </button>
                                                 </td>
                                             </tr>
-                                        ))}
-                                        {paginated.length === 0 && (
-                                            <tr>
-                                                <td colSpan={13} className="px-4 py-20 text-center">
-                                                    <div className="flex flex-col items-center justify-center opacity-40">
-                                                        <Search className="w-12 h-12 mb-4" />
-                                                        <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">No hay registros de entradas aún.</p>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )}
+                                        )))}
                                     </tbody>
                                 </table>
                             </div>

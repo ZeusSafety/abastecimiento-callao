@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { useMalvinas, TIENDAS, Tienda } from '../context/MalvinasContext';
 import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2 } from 'lucide-react';
+import TableSkeleton from '../components/TableSkeleton';
 
 function StockBadge({ value, min }: { value: number; min: number }) {
     if (value === 0) return <span className="value-zero">0</span>;
@@ -15,6 +16,7 @@ export default function StockTotalPage() {
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
     const PER_PAGE = 20;
+    const isLoading = state.loading;
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
@@ -156,43 +158,58 @@ export default function StockTotalPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {paginated.map(p => {
-                                        const stockGlobalMin = TIENDAS.reduce((acc, t) => acc + p.stockMinimo[t], 0);
-                                        const disponibles = TIENDAS.reduce((acc, t) => acc + p.existencia[t], 0);
-                                        const cajas = Math.floor(disponibles / p.cantidadRegCalculo);
-                                        const medida = (cajas * p.cantidadRegCalculo) - disponibles;
-                                        return (
-                                            <tr key={p.id} className="hover:bg-blue-50/30 transition-colors">
-                                                <td className="px-4 py-3 font-bold text-[#002D5A] text-[11px]">{p.codigo}</td>
-                                                <td className="px-4 py-3 font-medium text-gray-700 text-[11px] uppercase tracking-tight">{p.nombre}</td>
-                                                <td className="px-4 py-3 text-center font-bold text-gray-800 text-[11px]">{p.cantidadRegCalculo}</td>
-                                                {TIENDAS.map(t => (
-                                                    <td key={`min-${t}`} className="px-2 py-3 text-center text-gray-400 text-[11px]">
-                                                        {p.stockMinimo[t] > 0 ? p.stockMinimo[t] : '-'}
+                                    {isLoading ? (
+                                        <TableSkeleton rows={PER_PAGE} cols={17} />
+                                    ) : paginated.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={17} className="px-4 py-12 text-center">
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <Package className="w-12 h-12 text-gray-300" />
+                                                    <p className="text-gray-400 text-sm font-medium">
+                                                        {search ? 'No se encontraron productos con ese criterio' : 'No hay productos registrados'}
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginated.map(p => {
+                                            const stockGlobalMin = TIENDAS.reduce((acc, t) => acc + p.stockMinimo[t], 0);
+                                            const disponibles = TIENDAS.reduce((acc, t) => acc + p.existencia[t], 0);
+                                            const cajas = Math.floor(disponibles / p.cantidadRegCalculo);
+                                            const medida = (cajas * p.cantidadRegCalculo) - disponibles;
+                                            return (
+                                                <tr key={p.id} className="hover:bg-blue-50/30 transition-colors">
+                                                    <td className="px-4 py-3 font-bold text-[#002D5A] text-[11px]">{p.codigo}</td>
+                                                    <td className="px-4 py-3 font-medium text-gray-700 text-[11px] uppercase tracking-tight">{p.nombre}</td>
+                                                    <td className="px-4 py-3 text-center font-bold text-gray-800 text-[11px]">{p.cantidadRegCalculo}</td>
+                                                    {TIENDAS.map(t => (
+                                                        <td key={`min-${t}`} className="px-2 py-3 text-center text-gray-400 text-[11px]">
+                                                            {p.stockMinimo[t] > 0 ? p.stockMinimo[t] : '-'}
+                                                        </td>
+                                                    ))}
+                                                    <td className="px-4 py-3 text-center font-bold text-[11px]">{stockGlobalMin}</td>
+                                                    <td className="px-4 py-3 text-center text-[11px]">
+                                                        <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold">
+                                                            {p.unidadMedidaRegCalculo}
+                                                        </span>
                                                     </td>
-                                                ))}
-                                                <td className="px-4 py-3 text-center font-bold text-[11px]">{stockGlobalMin}</td>
-                                                <td className="px-4 py-3 text-center text-[11px]">
-                                                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold">
+                                                    {TIENDAS.map(t => (
+                                                        <td key={`ex-${t}`} className="px-2 py-3 text-center text-[11px]">
+                                                            <StockBadge value={p.existencia[t]} min={p.stockMinimo[t]} />
+                                                        </td>
+                                                    ))}
+                                                    <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{disponibles}</td>
+                                                    <td className="px-4 py-3 text-center font-bold text-[11px]">{cajas}</td>
+                                                    <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: medida < 0 ? '#dc2626' : '#22c55e' }}>
+                                                        {Math.abs(medida)}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center text-[9px] text-gray-400 font-medium whitespace-nowrap uppercase">
                                                         {p.unidadMedidaRegCalculo}
-                                                    </span>
-                                                </td>
-                                                {TIENDAS.map(t => (
-                                                    <td key={`ex-${t}`} className="px-2 py-3 text-center text-[11px]">
-                                                        <StockBadge value={p.existencia[t]} min={p.stockMinimo[t]} />
                                                     </td>
-                                                ))}
-                                                <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{disponibles}</td>
-                                                <td className="px-4 py-3 text-center font-bold text-[11px]">{cajas}</td>
-                                                <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: medida < 0 ? '#dc2626' : '#22c55e' }}>
-                                                    {Math.abs(medida)}
-                                                </td>
-                                                <td className="px-4 py-3 text-center text-[9px] text-gray-400 font-medium whitespace-nowrap uppercase">
-                                                    {p.unidadMedidaRegCalculo}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                                </tr>
+                                            );
+                                        })
+                                    )}
                                 </tbody>
                             </table>
                         </div>

@@ -1,20 +1,35 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas, TIENDAS } from '../../context/MalvinasContext';
 import { Search, RefreshCw, Package, Columns2, AlertTriangle } from 'lucide-react';
 
 export default function HistorialCargaPage() {
-    const { state } = useMalvinas();
+    const { state, cargarDetalleAbastecimiento, refreshAbastecimiento } = useMalvinas();
     const [selectedId, setSelectedId] = useState<string>('');
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
+    const [loading, setLoading] = useState(false);
     const PER_PAGE = 20;
+
+    // Cargar historial de abastecimientos al montar la página
+    useEffect(() => {
+        refreshAbastecimiento();
+    }, [refreshAbastecimiento]);
 
     const selectedHistorial = useMemo(
         () => state.historialAbastecimiento.find(h => h.id === selectedId),
         [state.historialAbastecimiento, selectedId]
     );
+
+    // Cargar detalles cuando se selecciona un abastecimiento
+    useEffect(() => {
+        if (selectedHistorial && selectedHistorial.items.length === 0) {
+            setLoading(true);
+            cargarDetalleAbastecimiento(selectedHistorial.nombre)
+                .finally(() => setLoading(false));
+        }
+    }, [selectedHistorial, cargarDetalleAbastecimiento]);
 
     const filtered = useMemo(() => {
         if (!selectedHistorial) return [];
@@ -144,37 +159,16 @@ export default function HistorialCargaPage() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
-                                            {paginated.map(r => (
-                                                <tr key={r.productoId} className="hover:bg-blue-50/40 transition-colors group">
-                                                    <td className="px-5 py-3 font-bold text-[#002D5A] border-r border-gray-50/50 text-[11px] uppercase">{r.codigo}</td>
-                                                    <td className="px-5 py-3 font-semibold text-gray-800 border-r border-gray-50/50 text-[11px] uppercase tracking-tight">{r.nombre}</td>
-                                                    <td className="px-5 py-3 text-center font-mono font-bold text-gray-600 border-r border-gray-50/50 text-[11px]">{r.cantidad}</td>
-                                                    <td className="px-5 py-3 border-r border-gray-50/50">
-                                                        <span className="px-2 py-0.5 rounded-full bg-blue-50 text-[#002D5A] text-[9px] font-black uppercase tracking-tighter">
-                                                            {r.unidadMedida}
-                                                        </span>
-                                                    </td>
-                                                    {TIENDAS.map(t => (
-                                                        <td key={t} className="px-2 py-3 text-center border-r border-gray-50/50">
-                                                            <span className={`font-bold text-[10px] ${r.tiendas[t] < 0 ? 'text-red-500' : r.tiendas[t] === 0 ? 'text-gray-300' : 'text-emerald-600'}`}>
-                                                                {r.tiendas[t]}
-                                                            </span>
-                                                        </td>
-                                                    ))}
-                                                    <td className="px-5 py-3 text-center font-black text-[#002D5A] bg-blue-50/20 border-l border-gray-50 text-[13px]">
-                                                        {r.abastecerCajas}
-                                                    </td>
-                                                    <td className="px-5 py-3 text-center">
-                                                        <span className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest transition-all ${r.enviar === 'SI'
-                                                            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                                                            : 'bg-gray-100 text-gray-400 opacity-60'
-                                                            }`}>
-                                                            {r.enviar}
-                                                        </span>
+                                            {loading ? (
+                                                <tr>
+                                                    <td colSpan={7 + TIENDAS.length} className="px-6 py-20 text-center">
+                                                        <div className="flex flex-col items-center justify-center">
+                                                            <div className="w-8 h-8 border-4 border-[#002D5A] border-t-transparent rounded-full animate-spin mb-4"></div>
+                                                            <p className="text-sm font-medium text-gray-500">Cargando productos...</p>
+                                                        </div>
                                                     </td>
                                                 </tr>
-                                            ))}
-                                            {paginated.length === 0 && (
+                                            ) : paginated.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={7 + TIENDAS.length} className="px-6 py-20 text-center">
                                                         <div className="flex flex-col items-center justify-center opacity-40">
@@ -183,6 +177,37 @@ export default function HistorialCargaPage() {
                                                         </div>
                                                     </td>
                                                 </tr>
+                                            ) : (
+                                                paginated.map(r => (
+                                                    <tr key={r.productoId} className="hover:bg-blue-50/40 transition-colors group">
+                                                        <td className="px-5 py-3 font-bold text-[#002D5A] border-r border-gray-50/50 text-[11px] uppercase">{r.codigo}</td>
+                                                        <td className="px-5 py-3 font-semibold text-gray-800 border-r border-gray-50/50 text-[11px] uppercase tracking-tight">{r.nombre}</td>
+                                                        <td className="px-5 py-3 text-center font-mono font-bold text-gray-600 border-r border-gray-50/50 text-[11px]">{r.cantidad}</td>
+                                                        <td className="px-5 py-3 border-r border-gray-50/50">
+                                                            <span className="px-2 py-0.5 rounded-full bg-blue-50 text-[#002D5A] text-[9px] font-black uppercase tracking-tighter">
+                                                                {r.unidadMedida}
+                                                            </span>
+                                                        </td>
+                                                        {TIENDAS.map(t => (
+                                                            <td key={t} className="px-2 py-3 text-center border-r border-gray-50/50">
+                                                                <span className={`font-bold text-[10px] ${r.tiendas[t] < 0 ? 'text-red-500' : r.tiendas[t] === 0 ? 'text-gray-300' : 'text-emerald-600'}`}>
+                                                                    {r.tiendas[t]}
+                                                                </span>
+                                                            </td>
+                                                        ))}
+                                                        <td className="px-5 py-3 text-center font-black text-[#002D5A] bg-blue-50/20 border-l border-gray-50 text-[13px]">
+                                                            {r.abastecerCajas}
+                                                        </td>
+                                                        <td className="px-5 py-3 text-center">
+                                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest transition-all ${r.enviar === 'SI'
+                                                                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                                                                : 'bg-gray-100 text-gray-400 opacity-60'
+                                                                }`}>
+                                                                {r.enviar}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))
                                             )}
                                         </tbody>
                                     </table>

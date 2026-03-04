@@ -1,0 +1,941 @@
+import functions_framework
+import pymysql
+import json
+import requests
+import logging
+import traceback
+import io
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+from google.cloud import storage
+from datetime import datetime
+
+# 🔧 Conexión a MySQL
+def get_connection():
+    conn = pymysql.connect(
+        user="zeussafety-2024",
+        password="ZeusSafety2025",
+        db="Zeus_Safety_Data_Integration",
+        unix_socket="/cloudsql/stable-smithy-435414-m6:us-central1:zeussafety-2024",
+        cursorclass=pymysql.cursors.DictCursor
+    )
+    # Configurar timezone a Perú (America/Lima)
+    cursor = conn.cursor()
+    cursor.execute("SET time_zone = '-05:00'")  # UTC-5 para Perú
+    cursor.close()
+    return conn
+
+
+# ============================================================
+# FUNCIONES DE RESPUESTA ESTÁNDAR (Helpers)
+# ============================================================
+def success_response(data=None, message="Operación exitosa", headers=None):
+    """Respuesta 200 OK exitosa."""
+    response = {'success': True, 'message': message}
+    if data is not None:
+        response['data'] = data
+    return (json.dumps(response, default=str, ensure_ascii=False), 200, headers)
+
+def created_response(data=None, message="Recurso creado exitosamente", headers=None):
+    """Respuesta 201 Created."""
+    response = {'success': True, 'message': message}
+    if data is not None:
+        response['data'] = data
+    return (json.dumps(response, default=str, ensure_ascii=False), 201, headers)
+
+def not_found_error(message="Recurso no encontrado", headers=None):
+    """Respuesta 404 Not Found."""
+    return (json.dumps({'success': False, 'error': message}), 404, headers)
+
+def server_error(message="Error interno del servidor", headers=None):
+    """Respuesta 500 Internal Server Error."""
+    return (json.dumps({'success': False, 'error': message}), 500, headers)
+
+def bad_request_error(message="Solicitud incorrecta", headers=None):
+    """Respuesta 400 Bad Request."""
+    return (json.dumps({'success': False, 'error': message}), 400, headers)
+
+# ============================================================
+# FUNCIONES AUXILIARES
+# ============================================================
+def _get_id_tienda_por_nombre_o_codigo(nombre_o_codigo, conn):
+    """Obtiene el ID de una tienda por su nombre exacto o código."""
+    cursor = conn.cursor()
+    # Buscar primero por código exacto, luego por nombre exacto
+    sql = "SELECT id FROM tiendas_gestion_sea WHERE codigo = %s OR nombre = %s"
+    cursor.execute(sql, (nombre_o_codigo, nombre_o_codigo))
+    result = cursor.fetchone()
+    cursor.close()
+    return result['id'] if result else None
+
+def _get_id_unidad_medida_por_nombre(nombre_um, conn):
+    """Obtiene el ID de una unidad de medida por su nombre."""
+    cursor = conn.cursor()
+    sql = "SELECT id FROM unidades_medida_sea WHERE nombre = %s"
+    cursor.execute(sql, (nombre_um,))
+    result = cursor.fetchone()
+    cursor.close()
+    return result['id'] if result else None
+
+def _get_id_tipo_operacion_por_nombre_y_tipo(nombre_operacion, tipo, conn):
+    """Obtiene el ID de un tipo de operación por su nombre y tipo (ENTRADA/SALIDA)."""
+    cursor = conn.cursor()
+    sql = "SELECT id FROM tipos_operacion_sea WHERE nombre = %s AND tipo = %s"
+    cursor.execute(sql, (nombre_operacion.upper(), tipo))
+    result = cursor.fetchone()
+    cursor.close()
+    return result['id'] if result else None
+
+def _get_id_producto_por_codigo_o_nombre(codigo_o_nombre, conn):
+    """Obtiene el ID de un producto por su código o nombre exacto."""
+    cursor = conn.cursor()
+    sql = "SELECT id FROM productos_abastecimiento WHERE codigo = %s OR nombre = %s"
+    cursor.execute(sql, (codigo_o_nombre, codigo_o_nombre))
+    result = cursor.fetchone()
+    cursor.close()
+    return result['id'] if result else None
+
+def _ejecutar_sp_con_transaccion(conn, sp_call, params):
+    """Ejecuta un Stored Procedure y maneja commit/rollback."""
+    cursor = conn.cursor()
+    try:
+        logging.info(f"Ejecutando SP: {sp_call} con parámetros: {params}")
+        cursor.callproc(sp_call, params)
+        conn.commit()
+
+        # Obtener resultados si es un SELECT o un OUT parameter
+        result_set = cursor.fetchall()
+        # Para SPs con OUT params, necesitas otro approach.
+        # Por simplicidad, si el SP hace un SELECT, lo retornamos.
+        # También se puede modificar el SP para que siempre tenga un SELECT final.
+        return True, "Operación exitosa", result_set
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error ejecutando SP {sp_call}: {traceback.format_exc()}")
+        return False, str(e), None
+    finally:
+        cursor.close()
+
+# ============================================================
+# IMPLEMENTACIÓN DE LOS ENDPOINTS (LÓGICA DE NEGOCIO)
+# ============================================================
+
+# --- MÓDULO TIENDAS ---
+def get_tiendas(request, headers):
+    """Obtiene la lista de tiendas/almacenes."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, codigo, nombre, es_almacen FROM tiendas_gestion_sea WHERE activo = 1")
+        tiendas = cursor.fetchall()
+        return success_response(data=tiendas, message="Tiendas obtenidas correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- MÓDULO UNIDADES DE MEDIDA ---
+def get_unidades_medida(request, headers):
+    """Obtiene la lista de unidades de medida."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, nombre FROM unidades_medida_sea")
+        unidades = cursor.fetchall()
+        return success_response(data=unidades, message="Unidades obtenidas correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- MÓDULO TIPOS DE OPERACIÓN ---
+def get_tipos_operacion(tipo_operacion, headers):
+    """Obtiene los tipos de operación filtrados por tipo (ENTRADA/SALIDA)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = "SELECT id, nombre FROM tipos_operacion_sea WHERE tipo = %s"
+        cursor.execute(sql, (tipo_operacion,))
+        tipos = cursor.fetchall()
+        return success_response(data=tipos, message="Tipos de operación obtenidos correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- MÓDULO PRODUCTOS ---
+def get_productos(request, headers):
+    """Obtiene el listado de productos. Puede tener filtro por ?activo=1 o todos."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        activo = request.args.get('activo', '1')
+        if activo == '1':
+            cursor.execute("SELECT * FROM productos_abastecimiento WHERE activo = 1")
+        else:
+            cursor.execute("SELECT * FROM productos_abastecimiento")
+        productos = cursor.fetchall()
+        return success_response(data=productos, message="Productos obtenidos correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_producto(request, headers):
+    """Crea un nuevo producto en el catálogo."""
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+
+    # Extraer datos
+    codigo = data.get('codigo')
+    nombre = data.get('nombre')
+    cantidad_en_caja = data.get('cantidad_en_caja')
+    id_unidad_medida_info = data.get('id_unidad_medida_info')
+    cantidad_unidades_caja = data.get('cantidad_unidades_caja')
+    cantidad_reg_calculo = data.get('cantidad_reg_calculo')
+    id_unidad_medida_reg = data.get('id_unidad_medida_reg')
+
+    if not all([codigo, nombre, id_unidad_medida_info, id_unidad_medida_reg]):
+        return bad_request_error("Faltan campos requeridos (codigo, nombre, id_unidad_medida_info, id_unidad_medida_reg)", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """INSERT INTO productos_abastecimiento 
+                 (codigo, nombre, cantidad_en_caja, id_unidad_medida_info, cantidad_unidades_caja, cantidad_reg_calculo, id_unidad_medida_reg)
+                 VALUES (%s, %s, %s, %s, %s, %s, %s)"""
+        cursor.execute(sql, (codigo, nombre, cantidad_en_caja, id_unidad_medida_info, cantidad_unidades_caja, cantidad_reg_calculo, id_unidad_medida_reg))
+        conn.commit()
+        nuevo_id = cursor.lastrowid
+        return created_response(data={'id': nuevo_id, 'codigo': codigo, 'nombre': nombre}, message="Producto creado exitosamente", headers=headers)
+    except pymysql.IntegrityError as e:
+        conn.rollback()
+        if "Duplicate entry" in str(e):
+            return bad_request_error(f"El código '{codigo}' ya existe.", headers)
+        else:
+            raise e
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- MÓDULO ENTRADAS ---
+def get_entradas(request, headers):
+    """Obtiene el listado de movimientos de entrada."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Una consulta más amigable que muestre nombres en lugar de IDs
+        sql = """
+            SELECT 
+                me.id, me.fecha_registro, 
+                p.codigo as producto_codigo, p.nombre as producto_nombre,
+                tos.nombre as operacion,
+                ts.codigo as tienda_salida_codigo, ts.nombre as tienda_salida_nombre,
+                ti.codigo as tienda_ingreso_codigo, ti.nombre as tienda_ingreso_nombre,
+                me.operador, me.cantidad, um.nombre as unidad_medida,
+                me.entregado_por, me.registrado_por, me.observaciones,
+                me.fecha_actualizacion, me.motivo_cambio
+            FROM movimientos_entrada me
+            JOIN productos_abastecimiento p ON me.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON me.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea ts ON me.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea ti ON me.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea um ON me.id_unidad_medida = um.id
+            ORDER BY me.fecha_registro DESC
+        """
+        cursor.execute(sql)
+        entradas = cursor.fetchall()
+        return success_response(data=entradas, message="Entradas obtenidas correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_entrada(request, headers):
+    """Registra una nueva entrada usando el SP sp_registrar_entrada."""
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+
+    conn = get_connection()
+    try:
+        # Convertir nombres/códigos a IDs
+        producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
+        if not producto_id:
+            return bad_request_error("Producto no encontrado", headers)
+
+        tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(data.get('operacion'), 'ENTRADA', conn)
+        if not tipo_op_id:
+            return bad_request_error(f"Tipo de operación '{data.get('operacion')}' para ENTRADA no válido", headers)
+
+        tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_salida'), conn)
+        if not tienda_salida_id:
+            return bad_request_error(f"Almacén/Tienda de salida '{data.get('almacen_salida')}' no encontrado", headers)
+
+        tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_ingreso'), conn)
+        if not tienda_ingreso_id:
+            return bad_request_error(f"Tienda de ingreso '{data.get('almacen_ingreso')}' no encontrada", headers)
+
+        um_id = _get_id_unidad_medida_por_nombre(data.get('unidad_medida'), conn)
+        if not um_id:
+            return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
+
+        # Llamar al SP
+        params = [
+            producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
+            data.get('operador'), data.get('cantidad'), um_id,
+            data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
+        ]
+        sp_call = 'sp_registrar_entrada'
+        success, message, result_set = _ejecutar_sp_con_transaccion(conn, sp_call, params)
+
+        if success:
+            nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+            return created_response(data={'id': nuevo_id}, message="Entrada registrada exitosamente", headers=headers)
+        else:
+            return server_error(f"Error al registrar entrada: {message}", headers)
+
+    finally:
+        conn.close()
+
+def update_entrada(request, headers, id_entrada):
+    """Edita una entrada existente usando el SP sp_editar_entrada."""
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+
+    motivo_cambio = data.get('motivo_cambio')
+    if not motivo_cambio:
+        return bad_request_error("El campo 'motivo_cambio' es obligatorio para editar", headers)
+
+    conn = get_connection()
+    try:
+        # Convertir nombres/códigos a IDs (similar a create_entrada)
+        producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
+        if not producto_id:
+            return bad_request_error("Producto no encontrado", headers)
+
+        tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(data.get('operacion'), 'ENTRADA', conn)
+        if not tipo_op_id:
+            return bad_request_error(f"Tipo de operación '{data.get('operacion')}' para ENTRADA no válido", headers)
+
+        tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_salida'), conn)
+        if not tienda_salida_id:
+            return bad_request_error(f"Almacén/Tienda de salida '{data.get('almacen_salida')}' no encontrado", headers)
+
+        tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_ingreso'), conn)
+        if not tienda_ingreso_id:
+            return bad_request_error(f"Tienda de ingreso '{data.get('almacen_ingreso')}' no encontrada", headers)
+
+        um_id = _get_id_unidad_medida_por_nombre(data.get('unidad_medida'), conn)
+        if not um_id:
+            return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
+
+        # Llamar al SP
+        params = [
+            id_entrada, producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
+            data.get('operador'), data.get('cantidad'), um_id,
+            data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
+            motivo_cambio
+        ]
+        sp_call = 'sp_editar_entrada'
+        success, message, _ = _ejecutar_sp_con_transaccion(conn, sp_call, params)
+
+        if success:
+            return success_response(message="Entrada actualizada exitosamente", headers=headers)
+        else:
+            return server_error(f"Error al actualizar entrada: {message}", headers)
+
+    finally:
+        conn.close()
+
+# --- MÓDULO SALIDAS ---
+def get_salidas(request, headers):
+    """Obtiene el listado de movimientos de salida."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT 
+                ms.id, ms.fecha_registro, 
+                p.codigo as producto_codigo, p.nombre as producto_nombre,
+                tos.nombre as operacion, ms.nro_comprobante, ms.asesor,
+                ms.cantidad, um.nombre as unidad_medida,
+                t.codigo as tienda_codigo, t.nombre as tienda_nombre,
+                ms.entregado_por, ms.registrado_por, ms.observaciones,
+                ms.fecha_actualizacion, ms.motivo_cambio
+            FROM movimientos_salida ms
+            JOIN productos_abastecimiento p ON ms.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON ms.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea t ON ms.id_tienda = t.id
+            JOIN unidades_medida_sea um ON ms.id_unidad_medida = um.id
+            ORDER BY ms.fecha_registro DESC
+        """
+        cursor.execute(sql)
+        salidas = cursor.fetchall()
+        return success_response(data=salidas, message="Salidas obtenidas correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_salida(request, headers):
+    """Registra una nueva salida usando el SP sp_registrar_salida."""
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+
+    conn = get_connection()
+    try:
+        producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
+        if not producto_id:
+            return bad_request_error("Producto no encontrado", headers)
+
+        tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(data.get('operacion'), 'SALIDA', conn)
+        if not tipo_op_id:
+            return bad_request_error(f"Tipo de operación '{data.get('operacion')}' para SALIDA no válido", headers)
+
+        tienda_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen'), conn)
+        if not tienda_id:
+            return bad_request_error(f"Almacén/Tienda '{data.get('almacen')}' no encontrado", headers)
+
+        um_id = _get_id_unidad_medida_por_nombre(data.get('unidad_medida'), conn)
+        if not um_id:
+            return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
+
+        # Llamar al SP
+        params = [
+            producto_id, tipo_op_id, data.get('nro_comprobante'), data.get('asesor'),
+            data.get('cantidad'), um_id, tienda_id,
+            data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
+        ]
+        sp_call = 'sp_registrar_salida'
+        success, message, result_set = _ejecutar_sp_con_transaccion(conn, sp_call, params)
+
+        if success:
+            nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+            return created_response(data={'id': nuevo_id}, message="Salida registrada exitosamente", headers=headers)
+        else:
+            return server_error(f"Error al registrar salida: {message}", headers)
+
+    finally:
+        conn.close()
+
+def update_salida(request, headers, id_salida):
+    """Edita una salida existente usando el SP sp_editar_salida."""
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+
+    motivo_cambio = data.get('motivo_cambio')
+    if not motivo_cambio:
+        return bad_request_error("El campo 'motivo_cambio' es obligatorio para editar", headers)
+
+    conn = get_connection()
+    try:
+        producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
+        if not producto_id:
+            return bad_request_error("Producto no encontrado", headers)
+
+        tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(data.get('operacion'), 'SALIDA', conn)
+        if not tipo_op_id:
+            return bad_request_error(f"Tipo de operación '{data.get('operacion')}' para SALIDA no válido", headers)
+
+        tienda_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen'), conn)
+        if not tienda_id:
+            return bad_request_error(f"Almacén/Tienda '{data.get('almacen')}' no encontrado", headers)
+
+        um_id = _get_id_unidad_medida_por_nombre(data.get('unidad_medida'), conn)
+        if not um_id:
+            return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
+
+        params = [
+            id_salida, producto_id, tipo_op_id, data.get('nro_comprobante'),
+            data.get('asesor'), data.get('cantidad'), um_id, tienda_id,
+            data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
+            motivo_cambio
+        ]
+        sp_call = 'sp_editar_salida'
+        success, message, _ = _ejecutar_sp_con_transaccion(conn, sp_call, params)
+
+        if success:
+            return success_response(message="Salida actualizada exitosamente", headers=headers)
+        else:
+            return server_error(f"Error al actualizar salida: {message}", headers)
+
+    finally:
+        conn.close()
+
+# --- MÓDULO EXISTENCIAS / STOCK TOTAL ---
+def get_existencias(request, headers):
+    """Obtiene las existencias actuales por tienda."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT 
+                p.codigo, p.nombre as producto,
+                et.id_tienda, t.codigo as tienda_codigo, t.nombre as tienda_nombre,
+                et.cantidad
+            FROM existencias_tienda et
+            JOIN productos_abastecimiento p ON et.id_producto = p.id
+            JOIN tiendas_gestion_sea t ON et.id_tienda = t.id
+            WHERE et.cantidad != 0
+            ORDER BY p.nombre, t.codigo
+        """
+        cursor.execute(sql)
+        existencias = cursor.fetchall()
+        return success_response(data=existencias, message="Existencias obtenidas correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_stock_total(request, headers):
+    """
+    Vista similar a la hoja 'Stock Total' de Excel.
+    Combina datos de productos, stock mínimo y existencias.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Esta consulta es un poco más compleja porque debe pivotear las tiendas.
+        # Por simplicidad, haremos una consulta que devuelva los datos en filas
+        # y luego el frontend los agrupará. O podemos hacer un pivot en SQL.
+        # Opción 1: Devolver datos planos y que el frontend pivote.
+        sql_plano = """
+            SELECT 
+                p.id,
+                p.codigo,
+                p.nombre,
+                p.cantidad_reg_calculo,
+                um_reg.nombre as unidad_medida_reg,
+                -- Stock minimo por tienda (viene de stock_minimo_tienda)
+                sm_t3006.stock_minimo as sm_3006,
+                sm_t3131.stock_minimo as sm_3131,
+                sm_t412a.stock_minimo as sm_412a,
+                sm_t3133.stock_minimo as sm_3133,
+                -- Existencias por tienda (viene de existencias_tienda)
+                COALESCE(ex_t3006.cantidad, 0) as existencia_3006,
+                COALESCE(ex_t3131.cantidad, 0) as existencia_3131,
+                COALESCE(ex_t412a.cantidad, 0) as existencia_412a,
+                COALESCE(ex_t3133.cantidad, 0) as existencia_3133
+            FROM productos_abastecimiento p
+            JOIN unidades_medida_sea um_reg ON p.id_unidad_medida_reg = um_reg.id
+            LEFT JOIN stock_minimo_tienda sm_t3006 ON p.id = sm_t3006.id_producto AND sm_t3006.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3006')
+            LEFT JOIN stock_minimo_tienda sm_t3131 ON p.id = sm_t3131.id_producto AND sm_t3131.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3131')
+            LEFT JOIN stock_minimo_tienda sm_t412a ON p.id = sm_t412a.id_producto AND sm_t412a.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '412-A')
+            LEFT JOIN stock_minimo_tienda sm_t3133 ON p.id = sm_t3133.id_producto AND sm_t3133.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3133')
+            LEFT JOIN existencias_tienda ex_t3006 ON p.id = ex_t3006.id_producto AND ex_t3006.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3006')
+            LEFT JOIN existencias_tienda ex_t3131 ON p.id = ex_t3131.id_producto AND ex_t3131.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3131')
+            LEFT JOIN existencias_tienda ex_t412a ON p.id = ex_t412a.id_producto AND ex_t412a.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '412-A')
+            LEFT JOIN existencias_tienda ex_t3133 ON p.id = ex_t3133.id_producto AND ex_t3133.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3133')
+            ORDER BY p.nombre
+        """
+        cursor.execute(sql_plano)
+        resultados = cursor.fetchall()
+
+        # Procesar para añadir columnas calculadas (Stock Global Minimo, Disponibles, Stock Detallado)
+        for row in resultados:
+            # Stock Global Minimo (suma de stocks minimos)
+            row['stock_global_minimo'] = (row.get('sm_3006', 0) or 0) + (row.get('sm_3131', 0) or 0) + (row.get('sm_412a', 0) or 0) + (row.get('sm_3133', 0) or 0)
+
+            # Disponibles (suma de existencias)
+            row['disponibles'] = (row.get('existencia_3006', 0) or 0) + (row.get('existencia_3131', 0) or 0) + (row.get('existencia_412a', 0) or 0) + (row.get('existencia_3133', 0) or 0)
+
+            # Stock Detallado: Cajas, Medida
+            cantidad_reg = row['cantidad_reg_calculo'] if row['cantidad_reg_calculo'] and row['cantidad_reg_calculo'] > 0 else 1
+            disponibles = row['disponibles']
+            # Cajas = REDONDEAR.MENOS(disponibles / cantidad_reg) -> En Python, es math.floor
+            import math
+            cajas = math.floor(disponibles / cantidad_reg) if cantidad_reg else 0
+            row['stock_detallado_cajas'] = cajas
+            # Medida = (Cajas * cantidad_reg) - disponibles
+            row['stock_detallado_medida'] = (cajas * cantidad_reg) - disponibles
+            row['stock_detallado_unidad_medida'] = row['unidad_medida_reg']  # Usa la misma UM
+
+        return success_response(data=resultados, message="Stock total obtenido correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- MÓDULO HISTORIAL DE CAMBIOS ---
+def get_historial_entradas(request, headers):
+    """Obtiene el historial de cambios de entradas (tabla cambios_entrada)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT 
+                ce.fecha_cambio as fecha,
+                p.codigo as producto_codigo, p.nombre as producto_nombre,
+                tos.nombre as operacion,
+                ts.codigo as tienda_salida_codigo,
+                ti.codigo as tienda_ingreso_codigo,
+                ce.operador, ce.cantidad, um.nombre as unidad_medida,
+                ce.entregado_por, ce.registrado_por, ce.observaciones,
+                ce.motivo_cambio,
+                ce.fecha_movimiento_orig
+            FROM cambios_entrada ce
+            JOIN productos_abastecimiento p ON ce.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON ce.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea ts ON ce.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea ti ON ce.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea um ON ce.id_unidad_medida = um.id
+            ORDER BY ce.fecha_cambio DESC
+        """
+        cursor.execute(sql)
+        historial = cursor.fetchall()
+        return success_response(data=historial, message="Historial de entradas obtenido correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_historial_salidas(request, headers):
+    """Obtiene el historial de cambios de salidas (tabla cambios_salida)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT 
+                cs.fecha_cambio as fecha,
+                p.codigo as producto_codigo, p.nombre as producto_nombre,
+                tos.nombre as operacion, cs.nro_comprobante, cs.asesor,
+                cs.cantidad, um.nombre as unidad_medida,
+                t.codigo as tienda_codigo,
+                cs.entregado_por, cs.registrado_por, cs.observaciones,
+                cs.motivo_cambio,
+                cs.fecha_movimiento_orig
+            FROM cambios_salida cs
+            JOIN productos_abastecimiento p ON cs.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON cs.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea t ON cs.id_tienda = t.id
+            JOIN unidades_medida_sea um ON cs.id_unidad_medida = um.id
+            ORDER BY cs.fecha_cambio DESC
+        """
+        cursor.execute(sql)
+        historial = cursor.fetchall()
+        return success_response(data=historial, message="Historial de salidas obtenido correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- MÓDULO ABASTECIMIENTO ---
+def calcular_abastecimiento(request, headers):
+    """
+    Calcula la vista previa del abastecimiento.
+    Similar a la lógica de la hoja 'Abastecimiento'.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Consulta base para obtener stock mínimo y existencias por tienda
+        sql = """
+            SELECT 
+                p.id,
+                p.codigo,
+                p.nombre,
+                p.cantidad_reg_calculo as cantidad,
+                um_reg.nombre as unidad_medida,
+                -- Stock minimo
+                COALESCE(smt_3006.stock_minimo, 0) as stock_min_3006,
+                COALESCE(smt_3131.stock_minimo, 0) as stock_min_3131,
+                COALESCE(smt_412a.stock_minimo, 0) as stock_min_412a,
+                COALESCE(smt_3133.stock_minimo, 0) as stock_min_3133,
+                -- Existencias
+                COALESCE(ext_3006.cantidad, 0) as existencia_3006,
+                COALESCE(ext_3131.cantidad, 0) as existencia_3131,
+                COALESCE(ext_412a.cantidad, 0) as existencia_412a,
+                COALESCE(ext_3133.cantidad, 0) as existencia_3133
+            FROM productos_abastecimiento p
+            JOIN unidades_medida_sea um_reg ON p.id_unidad_medida_reg = um_reg.id
+            LEFT JOIN stock_minimo_tienda smt_3006 ON p.id = smt_3006.id_producto AND smt_3006.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3006')
+            LEFT JOIN stock_minimo_tienda smt_3131 ON p.id = smt_3131.id_producto AND smt_3131.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3131')
+            LEFT JOIN stock_minimo_tienda smt_412a ON p.id = smt_412a.id_producto AND smt_412a.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '412-A')
+            LEFT JOIN stock_minimo_tienda smt_3133 ON p.id = smt_3133.id_producto AND smt_3133.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3133')
+            LEFT JOIN existencias_tienda ext_3006 ON p.id = ext_3006.id_producto AND ext_3006.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3006')
+            LEFT JOIN existencias_tienda ext_3131 ON p.id = ext_3131.id_producto AND ext_3131.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3131')
+            LEFT JOIN existencias_tienda ext_412a ON p.id = ext_412a.id_producto AND ext_412a.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '412-A')
+            LEFT JOIN existencias_tienda ext_3133 ON p.id = ext_3133.id_producto AND ext_3133.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3133')
+            ORDER BY p.nombre
+        """
+        cursor.execute(sql)
+        productos_base = cursor.fetchall()
+
+        resultados = []
+        for row in productos_base:
+            # Calcular la sección "Abastecer" (stock_min - existencia)
+            abast_3006 = max(0, (row['stock_min_3006'] or 0) - (row['existencia_3006'] or 0))
+            abast_3131 = max(0, (row['stock_min_3131'] or 0) - (row['existencia_3131'] or 0))
+            abast_412a = max(0, (row['stock_min_412a'] or 0) - (row['existencia_412a'] or 0))
+            abast_3133 = max(0, (row['stock_min_3133'] or 0) - (row['existencia_3133'] or 0))
+
+            # Calcular "ABASTECER CAJAS"
+            total_abastecer_unidades = abast_3006 + abast_3131 + abast_412a + abast_3133
+            cantidad_reg = row['cantidad'] if row['cantidad'] and row['cantidad'] > 0 else 1
+            import math
+            abastecer_cajas = math.ceil(total_abastecer_unidades / cantidad_reg)  # Usamos CEIL para redondear hacia arriba
+
+            # Calcular "ENVIAR" (SI si abastecer_cajas > 0, NO si es 0)
+            enviar = 'SI' if abastecer_cajas > 0 else 'NO'
+
+            resultados.append({
+                'codigo': row['codigo'],
+                'nombre': row['nombre'],
+                'cantidad': cantidad_reg,
+                'unidad_medida': row['unidad_medida'],
+                'abastecer_3006': abast_3006,
+                'abastecer_3131': abast_3131,
+                'abastecer_412a': abast_412a,
+                'abastecer_3133': abast_3133,
+                'abastecer_cajas': abastecer_cajas,
+                'enviar': enviar
+            })
+
+        return success_response(data=resultados, message="Cálculo de abastecimiento realizado", headers=headers)
+
+    finally:
+        cursor.close()
+        conn.close()
+
+def guardar_abastecimiento(request, headers):
+    """
+    Guarda un abastecimiento. Primero crea la cabecera y luego los detalles.
+    """
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+
+    nombre_abastecimiento = data.get('nombre_abastecimiento')
+    registrado_por = data.get('registrado_por')
+    detalles = data.get('detalles')  # Lista de productos a guardar
+
+    if not nombre_abastecimiento or not registrado_por or detalles is None:
+        return bad_request_error("Faltan campos: nombre_abastecimiento, registrado_por, detalles", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. Insertar cabecera y obtener el ID
+        cursor.callproc('sp_guardar_abastecimiento', (nombre_abastecimiento, registrado_por, 0))
+        conn.commit()
+        # Obtener el OUT parameter. Dependiendo de la librería, puede estar en cursor._last_insert_id o en fetchall()
+        cursor.execute("SELECT LAST_INSERT_ID() as id")
+        id_cabecera = cursor.fetchone()['id']
+
+        if not id_cabecera:
+            raise Exception("No se pudo obtener el ID de la cabecera de abastecimiento")
+
+        # 2. Insertar detalles usando el SP de detalle
+        for detalle in detalles:
+            # Obtener IDs de producto
+            producto_id = _get_id_producto_por_codigo_o_nombre(detalle.get('codigo'), conn)
+            if not producto_id:
+                # Si no encuentra el producto, podrías saltarlo o devolver error
+                logging.warning(f"Producto con código '{detalle.get('codigo')}' no encontrado. Se omite.")
+                continue
+
+            cursor.callproc('sp_guardar_abastecimiento_detalle', (
+                id_cabecera,
+                producto_id,
+                detalle.get('cant_tienda_3006', 0),
+                detalle.get('cant_tienda_3131', 0),
+                detalle.get('cant_tienda_412a', 0),
+                detalle.get('cant_tienda_3133', 0),
+                detalle.get('abastecer_cajas', 0),
+                detalle.get('enviar', 'NO')
+            ))
+        conn.commit()
+
+        return created_response(data={'id_abastecimiento': id_cabecera}, message="Abastecimiento guardado exitosamente", headers=headers)
+
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error guardando abastecimiento: {traceback.format_exc()}")
+        return server_error(f"Error guardando abastecimiento: {str(e)}", headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_historial_abastecimientos(request, headers):
+    """Obtiene la lista de nombres de abastecimientos guardados (para el combo box)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = "SELECT id, nombre, registrado_por, fecha_registro FROM abastecimiento_cabecera ORDER BY fecha_registro DESC"
+        cursor.execute(sql)
+        historial = cursor.fetchall()
+        return success_response(data=historial, message="Historial de abastecimientos obtenido", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_detalle_abastecimiento(request, headers, nombre_abastecimiento):
+    """
+    Obtiene el detalle de un abastecimiento específico por su nombre.
+    Idealmente usarías el ID, pero tu descripción dice que filtras por nombre.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Obtener la cabecera
+        sql_cab = "SELECT id, nombre, registrado_por, fecha_registro FROM abastecimiento_cabecera WHERE nombre = %s"
+        cursor.execute(sql_cab, (nombre_abastecimiento,))
+        cabecera = cursor.fetchone()
+        if not cabecera:
+            return not_found_error(f"Abastecimiento '{nombre_abastecimiento}' no encontrado", headers)
+
+        # Obtener el detalle
+        sql_det = """
+            SELECT 
+                p.codigo, p.nombre,
+                ad.cantidad_reg_calculo as cantidad,
+                um.nombre as unidad_medida,
+                ad.cant_tienda_3006, ad.cant_tienda_3131, ad.cant_tienda_412a, ad.cant_tienda_3133,
+                ad.abastecer_cajas, ad.enviar
+            FROM abastecimiento_detalle ad
+            JOIN productos_abastecimiento p ON ad.id_producto = p.id
+            JOIN unidades_medida_sea um ON ad.id_unidad_medida = um.id
+            WHERE ad.id_abastecimiento = %s
+        """
+        cursor.execute(sql_det, (cabecera['id'],))
+        detalles = cursor.fetchall()
+
+        response_data = {
+            'cabecera': cabecera,
+            'detalles': detalles
+        }
+        return success_response(data=response_data, message="Detalle de abastecimiento obtenido", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_historial_abastecimiento_general(request, headers):
+    """
+    Obtiene el historial general de todos los abastecimientos (como la hoja final).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT 
+                p.codigo, p.nombre,
+                ad.cantidad_reg_calculo as cantidad,
+                um.nombre as unidad_medida,
+                ad.cant_tienda_3006, ad.cant_tienda_3131, ad.cant_tienda_412a, ad.cant_tienda_3133,
+                ad.abastecer_cajas, ad.enviar,
+                ac.nombre as nombre_abastecimiento,
+                ac.fecha_registro,
+                ac.registrado_por
+            FROM abastecimiento_detalle ad
+            JOIN abastecimiento_cabecera ac ON ad.id_abastecimiento = ac.id
+            JOIN productos_abastecimiento p ON ad.id_producto = p.id
+            JOIN unidades_medida_sea um ON ad.id_unidad_medida = um.id
+            ORDER BY ac.fecha_registro DESC, p.nombre
+        """
+        cursor.execute(sql)
+        historial = cursor.fetchall()
+        return success_response(data=historial, message="Historial general de abastecimientos obtenido", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+# ============================================================
+# FUNCIÓN PRINCIPAL (FUNCION QUE ENRUTA TODOS LOS PROCESOS)
+# ============================================================
+@functions_framework.http
+def abastecimiento_entra_salida_malvinas(request):
+    # 1. Definición de headers (se usa en todos los retornos)
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Content-Type': 'application/json'
+    }
+
+    # Manejo de OPTIONS (CORS preflight)
+    if request.method == "OPTIONS":
+        return ("", 204, headers)
+
+    try:
+        # --- ENRUTAMIENTO BASADO EN MÉTODO HTTP Y RUTA ---
+        path = request.path
+        method = request.method
+
+        # ==================== MÓDULO: TIENDAS ====================
+        if path == '/api/tiendas' and method == 'GET':
+            return get_tiendas(request, headers)
+        
+        # ==================== MÓDULO: UNIDADES DE MEDIDA ====================
+        elif path == '/api/unidades-medida' and method == 'GET':
+            return get_unidades_medida(request, headers)
+
+        # ==================== MÓDULO: PRODUCTOS ====================
+        elif path == '/api/productos' and method == 'GET':
+            return get_productos(request, headers)
+        elif path == '/api/productos' and method == 'POST':
+            return create_producto(request, headers)
+        # (Aquí podrías añadir PUT y DELETE para productos si es necesario)
+
+        # ==================== MÓDULO: ENTRADAS ====================
+        elif path == '/api/entradas' and method == 'GET':
+            return get_entradas(request, headers)
+        elif path == '/api/entradas' and method == 'POST':
+            return create_entrada(request, headers)
+        elif path.startswith('/api/entradas/') and method == 'PUT':
+            # Extraer ID de la ruta: /api/entradas/123
+            id_entrada = path.split('/')[-1]
+            if id_entrada.isdigit():
+                return update_entrada(request, headers, int(id_entrada))
+            else:
+                return not_found_error("ID de entrada inválido", headers)
+        # Ruta para obtener los tipos de operación de ENTRADA
+        elif path == '/api/tipos-operacion/entrada' and method == 'GET':
+            return get_tipos_operacion('ENTRADA', headers)
+
+        # ==================== MÓDULO: SALIDAS ====================
+        elif path == '/api/salidas' and method == 'GET':
+            return get_salidas(request, headers)
+        elif path == '/api/salidas' and method == 'POST':
+            return create_salida(request, headers)
+        elif path.startswith('/api/salidas/') and method == 'PUT':
+            id_salida = path.split('/')[-1]
+            if id_salida.isdigit():
+                return update_salida(request, headers, int(id_salida))
+            else:
+                return not_found_error("ID de salida inválido", headers)
+        # Ruta para obtener los tipos de operación de SALIDA
+        elif path == '/api/tipos-operacion/salida' and method == 'GET':
+            return get_tipos_operacion('SALIDA', headers)
+
+        # ==================== MÓDULO: EXISTENCIAS / STOCK TOTAL ====================
+        elif path == '/api/existencias' and method == 'GET':
+            return get_existencias(request, headers)
+        elif path == '/api/stock-total' and method == 'GET':
+            return get_stock_total(request, headers)  # Vista similar a la hoja "Stock Total"
+
+        # ==================== MÓDULO: HISTORIAL DE CAMBIOS ====================
+        elif path == '/api/historial/entradas' and method == 'GET':
+            return get_historial_entradas(request, headers)
+        elif path == '/api/historial/salidas' and method == 'GET':
+            return get_historial_salidas(request, headers)
+
+        # ==================== MÓDULO: ABASTECIMIENTO ====================
+        elif path == '/api/abastecimiento/calcular' and method == 'GET':
+            return calcular_abastecimiento(request, headers)  # Calcula la vista previa
+        elif path == '/api/abastecimiento/guardar' and method == 'POST':
+            return guardar_abastecimiento(request, headers)   # Guarda un abastecimiento
+        elif path == '/api/abastecimiento/historial' and method == 'GET':
+            return get_historial_abastecimientos(request, headers) # Lista de nombres
+        elif path.startswith('/api/abastecimiento/detalle/') and method == 'GET':
+            nombre_abastecimiento = path.split('/')[-1]
+            # Podrías necesitar decodificar el nombre si tiene caracteres especiales
+            return get_detalle_abastecimiento(request, headers, nombre_abastecimiento)
+        elif path == '/api/abastecimiento/historial-general' and method == 'GET':
+            return get_historial_abastecimiento_general(request, headers)
+
+        # ==================== 404 - RUTA NO ENCONTRADA ====================
+        else:
+            return not_found_error(f"Ruta {method} {path} no encontrada", headers)
+
+    except pymysql.Error as e:
+        logging.error(f"Error en la base de datos: {traceback.format_exc()}")
+        return server_error(f"Error en la base de datos: {str(e)}", headers)
+    except Exception as e:
+        logging.error(f"Error interno del servidor: {traceback.format_exc()}")
+        return server_error(f"Error interno del servidor: {str(e)}", headers)

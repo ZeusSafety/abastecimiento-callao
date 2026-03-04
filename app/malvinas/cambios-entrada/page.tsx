@@ -1,14 +1,19 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas } from '../../context/MalvinasContext';
 import { Search, TrendingUp } from 'lucide-react';
 
 export default function CambiosEntradaPage() {
-    const { state } = useMalvinas();
+    const { state, refreshHistorialEntradas } = useMalvinas();
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
     const PER_PAGE = 20;
+
+    // Cargar datos al montar el componente
+    useEffect(() => {
+        refreshHistorialEntradas();
+    }, [refreshHistorialEntradas]);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();

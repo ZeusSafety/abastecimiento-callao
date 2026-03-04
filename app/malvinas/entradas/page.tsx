@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     useMalvinas,
     TIENDAS,
@@ -16,6 +16,7 @@ import {
 import {
     Plus, Search, Edit3, X, Save, PackagePlus, ChevronDown
 } from 'lucide-react';
+import TableSkeleton from '../../components/TableSkeleton';
 
 // ─── Modal Registro Entrada ───────────────────────────────────────────────────
 function ModalEntrada({
@@ -27,7 +28,7 @@ function ModalEntrada({
     onClose: () => void;
     editData?: RegistroEntrada | null;
 }) {
-    const { state, addEntrada, updateEntrada, showToast } = useMalvinas();
+    const { state, addEntrada, updateEntrada, showToast, refreshEntradas } = useMalvinas();
 
     const [form, setForm] = useState({
         productoId: editData?.productoId ?? '',
@@ -45,6 +46,31 @@ function ModalEntrada({
     });
 
     const isEdit = !!editData;
+    const [fechaActual, setFechaActual] = useState('');
+
+    // Inicializar fecha solo en el cliente
+    useEffect(() => {
+        setFechaActual(new Date().toLocaleString('es-PE'));
+    }, []);
+
+    // Inicializar productoId cuando editData cambia
+    useEffect(() => {
+        if (editData && editData.producto) {
+            // Buscar producto por código o nombre
+            const producto = state.productos.find(p => 
+                p.codigo === editData.producto || 
+                p.nombre === editData.producto ||
+                p.id === editData.productoId
+            );
+            if (producto) {
+                setForm(f => ({
+                    ...f,
+                    productoId: producto.id,
+                    producto: producto.nombre,
+                }));
+            }
+        }
+    }, [editData, state.productos]);
 
     // Auto-fill unidad/codigo al seleccionar producto
     const handleProductoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -61,43 +87,55 @@ function ModalEntrada({
 
     const selectedProducto = state.productos.find(p => p.id === form.productoId);
 
-    const handleSubmit = () => {
-        if (!form.productoId) { showToast('error', 'Selecciona un producto'); return; }
-        if (!form.cantidad || form.cantidad <= 0) { showToast('error', 'Ingresa una cantidad válida'); return; }
-        if (isEdit && !form.motivoCambio.trim()) { showToast('error', 'Ingresa el motivo del cambio'); return; }
-
-        if (isEdit) {
-            updateEntrada(editData!.id, {
-                productoId: form.productoId,
-                producto: form.producto,
-                operacion: form.operacion,
-                almacenSalida: form.almacenSalida,
-                almacenIngreso: form.almacenIngreso,
-                operador: form.operador,
-                cantidad: Number(form.cantidad),
-                unidadMedida: form.unidadMedida,
-                entregado: form.entregado,
-                registradoPor: form.registradoPor,
-                observaciones: form.observaciones,
-            }, form.motivoCambio);
-            showToast('success', 'Entrada actualizada correctamente');
-        } else {
-            addEntrada({
-                productoId: form.productoId,
-                producto: form.producto,
-                operacion: form.operacion,
-                almacenSalida: form.almacenSalida,
-                almacenIngreso: form.almacenIngreso,
-                operador: form.operador,
-                cantidad: Number(form.cantidad),
-                unidadMedida: form.unidadMedida,
-                entregado: form.entregado,
-                registradoPor: form.registradoPor,
-                observaciones: form.observaciones,
-            });
-            showToast('success', 'Entrada registrada correctamente');
+    const handleSubmit = async () => {
+        if (!form.productoId || form.productoId === '') { 
+            showToast('error', 'Selecciona un producto'); 
+            return; 
         }
-        onClose();
+        if (!form.cantidad || form.cantidad <= 0) { 
+            showToast('error', 'Ingresa una cantidad válida mayor a 0'); 
+            return; 
+        }
+        if (isEdit && !form.motivoCambio.trim()) { 
+            showToast('error', 'Ingresa el motivo del cambio'); 
+            return; 
+        }
+
+        try {
+            if (isEdit) {
+                await updateEntrada(editData!.id, {
+                    productoId: form.productoId,
+                    producto: form.producto,
+                    operacion: form.operacion,
+                    almacenSalida: form.almacenSalida,
+                    almacenIngreso: form.almacenIngreso,
+                    operador: form.operador,
+                    cantidad: Number(form.cantidad),
+                    unidadMedida: form.unidadMedida,
+                    entregado: form.entregado,
+                    registradoPor: form.registradoPor,
+                    observaciones: form.observaciones,
+                }, form.motivoCambio);
+            } else {
+                await addEntrada({
+                    productoId: form.productoId,
+                    producto: form.producto,
+                    operacion: form.operacion,
+                    almacenSalida: form.almacenSalida,
+                    almacenIngreso: form.almacenIngreso,
+                    operador: form.operador,
+                    cantidad: Number(form.cantidad),
+                    unidadMedida: form.unidadMedida,
+                    entregado: form.entregado,
+                    registradoPor: form.registradoPor,
+                    observaciones: form.observaciones,
+                });
+            }
+            await refreshEntradas();
+            onClose();
+        } catch (error) {
+            // El error ya se maneja en las funciones del contexto
+        }
     };
 
     if (!isOpen) return null;
@@ -134,7 +172,7 @@ function ModalEntrada({
                             <label className="form-label">Fecha y Hora</label>
                             <input
                                 type="text"
-                                value={new Date().toLocaleString('es-PE')}
+                                value={fechaActual || (isEdit && editData?.fecha ? editData.fecha : '')}
                                 readOnly
                                 className="form-input"
                                 style={{ background: '#f8fafc', color: '#6b7280', fontSize: 12 }}
@@ -241,9 +279,18 @@ function ModalEntrada({
                             <label className="form-label">Cantidad *</label>
                             <input
                                 type="number"
-                                min={1}
-                                value={form.cantidad || ''}
-                                onChange={e => setForm(f => ({ ...f, cantidad: Number(e.target.value) }))}
+                                min="0"
+                                step="1"
+                                value={form.cantidad === 0 ? '' : form.cantidad}
+                                onChange={e => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    setForm(f => ({ ...f, cantidad: val }));
+                                }}
+                                onBlur={e => {
+                                    if (e.target.value === '' || Number(e.target.value) <= 0) {
+                                        setForm(f => ({ ...f, cantidad: 0 }));
+                                    }
+                                }}
                                 className="form-input"
                                 style={{ fontSize: 12 }}
                                 placeholder="0"
@@ -340,12 +387,23 @@ function ModalEntrada({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function EntradasPage() {
-    const { state } = useMalvinas();
+    const { state, refreshEntradas } = useMalvinas();
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroEntrada | null>(null);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
+    const [loading, setLoading] = useState(true);
     const PER_PAGE = 15;
+
+    // Cargar entradas al montar el componente
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            await refreshEntradas();
+            setLoading(false);
+        };
+        loadData();
+    }, [refreshEntradas]);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
@@ -376,7 +434,7 @@ export default function EntradasPage() {
                             </div>
                             <div>
                                 <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
-                                    Historial de Entradas
+                                    Movimientos de Entradas
                                 </h1>
                                 <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Registro completo de todos los ingresos</p>
                             </div>
@@ -436,41 +494,49 @@ export default function EntradasPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {paginated.map(e => (
-                                        <tr key={e.id} className="hover:bg-blue-50/30 transition-colors">
-                                            <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{e.fecha}</td>
-                                            <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{e.producto}</td>
-                                            <td className="px-4 py-3">
-                                                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold uppercase tracking-wider">
-                                                    {e.operacion}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.almacenSalida}</td>
-                                            <td className="px-4 py-3 text-[11px] font-medium text-[#002D5A] uppercase">{e.almacenIngreso}</td>
-                                            <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.operador}</td>
-                                            <td className="px-4 py-3 text-center font-bold text-gray-900 text-[11px]">{e.cantidad}</td>
-                                            <td className="px-4 py-3">
-                                                <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[9px] font-bold uppercase">
-                                                    {e.unidadMedida}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-center">
-                                                <button
-                                                    onClick={() => openEdit(e)}
-                                                    className="p-1.5 rounded-lg bg-blue-50 text-[#002D5A] hover:bg-[#002D5A] hover:text-white transition-all shadow-sm"
-                                                    title="Editar"
-                                                >
-                                                    <Edit3 className="w-3.5 h-3.5" />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {paginated.length === 0 && (
+                                    {loading ? (
+                                        <TableSkeleton rows={PER_PAGE} cols={9} />
+                                    ) : paginated.length === 0 ? (
                                         <tr>
-                                            <td colSpan={9} className="px-4 py-12 text-center text-gray-400 text-xs italic">
-                                                No se encontraron registros de entrada.
+                                            <td colSpan={9} className="px-4 py-12 text-center">
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <PackagePlus className="w-12 h-12 text-gray-300" />
+                                                    <p className="text-gray-400 text-sm font-medium">
+                                                        {search ? 'No se encontraron registros con ese criterio' : 'No hay registros de entrada'}
+                                                    </p>
+                                                </div>
                                             </td>
                                         </tr>
+                                    ) : (
+                                        paginated.map(e => (
+                                            <tr key={e.id} className="hover:bg-blue-50/30 transition-colors">
+                                                <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{e.fecha}</td>
+                                                <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{e.producto}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold uppercase tracking-wider">
+                                                        {e.operacion}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.almacenSalida}</td>
+                                                <td className="px-4 py-3 text-[11px] font-medium text-[#002D5A] uppercase">{e.almacenIngreso}</td>
+                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.operador}</td>
+                                                <td className="px-4 py-3 text-center font-bold text-gray-900 text-[11px]">{e.cantidad}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[9px] font-bold uppercase">
+                                                        {e.unidadMedida}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <button
+                                                        onClick={() => openEdit(e)}
+                                                        className="p-1.5 rounded-lg bg-blue-50 text-[#002D5A] hover:bg-[#002D5A] hover:text-white transition-all shadow-sm"
+                                                        title="Editar"
+                                                    >
+                                                        <Edit3 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
                                     )}
                                 </tbody>
                             </table>

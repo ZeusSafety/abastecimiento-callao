@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     useMalvinas,
     TIENDAS,
@@ -11,8 +11,9 @@ import {
     UnidadMedida,
 } from '../../context/MalvinasContext';
 import {
-    Plus, Search, Edit3, X, Save, PackageMinus, ChevronDown
+    Plus, Search, Edit3, X, Save, PackageMinus, ChevronDown, Loader2
 } from 'lucide-react';
+import TableSkeleton from '../../components/TableSkeleton';
 
 // ─── Modal Salida ─────────────────────────────────────────────────────────────
 function ModalSalida({
@@ -24,7 +25,7 @@ function ModalSalida({
     onClose: () => void;
     editData?: RegistroSalida | null;
 }) {
-    const { state, addSalida, updateSalida, showToast } = useMalvinas();
+    const { state, addSalida, updateSalida, showToast, refreshSalidas } = useMalvinas();
 
     const [form, setForm] = useState({
         productoId: editData?.productoId ?? '',
@@ -42,6 +43,31 @@ function ModalSalida({
     });
 
     const isEdit = !!editData;
+    const [fechaActual, setFechaActual] = useState('');
+
+    // Inicializar fecha solo en el cliente
+    useEffect(() => {
+        setFechaActual(new Date().toLocaleString('es-PE'));
+    }, []);
+
+    // Inicializar productoId cuando editData cambia
+    useEffect(() => {
+        if (editData && editData.producto) {
+            // Buscar producto por código o nombre
+            const producto = state.productos.find(p => 
+                p.codigo === editData.producto || 
+                p.nombre === editData.producto ||
+                p.id === editData.productoId
+            );
+            if (producto) {
+                setForm(f => ({
+                    ...f,
+                    productoId: producto.id,
+                    producto: producto.nombre,
+                }));
+            }
+        }
+    }, [editData, state.productos]);
 
     const handleProductoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const p = state.productos.find(pr => pr.id === e.target.value);
@@ -57,43 +83,55 @@ function ModalSalida({
 
     const selectedProducto = state.productos.find(p => p.id === form.productoId);
 
-    const handleSubmit = () => {
-        if (!form.productoId) { showToast('error', 'Selecciona un producto'); return; }
-        if (!form.cantidad || form.cantidad <= 0) { showToast('error', 'Ingresa una cantidad válida'); return; }
-        if (isEdit && !form.motivoCambio.trim()) { showToast('error', 'Ingresa el motivo del cambio'); return; }
-
-        if (isEdit) {
-            updateSalida(editData!.id, {
-                productoId: form.productoId,
-                producto: form.producto,
-                operacion: form.operacion,
-                comprobante: form.comprobante,
-                asesor: form.asesor,
-                cantidad: Number(form.cantidad),
-                unidadMedida: form.unidadMedida,
-                almacen: form.almacen,
-                entregado: form.entregado,
-                registradoPor: form.registradoPor,
-                observaciones: form.observaciones,
-            }, form.motivoCambio);
-            showToast('success', 'Salida actualizada correctamente');
-        } else {
-            addSalida({
-                productoId: form.productoId,
-                producto: form.producto,
-                operacion: form.operacion,
-                comprobante: form.comprobante,
-                asesor: form.asesor,
-                cantidad: Number(form.cantidad),
-                unidadMedida: form.unidadMedida,
-                almacen: form.almacen,
-                entregado: form.entregado,
-                registradoPor: form.registradoPor,
-                observaciones: form.observaciones,
-            });
-            showToast('success', 'Salida registrada correctamente');
+    const handleSubmit = async () => {
+        if (!form.productoId || form.productoId === '') { 
+            showToast('error', 'Selecciona un producto'); 
+            return; 
         }
-        onClose();
+        if (!form.cantidad || form.cantidad <= 0) { 
+            showToast('error', 'Ingresa una cantidad válida mayor a 0'); 
+            return; 
+        }
+        if (isEdit && !form.motivoCambio.trim()) { 
+            showToast('error', 'Ingresa el motivo del cambio'); 
+            return; 
+        }
+
+        try {
+            if (isEdit) {
+                await updateSalida(editData!.id, {
+                    productoId: form.productoId,
+                    producto: form.producto,
+                    operacion: form.operacion,
+                    comprobante: form.comprobante,
+                    asesor: form.asesor,
+                    cantidad: Number(form.cantidad),
+                    unidadMedida: form.unidadMedida,
+                    almacen: form.almacen,
+                    entregado: form.entregado,
+                    registradoPor: form.registradoPor,
+                    observaciones: form.observaciones,
+                }, form.motivoCambio);
+            } else {
+                await addSalida({
+                    productoId: form.productoId,
+                    producto: form.producto,
+                    operacion: form.operacion,
+                    comprobante: form.comprobante,
+                    asesor: form.asesor,
+                    cantidad: Number(form.cantidad),
+                    unidadMedida: form.unidadMedida,
+                    almacen: form.almacen,
+                    entregado: form.entregado,
+                    registradoPor: form.registradoPor,
+                    observaciones: form.observaciones,
+                });
+            }
+            await refreshSalidas();
+            onClose();
+        } catch (error) {
+            // El error ya se maneja en las funciones del contexto
+        }
     };
 
     if (!isOpen) return null;
@@ -130,7 +168,7 @@ function ModalSalida({
                             <label className="form-label">Fecha y Hora</label>
                             <input
                                 type="text"
-                                value={new Date().toLocaleString('es-PE')}
+                                value={fechaActual || (isEdit && editData?.fecha ? editData.fecha : '')}
                                 readOnly
                                 className="form-input"
                                 style={{ background: '#f8fafc', color: '#6b7280', fontSize: 12 }}
@@ -215,9 +253,18 @@ function ModalSalida({
                             <label className="form-label">Cantidad *</label>
                             <input
                                 type="number"
-                                min={1}
-                                value={form.cantidad || ''}
-                                onChange={e => setForm(f => ({ ...f, cantidad: Number(e.target.value) }))}
+                                min="0"
+                                step="1"
+                                value={form.cantidad === 0 ? '' : form.cantidad}
+                                onChange={e => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    setForm(f => ({ ...f, cantidad: val }));
+                                }}
+                                onBlur={e => {
+                                    if (e.target.value === '' || Number(e.target.value) <= 0) {
+                                        setForm(f => ({ ...f, cantidad: 0 }));
+                                    }
+                                }}
                                 className="form-input"
                                 style={{ fontSize: 12 }}
                                 placeholder="0"
@@ -325,12 +372,23 @@ function ModalSalida({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SalidasPage() {
-    const { state } = useMalvinas();
+    const { state, refreshSalidas } = useMalvinas();
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroSalida | null>(null);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
+    const [loading, setLoading] = useState(true);
     const PER_PAGE = 15;
+
+    // Cargar salidas al montar el componente
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            await refreshSalidas();
+            setLoading(false);
+        };
+        loadData();
+    }, [refreshSalidas]);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
@@ -358,7 +416,7 @@ export default function SalidasPage() {
                             </div>
                             <div>
                                 <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
-                                    Historial de Salidas
+                                    Movimientos de Salidas
                                 </h1>
                                 <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Registro completo de todas las salidas</p>
                             </div>
@@ -418,10 +476,24 @@ export default function SalidasPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {paginated.map(s => (
-                                        <tr key={s.id} className="hover:bg-pink-50/30 transition-colors">
-                                            <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{s.fecha}</td>
-                                            <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{s.producto}</td>
+                                    {loading ? (
+                                        <TableSkeleton rows={PER_PAGE} cols={10} />
+                                    ) : paginated.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={10} className="px-4 py-12 text-center">
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <PackageMinus className="w-12 h-12 text-gray-300" />
+                                                    <p className="text-gray-400 text-sm font-medium">
+                                                        {search ? 'No se encontraron registros con ese criterio' : 'No hay registros de salida'}
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginated.map(s => (
+                                            <tr key={s.id} className="hover:bg-pink-50/30 transition-colors">
+                                                <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{s.fecha}</td>
+                                                <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{s.producto}</td>
                                             <td className="px-4 py-3">
                                                 <span className="px-2 py-0.5 rounded-full bg-pink-50 text-pink-700 text-[9px] font-bold uppercase tracking-wider">
                                                     {s.operacion}
@@ -446,14 +518,7 @@ export default function SalidasPage() {
                                                 </button>
                                             </td>
                                         </tr>
-                                    ))}
-                                    {paginated.length === 0 && (
-                                        <tr>
-                                            <td colSpan={9} className="px-4 py-12 text-center text-gray-400 text-xs italic">
-                                                No se encontraron registros de salida.
-                                            </td>
-                                        </tr>
-                                    )}
+                                    )))}
                                 </tbody>
                             </table>
                         </div>

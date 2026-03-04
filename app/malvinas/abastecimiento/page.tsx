@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     useMalvinas,
     TIENDAS,
     Tienda,
     AbastecimientoRow,
+    UnidadMedida,
 } from '../../context/MalvinasContext';
+import * as api from '../../services/api';
 import { Save, Eraser, X, Search, RefreshCw } from 'lucide-react';
 
 // ─── Modal Guardar Abastecimiento ─────────────────────────────────────────────
@@ -24,6 +26,17 @@ function ModalGuardar({
     const [registradoPor, setRegistradoPor] = useState('');
     const [localRows, setLocalRows] = useState<AbastecimientoRow[]>(rows);
 
+    // Actualizar localRows cuando rows cambia o cuando se abre el modal
+    useEffect(() => {
+        if (isOpen) {
+            if (rows.length > 0) {
+                setLocalRows(rows);
+            } else {
+                setLocalRows([]);
+            }
+        }
+    }, [isOpen, rows]);
+
     const limpiarNegativos = () => {
         setLocalRows(prev =>
             prev.map(r => ({
@@ -36,12 +49,20 @@ function ModalGuardar({
         showToast('info', 'Valores negativos limpiados a cero');
     };
 
-    const handleGuardar = () => {
+    const handleGuardar = async () => {
         if (!nombre.trim()) { showToast('error', 'Ingresa un nombre para el abastecimiento'); return; }
         if (!registradoPor.trim()) { showToast('error', 'Ingresa el nombre de quien registra'); return; }
-        guardarAbastecimiento(nombre, registradoPor, localRows);
-        showToast('success', `Abastecimiento "${nombre}" guardado correctamente`);
-        onClose();
+        if (localRows.length === 0) { showToast('error', 'No hay productos para guardar'); return; }
+        
+        try {
+            await guardarAbastecimiento(nombre, registradoPor, localRows);
+            showToast('success', `Abastecimiento "${nombre}" guardado correctamente`);
+            setNombre('');
+            setRegistradoPor('');
+            onClose();
+        } catch (error) {
+            // El error ya se maneja en guardarAbastecimiento
+        }
     };
 
     if (!isOpen) return null;
@@ -118,27 +139,43 @@ function ModalGuardar({
                                 </tr>
                             </thead>
                             <tbody>
-                                {localRows.map(r => (
-                                    <tr key={r.productoId}>
-                                        <td style={{ fontSize: 11, fontWeight: 600, color: '#002D5A' }}>{r.codigo}</td>
-                                        <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.nombre}</td>
-                                        <td style={{ textAlign: 'center' }}>{r.cantidad}</td>
-                                        <td><span className="badge badge-entrada" style={{ fontSize: 10 }}>{r.unidadMedida}</span></td>
-                                        {TIENDAS.map(t => (
-                                            <td key={t} style={{ textAlign: 'center' }}>
-                                                <span className={r.tiendas[t] < 0 ? 'value-negative' : r.tiendas[t] === 0 ? 'value-zero' : 'value-positive'}>
-                                                    {r.tiendas[t]}
-                                                </span>
-                                            </td>
-                                        ))}
-                                        <td style={{ textAlign: 'center', fontWeight: 700 }}>{r.abastecerCajas}</td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <span className={`badge ${r.enviar === 'SI' ? 'badge-si' : 'badge-no'}`}>
-                                                {r.enviar}
-                                            </span>
+                                {localRows.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                                                <Search className="w-12 h-12" style={{ opacity: 0.3 }} />
+                                                <p style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>
+                                                    No hay productos en el abastecimiento
+                                                </p>
+                                                <p style={{ fontSize: 12, margin: 0, opacity: 0.7 }}>
+                                                    Los datos se están cargando o no hay productos para abastecer
+                                                </p>
+                                            </div>
                                         </td>
                                     </tr>
-                                ))}
+                                ) : (
+                                    localRows.map(r => (
+                                        <tr key={r.productoId}>
+                                            <td style={{ fontSize: 11, fontWeight: 600, color: '#002D5A' }}>{r.codigo}</td>
+                                            <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.nombre}</td>
+                                            <td style={{ textAlign: 'center' }}>{r.cantidad}</td>
+                                            <td><span className="badge badge-entrada" style={{ fontSize: 10 }}>{r.unidadMedida}</span></td>
+                                            {TIENDAS.map(t => (
+                                                <td key={t} style={{ textAlign: 'center' }}>
+                                                    <span className={r.tiendas[t] < 0 ? 'value-negative' : r.tiendas[t] === 0 ? 'value-zero' : 'value-positive'}>
+                                                        {r.tiendas[t]}
+                                                    </span>
+                                                </td>
+                                            ))}
+                                            <td style={{ textAlign: 'center', fontWeight: 700 }}>{r.abastecerCajas}</td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                <span className={`badge ${r.enviar === 'SI' ? 'badge-si' : 'badge-no'}`}>
+                                                    {r.enviar}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -158,34 +195,54 @@ function ModalGuardar({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AbastecimientoPage() {
-    const { state, showToast } = useMalvinas();
+    const { state, showToast, refreshProductos } = useMalvinas();
     const [search, setSearch] = useState('');
     const [modalOpen, setModalOpen] = useState(false);
     const [page, setPage] = useState(1);
+    const [rows, setRows] = useState<AbastecimientoRow[]>([]);
     const PER_PAGE = 20;
 
-    const rows = useMemo<AbastecimientoRow[]>(() => {
-        return state.productos.map(p => {
-            const tiendas = Object.fromEntries(
-                TIENDAS.map(t => [t, p.stockMinimo[t] - p.existencia[t]])
-            ) as Record<Tienda, number>;
+    // Cargar datos de abastecimiento desde la API
+    useEffect(() => {
+        const cargarAbastecimiento = async () => {
+            try {
+                const abastecimientoData = await api.calcularAbastecimiento();
+                
+                // Convertir datos de la API al formato del frontend
+                const productosMap = new Map(state.productos.map(p => [p.codigo, p]));
+                
+                const rowsCalculados: AbastecimientoRow[] = abastecimientoData.map(item => {
+                    const producto = productosMap.get(item.codigo);
+                    const productoId = producto?.id || '';
+                    
+                    return {
+                        productoId,
+                        codigo: item.codigo,
+                        nombre: item.nombre,
+                        cantidad: item.cantidad,
+                        unidadMedida: item.unidad_medida as UnidadMedida,
+                        tiendas: {
+                            'TIENDA 3006': item.abastecer_3006,
+                            'TIENDA 3131': item.abastecer_3131,
+                            'TIENDA 412-A': item.abastecer_412a,
+                            'TIENDA 3133': item.abastecer_3133,
+                        },
+                        abastecerCajas: item.abastecer_cajas,
+                        enviar: item.enviar as 'SI' | 'NO',
+                    };
+                });
+                
+                setRows(rowsCalculados);
+            } catch (error: any) {
+                console.error('Error cargando abastecimiento:', error);
+                showToast('error', 'Error al cargar datos de abastecimiento');
+            }
+        };
 
-            const totalAbastecer = TIENDAS.reduce((acc, t) => acc + Math.max(0, tiendas[t]), 0);
-            const abastecerCajas = Math.floor(totalAbastecer / p.cantidadRegCalculo);
-            const enviar: 'SI' | 'NO' = abastecerCajas > 0 ? 'SI' : 'NO';
-
-            return {
-                productoId: p.id,
-                codigo: p.codigo,
-                nombre: p.nombre,
-                cantidad: p.cantidadRegCalculo,
-                unidadMedida: p.unidadMedidaRegCalculo,
-                tiendas,
-                abastecerCajas,
-                enviar,
-            };
-        });
-    }, [state.productos]);
+        if (state.productos.length > 0) {
+            cargarAbastecimiento();
+        }
+    }, [state.productos, showToast]);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
@@ -226,7 +283,8 @@ export default function AbastecimientoPage() {
                             )}
                             <button
                                 onClick={() => setModalOpen(true)}
-                                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-[#059669] hover:bg-[#047857] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95 border-b-2 border-black/20"
+                                disabled={rows.length === 0}
+                                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-[#059669] hover:bg-[#047857] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95 border-b-2 border-black/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                             >
                                 <Save className="w-3.5 h-3.5 stroke-[3px]" />
                                 <span>GUARDAR REPORTE</span>

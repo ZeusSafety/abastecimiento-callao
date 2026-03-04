@@ -12,10 +12,14 @@ interface HeaderProps {
 
 export default function Header({ onToggleSidebar }: HeaderProps) {
     const { state } = useMalvinas();
-    const [currentTime, setCurrentTime] = useState(new Date());
+    const [currentTime, setCurrentTime] = useState<Date | null>(null);
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+    const [mounted, setMounted] = useState(false);
 
+    // Solo inicializar después de montar en el cliente
     useEffect(() => {
+        setMounted(true);
+        setCurrentTime(new Date());
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
     }, []);
@@ -50,9 +54,15 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
                 </div>
                 <div className="hidden lg:block">
                     <span style={{ color: '#e5e7eb', fontSize: 12, margin: '0 12px' }}>|</span>
-                    <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 700, letterSpacing: '0.1em' }}>
-                        {fmtTime(currentTime).toUpperCase()}
-                    </span>
+                    {mounted && currentTime ? (
+                        <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 700, letterSpacing: '0.1em' }}>
+                            {fmtTime(currentTime).toUpperCase()}
+                        </span>
+                    ) : (
+                        <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 700, letterSpacing: '0.1em', minWidth: '150px', display: 'inline-block' }}>
+                            {' '}
+                        </span>
+                    )}
                 </div>
             </div>
 
