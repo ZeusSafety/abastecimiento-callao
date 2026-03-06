@@ -11,6 +11,7 @@ import {
 import * as api from '../../services/api';
 import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
+import { exportToPDF } from '../../utils/export';
 
 // ─── Modal Guardar Abastecimiento ─────────────────────────────────────────────
 function ModalGuardar({
@@ -295,6 +296,47 @@ export default function AbastecimientoPage() {
         setModalImagenOpen(true);
     };
 
+    const handleDescargarPDF = () => {
+        const productosSI = rows.filter(r => r.enviar === 'SI');
+        
+        if (productosSI.length === 0) {
+            showToast('error', 'No hay productos con ENVIAR = SI para descargar');
+            return;
+        }
+
+        // Preparar datos para el PDF
+        const datosPDF = productosSI.map(row => ({
+            codigo: row.codigo,
+            producto: row.nombre,
+            cantidad: row.cantidad,
+            unidadMedida: row.unidadMedida,
+            tienda3006: row.tiendas['TIENDA 3006'],
+            tienda3131: row.tiendas['TIENDA 3131'],
+            tienda412A: row.tiendas['TIENDA 412-A'],
+            tienda3133: row.tiendas['TIENDA 3133'],
+            abastecerCajas: row.abastecerCajas,
+            enviar: row.enviar,
+        }));
+
+        // Definir columnas para el PDF
+        const columns = [
+            { header: 'CÓDIGO', dataKey: 'codigo' },
+            { header: 'PRODUCTO', dataKey: 'producto' },
+            { header: 'CANT.', dataKey: 'cantidad' },
+            { header: 'U. MEDIDA', dataKey: 'unidadMedida' },
+            { header: 'TIENDA 3006', dataKey: 'tienda3006' },
+            { header: 'TIENDA 3131', dataKey: 'tienda3131' },
+            { header: 'TIENDA 412-A', dataKey: 'tienda412A' },
+            { header: 'TIENDA 3133', dataKey: 'tienda3133' },
+            { header: 'ABASTECER CAJAS', dataKey: 'abastecerCajas' },
+            { header: 'ENVIAR', dataKey: 'enviar' },
+        ];
+
+        const fecha = new Date().toISOString().split('T')[0];
+        exportToPDF(datosPDF, columns, `Abastecimiento_Stock_SI_${fecha}`, 'ABASTECIMIENTO AUTOMÁTICO - STOCK (ENVIAR = SI)');
+        showToast('success', `PDF descargado con ${productosSI.length} producto(s)`);
+    };
+
     const handleDescargarImagen = async () => {
         if (generandoImagen) return;
         if (!capturaRef.current) {
@@ -397,6 +439,14 @@ export default function AbastecimientoPage() {
                             >
                                 <ImageIcon className="w-3.5 h-3.5 stroke-[3px]" />
                                 <span>GENERAR IMAGEN STOCK</span>
+                            </button>
+                            <button
+                                onClick={handleDescargarPDF}
+                                disabled={rows.filter(r => r.enviar === 'SI').length === 0}
+                                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-[#dc2626] hover:bg-[#b91c1c] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95 border-b-2 border-black/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                            >
+                                <Download className="w-3.5 h-3.5 stroke-[3px]" />
+                                <span>DESCARGAR PDF</span>
                             </button>
                             <button
                                 onClick={() => setModalOpen(true)}

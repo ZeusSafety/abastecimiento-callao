@@ -26,13 +26,112 @@ function StockBadge({ value, min }: { value: number; min: number }) {
     return <span className="text-gray-900 font-medium">{value}</span>;
 }
 
+const STORAGE_KEY_SELECTED = 'malvinas_inventario_selected';
+const STORAGE_KEY_EDITING = 'malvinas_inventario_editing';
+
 export default function StockTotalPage() {
     const { state, refreshProductos, showToast } = useMalvinas();
     const [search, setSearch] = useState('');
     const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
     const [editingProducts, setEditingProducts] = useState<Map<string, EditingProduct>>(new Map());
     const [isSaving, setIsSaving] = useState(false);
+    const [isRestoring, setIsRestoring] = useState(true);
     const isLoading = state.loading;
+
+    // Restaurar datos del localStorage al cargar (solo una vez cuando los productos estén listos)
+    useEffect(() => {
+        // Solo restaurar si los productos están cargados y no estamos en estado de carga
+        if (isLoading || state.productos.length === 0) return;
+
+        try {
+            const savedSelected = localStorage.getItem(STORAGE_KEY_SELECTED);
+            const savedEditing = localStorage.getItem(STORAGE_KEY_EDITING);
+
+            if (savedSelected) {
+                const selectedArray = JSON.parse(savedSelected);
+                if (Array.isArray(selectedArray) && selectedArray.length > 0) {
+                    // Verificar que los productos seleccionados aún existen
+                    const validSelected = selectedArray.filter(id => 
+                        state.productos.some(p => p.id === id)
+                    );
+                    if (validSelected.length > 0) {
+                        setSelectedProducts(new Set(validSelected));
+                    }
+                }
+            }
+
+            if (savedEditing) {
+                const editingData = JSON.parse(savedEditing);
+                if (typeof editingData === 'object' && editingData !== null) {
+                    const restoredEditing = new Map<string, EditingProduct>();
+                    
+                    Object.entries(editingData).forEach(([productId, editing]: [string, any]) => {
+                        // Verificar que el producto aún existe en la lista
+                        const producto = state.productos.find(p => p.id === productId);
+                        if (producto && editing && editing.editing) {
+                            restoredEditing.set(productId, {
+                                ...producto,
+                                editing: {
+                                    cantidadRegCalculo: editing.editing.cantidadRegCalculo ?? producto.cantidadRegCalculo,
+                                    stockMinimo: editing.editing.stockMinimo || { ...producto.stockMinimo },
+                                },
+                            });
+                        }
+                    });
+                    
+                    if (restoredEditing.size > 0) {
+                        setEditingProducts(restoredEditing);
+                        // Restaurar también los seleccionados si no se restauraron antes
+                        if (!savedSelected) {
+                            setSelectedProducts(new Set(restoredEditing.keys()));
+                        }
+                        showToast('info', `Se restauraron ${restoredEditing.size} producto(s) en edición`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error al restaurar datos del localStorage:', error);
+        } finally {
+            setIsRestoring(false);
+        }
+    }, [isLoading, state.productos]); // Ejecutar cuando los productos se carguen
+
+    // Guardar selectedProducts en localStorage
+    useEffect(() => {
+        if (!isRestoring) {
+            try {
+                const selectedArray = Array.from(selectedProducts);
+                localStorage.setItem(STORAGE_KEY_SELECTED, JSON.stringify(selectedArray));
+            } catch (error) {
+                console.error('Error al guardar selectedProducts:', error);
+            }
+        }
+    }, [selectedProducts, isRestoring]);
+
+    // Guardar editingProducts en localStorage
+    useEffect(() => {
+        if (isRestoring) return;
+
+        try {
+            if (editingProducts.size > 0) {
+                const editingData: Record<string, any> = {};
+                editingProducts.forEach((editing, productId) => {
+                    editingData[productId] = {
+                        editing: {
+                            cantidadRegCalculo: editing.editing.cantidadRegCalculo,
+                            stockMinimo: editing.editing.stockMinimo,
+                        },
+                    };
+                });
+                localStorage.setItem(STORAGE_KEY_EDITING, JSON.stringify(editingData));
+            } else {
+                // Solo limpiar editingProducts del localStorage cuando no hay productos en edición
+                localStorage.removeItem(STORAGE_KEY_EDITING);
+            }
+        } catch (error) {
+            console.error('Error al guardar/limpiar editingProducts:', error);
+        }
+    }, [editingProducts, isRestoring]);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
@@ -131,6 +230,14 @@ export default function StockTotalPage() {
             // Limpiar selección/edición de UNA sola vez
             setSelectedProducts(new Set());
             setEditingProducts(new Map());
+
+            // Limpiar localStorage después de guardar exitosamente
+            try {
+                localStorage.removeItem(STORAGE_KEY_EDITING);
+                localStorage.removeItem(STORAGE_KEY_SELECTED);
+            } catch (error) {
+                console.error('Error al limpiar localStorage:', error);
+            }
 
             showToast('success', 'Productos actualizados exitosamente');
         } catch (error: any) {
