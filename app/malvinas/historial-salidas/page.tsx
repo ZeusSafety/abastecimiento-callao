@@ -9,9 +9,13 @@ import {
     RegistroSalida,
     Tienda,
     UnidadMedida,
+    Producto,
+    getOperacionColor,
 } from '../../context/MalvinasContext';
-import { Search, PackageMinus, Edit3, X, Save, ChevronDown } from 'lucide-react';
+import { Search, PackageMinus, Edit3, X, Save, ChevronDown, FileDown, FileSpreadsheet, Eye } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
+import ProductoAutocomplete from '../../components/ProductoAutocomplete';
+import { exportToExcel, exportToPDF } from '../../utils/export';
 
 // ─── Modal Salida (Copia para edición) ────────────────────────────────────────
 function ModalSalida({
@@ -29,6 +33,7 @@ function ModalSalida({
         productoId: editData?.productoId ?? '',
         producto: editData?.producto ?? '',
         operacion: editData?.operacion ?? OPS_SALIDA[0],
+        operacionPersonalizada: '',
         comprobante: editData?.comprobante ?? '',
         asesor: editData?.asesor ?? '',
         cantidad: editData?.cantidad ?? 0,
@@ -48,10 +53,13 @@ function ModalSalida({
                 p.nombre === editData.producto ||
                 p.id === editData.productoId
             );
+            // Si la operación no está en la lista estándar, es una operación personalizada
+            const esOperacionPersonalizada = !OPS_SALIDA.includes(editData.operacion as any);
             setForm({
                 productoId: producto?.id || editData.productoId || '',
                 producto: editData.producto,
-                operacion: editData.operacion,
+                operacion: esOperacionPersonalizada ? 'OTROS' : editData.operacion,
+                operacionPersonalizada: esOperacionPersonalizada ? editData.operacion : '',
                 comprobante: editData.comprobante,
                 asesor: editData.asesor,
                 cantidad: editData.cantidad,
@@ -65,28 +73,40 @@ function ModalSalida({
         }
     }, [editData, state.productos]);
 
-    const handleProductoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const p = state.productos.find(pr => pr.id === e.target.value);
-        if (p) {
+    const handleProductoChange = (productoId: string, producto: Producto | null) => {
+        if (!producto) {
             setForm(f => ({
                 ...f,
-                productoId: p.id,
-                producto: p.nombre,
-                unidadMedida: p.unidadMedidaRegCalculo,
+                productoId: '',
+                producto: '',
+                unidadMedida: 'DOCENAS' as UnidadMedida,
             }));
+            return;
         }
+        setForm(f => ({
+            ...f,
+            productoId: productoId,
+            producto: producto.nombre,
+            unidadMedida: producto.unidadMedidaRegCalculo,
+        }));
     };
+
+    const selectedProducto = state.productos.find(p => p.id === form.productoId);
 
     const handleSubmit = async () => {
         if (!form.productoId) { showToast('error', 'Selecciona un producto'); return; }
         if (!form.cantidad || form.cantidad <= 0) { showToast('error', 'Ingresa una cantidad válida'); return; }
         if (!form.motivoCambio.trim()) { showToast('error', 'Ingresa el motivo del cambio'); return; }
+        if (form.operacion === 'OTROS' && !form.operacionPersonalizada.trim()) {
+            showToast('error', 'Especifica el nombre de la operación');
+            return;
+        }
 
         try {
             await updateSalida(editData!.id, {
                 productoId: form.productoId,
                 producto: form.producto,
-                operacion: form.operacion,
+                operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
                 comprobante: form.comprobante,
                 asesor: form.asesor,
                 cantidad: Number(form.cantidad),
@@ -127,26 +147,46 @@ function ModalSalida({
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Producto *</label>
-                            <select
+                            <ProductoAutocomplete
+                                productos={state.productos}
                                 value={form.productoId}
                                 onChange={handleProductoChange}
+                                placeholder="Buscar producto..."
+                            />
+                        </div>
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Código</label>
+                            <input
+                                type="text"
+                                value={selectedProducto?.codigo ?? ''}
+                                readOnly
                                 className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
-                            >
-                                {state.productos.map(p => (
-                                    <option key={p.id} value={p.id}>{p.codigo} - {p.nombre}</option>
-                                ))}
-                            </select>
+                                style={{ background: '#f8fafc', color: '#6b7280' }}
+                                placeholder="Selecciona un producto"
+                            />
                         </div>
                         <div>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Operación *</label>
                             <select
                                 value={form.operacion}
-                                onChange={e => setForm(f => ({ ...f, operacion: e.target.value }))}
+                                onChange={e => setForm(f => ({ ...f, operacion: e.target.value, operacionPersonalizada: e.target.value !== 'OTROS' ? '' : f.operacionPersonalizada }))}
                                 className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
                             >
                                 {OPS_SALIDA.map(op => <option key={op}>{op}</option>)}
                             </select>
                         </div>
+                        {form.operacion === 'OTROS' && (
+                            <div className="col-span-2">
+                                <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Especificar Operación *</label>
+                                <input
+                                    type="text"
+                                    value={form.operacionPersonalizada}
+                                    onChange={e => setForm(f => ({ ...f, operacionPersonalizada: e.target.value }))}
+                                    placeholder="Escribe el nombre de la operación..."
+                                    className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                                />
+                            </div>
+                        )}
                         <div>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Almacén</label>
                             <select
@@ -199,15 +239,105 @@ function ModalSalida({
     );
 }
 
+// ─── Modal Observaciones ───────────────────────────────────────────────────
+function ModalObservaciones({
+    isOpen,
+    onClose,
+    observaciones,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    observaciones: string;
+}) {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[10000]">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-[#002D5A] to-[#003d7a] px-6 py-4 flex items-center justify-between">
+                    <h2 className="text-white font-black text-lg uppercase tracking-wider">Observaciones</h2>
+                    <button
+                        onClick={onClose}
+                        className="text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 overflow-y-auto flex-1">
+                    <div className="text-gray-700 text-sm whitespace-pre-wrap" style={{ fontFamily: 'var(--font-poppins)' }}>
+                        {observaciones || 'Sin observaciones'}
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="border-t border-gray-200 px-6 py-4 flex justify-end">
+                    <button
+                        onClick={onClose}
+                        className="px-6 py-2 bg-[#002D5A] text-white rounded-lg font-semibold hover:bg-[#003d7a] transition-colors"
+                    >
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Función para formatear fecha en dos líneas ──────────────────────────────
+function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
+    if (!fechaStr) return { fecha: '-', hora: '' };
+    
+    try {
+        // Intentar parsear diferentes formatos de fecha
+        let fecha: Date;
+        
+        // Si viene en formato "DD/MM/YYYY HH:MM A. M." o similar
+        if (fechaStr.includes('/')) {
+            const parts = fechaStr.split(' ');
+            const fechaPart = parts[0]; // "DD/MM/YYYY"
+            const horaPart = parts.slice(1).join(' '); // "HH:MM A. M."
+            
+            const [dia, mes, anio] = fechaPart.split('/');
+            fecha = new Date(`${anio}-${mes}-${dia} ${horaPart}`);
+        } else {
+            fecha = new Date(fechaStr);
+        }
+        
+        if (isNaN(fecha.getTime())) {
+            return { fecha: fechaStr, hora: '' };
+        }
+        
+        // Formatear fecha: DD/MM/YYYY
+        const dia = fecha.getDate().toString().padStart(2, '0');
+        const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
+        const anio = fecha.getFullYear();
+        const fechaFormateada = `${dia}/${mes}/${anio}`;
+        
+        // Formatear hora: HH:MM a. m. / p. m.
+        let horas = fecha.getHours();
+        const minutos = fecha.getMinutes().toString().padStart(2, '0');
+        const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
+        horas = horas % 12 || 12;
+        const horaFormateada = `${horas}:${minutos} ${periodo}`;
+        
+        return { fecha: fechaFormateada, hora: horaFormateada };
+    } catch (error) {
+        return { fecha: fechaStr, hora: '' };
+    }
+}
+
 export default function HistorialSalidasPage() {
     const { state, refreshSalidas } = useMalvinas();
     const [search, setSearch] = useState('');
-    const [page, setPage] = useState(1);
     const [loading, setLoading] = useState(true);
-    const PER_PAGE = 20;
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroSalida | null>(null);
+    const [modalObsOpen, setModalObsOpen] = useState(false);
+    const [observacionesSeleccionadas, setObservacionesSeleccionadas] = useState('');
 
     // Cargar salidas al montar el componente
     useEffect(() => {
@@ -230,12 +360,46 @@ export default function HistorialSalidasPage() {
     }, [state.salidas, search]);
 
     const total = filtered.length;
-    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
     const openEdit = (e: RegistroSalida) => {
         setEditData(e);
         setModalOpen(true);
+    };
+
+    const handleExportExcel = () => {
+        const columns = [
+            { header: 'Fecha', key: 'fecha' },
+            { header: 'Producto', key: 'producto' },
+            { header: 'Operación', key: 'operacion' },
+            { header: 'Comprobante', key: 'comprobante' },
+            { header: 'Asesor', key: 'asesor' },
+            { header: 'Cantidad', key: 'cantidad' },
+            { header: 'Unidad Medida', key: 'unidadMedida' },
+            { header: 'Almacén', key: 'almacen' },
+            { header: 'Entregado', key: 'entregado' },
+            { header: 'Registrado Por', key: 'registradoPor' },
+            { header: 'Observaciones', key: 'observaciones' },
+            { header: 'Actualizado', key: 'updatedAt' },
+        ];
+        exportToExcel(filtered, columns, `Historial_Salidas_${new Date().toISOString().split('T')[0]}`);
+    };
+
+    const handleExportPDF = () => {
+        const columns = [
+            { header: 'Fecha', dataKey: 'fecha' },
+            { header: 'Producto', dataKey: 'producto' },
+            { header: 'Operación', dataKey: 'operacion' },
+            { header: 'Comprobante', dataKey: 'comprobante' },
+            { header: 'Asesor', dataKey: 'asesor' },
+            { header: 'Cantidad', dataKey: 'cantidad' },
+            { header: 'Unidad Medida', dataKey: 'unidadMedida' },
+            { header: 'Almacén', dataKey: 'almacen' },
+            { header: 'Entregado', dataKey: 'entregado' },
+            { header: 'Registrado Por', dataKey: 'registradoPor' },
+            { header: 'Observaciones', dataKey: 'observaciones' },
+            { header: 'Actualizado', dataKey: 'updatedAt' },
+        ];
+        exportToPDF(filtered, columns, `Historial_Salidas_${new Date().toISOString().split('T')[0]}`, 'Historial de Salidas');
     };
 
     return (
@@ -256,6 +420,22 @@ export default function HistorialSalidasPage() {
                                     <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Registro completo de todas las salidas</p>
                                 </div>
                             </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleExportPDF}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-red-600 hover:bg-red-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                >
+                                    <FileDown className="w-3.5 h-3.5" />
+                                    <span>Descargar PDF</span>
+                                </button>
+                                <button
+                                    onClick={handleExportExcel}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-green-600 hover:bg-green-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                >
+                                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                                    <span>Exportar Excel</span>
+                                </button>
+                            </div>
                         </header>
 
                         {/* Toolbar */}
@@ -273,7 +453,7 @@ export default function HistorialSalidasPage() {
                                         type="text"
                                         placeholder="Buscar..."
                                         value={search}
-                                        onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                        onChange={e => { setSearch(e.target.value); }}
                                         className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                     />
                                 </div>
@@ -284,7 +464,7 @@ export default function HistorialSalidasPage() {
                         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
                             <div className="overflow-x-auto" style={{ width: '100%' }}>
                                 <table className="w-full text-sm text-left" style={{ minWidth: 1400 }}>
-                                    <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                    <thead className="text-[9px] uppercase font-bold tracking-wider">
                                         <tr className="bg-[#002D5A] text-white">
                                             <th className="px-4 py-4 whitespace-nowrap">Fecha</th>
                                             <th className="px-4 py-4">Producto</th>
@@ -304,7 +484,7 @@ export default function HistorialSalidasPage() {
                                     <tbody className="divide-y divide-gray-100">
                                         {loading ? (
                                             <TableSkeleton rows={1} cols={13} />
-                                        ) : paginated.length === 0 ? (
+                                        ) : filtered.length === 0 ? (
                                             <tr>
                                                 <td colSpan={13} className="px-4 py-20 text-center">
                                                     <div className="flex flex-col items-center justify-center opacity-40">
@@ -316,14 +496,27 @@ export default function HistorialSalidasPage() {
                                                 </td>
                                             </tr>
                                         ) : (
-                                            paginated.map(e => (
+                                            filtered.map(e => {
+                                                const fechaFormateada = formatFechaDosLineas(e.fecha);
+                                                const fechaActualizacion = formatFechaDosLineas(e.updatedAt || '');
+                                                return (
                                             <tr key={e.id} className="hover:bg-blue-50/30 transition-colors">
-                                                <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{e.fecha}</td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] text-gray-700 font-medium">{fechaFormateada.fecha}</span>
+                                                        <span className="text-[9px] text-gray-500">{fechaFormateada.hora}</span>
+                                                    </div>
+                                                </td>
                                                 <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{e.producto}</td>
                                                 <td className="px-4 py-3">
-                                                    <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[9px] font-bold uppercase tracking-wider">
-                                                        {e.operacion}
-                                                    </span>
+                                                    {(() => {
+                                                        const colors = getOperacionColor(e.operacion);
+                                                        return (
+                                                            <span className={`px-2 py-0.5 rounded-full ${colors.bg} ${colors.text} text-[9px] font-bold uppercase tracking-wider`}>
+                                                                {e.operacion}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="px-4 py-3 text-[11px] text-gray-600 uppercase italic">{e.comprobante || '-'}</td>
                                                 <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.asesor || '-'}</td>
@@ -336,8 +529,28 @@ export default function HistorialSalidasPage() {
                                                 <td className="px-4 py-3 text-[11px] font-medium text-[#002D5A] uppercase">{e.almacen}</td>
                                                 <td className="px-4 py-3 text-[11px] text-gray-600 uppercase italic">{e.entregado}</td>
                                                 <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.registradoPor}</td>
-                                                <td className="px-4 py-3 text-[10px] text-gray-400 italic max-w-[150px] truncate">{e.observaciones || '-'}</td>
-                                                <td className="px-4 py-3 text-[9px] text-gray-300 whitespace-nowrap">{e.updatedAt || '-'}</td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        onClick={() => {
+                                                            setObservacionesSeleccionadas(e.observaciones || '');
+                                                            setModalObsOpen(true);
+                                                        }}
+                                                        className="p-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                                                        title="Ver observaciones"
+                                                    >
+                                                        <Eye className="w-4 h-4" />
+                                                    </button>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {fechaActualizacion.fecha !== '-' ? (
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[8px] text-gray-400">{fechaActualizacion.fecha}</span>
+                                                            <span className="text-[7px] text-gray-400">{fechaActualizacion.hora}</span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-[8px] text-gray-400">-</span>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <button
                                                         onClick={() => openEdit(e)}
@@ -348,56 +561,10 @@ export default function HistorialSalidasPage() {
                                                     </button>
                                                 </td>
                                             </tr>
-                                        )))}
+                                        )}
+                                        ))}
                                     </tbody>
                                 </table>
-                            </div>
-
-                            {/* Pagination */}
-                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setPage(1)}
-                                        disabled={page === 1}
-                                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                        style={{ fontFamily: 'var(--font-poppins)' }}
-                                    >
-                                        «
-                                    </button>
-                                    <button
-                                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                                        disabled={page === 1}
-                                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                        style={{ fontFamily: 'var(--font-poppins)' }}
-                                    >
-                                        ‹
-                                    </button>
-                                </div>
-
-                                <div className="flex flex-col items-center">
-                                    <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
-                                        Página {page} de {pages}
-                                    </span>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setPage(p => Math.min(pages, p + 1))}
-                                        disabled={page === pages}
-                                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                        style={{ fontFamily: 'var(--font-poppins)' }}
-                                    >
-                                        ›
-                                    </button>
-                                    <button
-                                        onClick={() => setPage(pages)}
-                                        disabled={page === pages}
-                                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                        style={{ fontFamily: 'var(--font-poppins)' }}
-                                    >
-                                        »
-                                    </button>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -408,6 +575,11 @@ export default function HistorialSalidasPage() {
                 isOpen={modalOpen}
                 onClose={() => { setModalOpen(false); setEditData(null); }}
                 editData={editData}
+            />
+            <ModalObservaciones
+                isOpen={modalObsOpen}
+                onClose={() => setModalObsOpen(false)}
+                observaciones={observacionesSeleccionadas}
             />
         </>
     );

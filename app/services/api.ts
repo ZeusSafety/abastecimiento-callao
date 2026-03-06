@@ -202,6 +202,36 @@ export async function createProducto(data: {
   return response.data;
 }
 
+export async function updateProducto(
+  id: number,
+  data: {
+    cantidad_reg_calculo?: number;
+    stock_minimo?: Record<string, number>;
+    existencia?: Record<string, number>;
+  }
+): Promise<void> {
+  const response = await fetchAPI(`/api/productos/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+  if (!response.success) throw new Error(response.error || 'Error al actualizar producto');
+}
+
+export async function updateProductosMasivo(
+  productos: Array<{
+    id: number;
+    cantidad_reg_calculo?: number;
+    stock_minimo?: Record<string, number>;
+  }>
+): Promise<{ total: number; ids: number[] }> {
+  const response = await fetchAPI<{ total: number; ids: number[] }>('/api/productos/masivo', {
+    method: 'PUT',
+    body: JSON.stringify({ productos }),
+  });
+  if (!response.data) throw new Error(response.error || 'Error al actualizar productos');
+  return response.data;
+}
+
 // Entradas
 export async function getEntradas(): Promise<EntradaDB[]> {
   const response = await fetchAPI<EntradaDB[]>('/api/entradas');
@@ -274,6 +304,46 @@ export async function createSalida(data: {
     body: JSON.stringify(data),
   });
   if (!response.data) throw new Error(response.error || 'Error al crear salida');
+  return response.data;
+}
+
+export async function createEntradasMasivo(entradas: Array<{
+  producto: string;
+  operacion: string;
+  almacen_salida: string;
+  almacen_ingreso: string;
+  operador?: string;
+  cantidad: number;
+  unidad_medida: string;
+  entregado_por?: string;
+  registrado_por?: string;
+  observaciones?: string;
+}>): Promise<{ ids: number[]; total: number }> {
+  const response = await fetchAPI<{ ids: number[]; total: number }>('/api/entradas/masivo', {
+    method: 'POST',
+    body: JSON.stringify({ entradas }),
+  });
+  if (!response.data) throw new Error(response.error || 'Error al crear entradas');
+  return response.data;
+}
+
+export async function createSalidasMasivo(salidas: Array<{
+  producto: string;
+  operacion: string;
+  nro_comprobante?: string;
+  asesor?: string;
+  cantidad: number;
+  unidad_medida: string;
+  almacen: string;
+  entregado_por?: string;
+  registrado_por?: string;
+  observaciones?: string;
+}>): Promise<{ ids: number[]; total: number }> {
+  const response = await fetchAPI<{ ids: number[]; total: number }>('/api/salidas/masivo', {
+    method: 'POST',
+    body: JSON.stringify({ salidas }),
+  });
+  if (!response.data) throw new Error(response.error || 'Error al crear salidas');
   return response.data;
 }
 

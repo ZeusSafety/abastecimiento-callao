@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
     useMalvinas,
     TIENDAS,
@@ -9,7 +9,8 @@ import {
     UnidadMedida,
 } from '../../context/MalvinasContext';
 import * as api from '../../services/api';
-import { Save, Eraser, X, Search, RefreshCw } from 'lucide-react';
+import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download } from 'lucide-react';
+import TableSkeleton from '../../components/TableSkeleton';
 
 // ─── Modal Guardar Abastecimiento ─────────────────────────────────────────────
 function ModalGuardar({
@@ -169,7 +170,7 @@ function ModalGuardar({
                                             ))}
                                             <td style={{ textAlign: 'center', fontWeight: 700 }}>{r.abastecerCajas}</td>
                                             <td style={{ textAlign: 'center' }}>
-                                                <span className={`badge ${r.enviar === 'SI' ? 'badge-si' : 'badge-no'}`}>
+                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-widest ${r.enviar === 'SI' ? 'bg-emerald-100 text-emerald-700 shadow-sm' : 'bg-red-100 text-red-700 shadow-sm'}`}>
                                                     {r.enviar}
                                                 </span>
                                             </td>
@@ -197,14 +198,24 @@ function ModalGuardar({
 export default function AbastecimientoPage() {
     const { state, showToast, refreshProductos } = useMalvinas();
     const [search, setSearch] = useState('');
+    const [filtroEnviar, setFiltroEnviar] = useState<'SI' | 'NO' | 'TODOS'>('SI');
     const [modalOpen, setModalOpen] = useState(false);
-    const [page, setPage] = useState(1);
     const [rows, setRows] = useState<AbastecimientoRow[]>([]);
-    const PER_PAGE = 20;
+    const [loading, setLoading] = useState(true);
+    const [modalImagenOpen, setModalImagenOpen] = useState(false);
+    const [generandoImagen, setGenerandoImagen] = useState(false);
+    const [fechaGeneracion, setFechaGeneracion] = useState<string>('');
+    const capturaRef = useRef<HTMLDivElement | null>(null);
+
+    // Inicializar fecha solo en el cliente para evitar errores de hidratación
+    useEffect(() => {
+        setFechaGeneracion(new Date().toLocaleString());
+    }, []);
 
     // Cargar datos de abastecimiento desde la API
     useEffect(() => {
         const cargarAbastecimiento = async () => {
+            setLoading(true);
             try {
                 const abastecimientoData = await api.calcularAbastecimiento();
                 
@@ -236,26 +247,124 @@ export default function AbastecimientoPage() {
             } catch (error: any) {
                 console.error('Error cargando abastecimiento:', error);
                 showToast('error', 'Error al cargar datos de abastecimiento');
+            } finally {
+                setLoading(false);
             }
         };
 
         if (state.productos.length > 0) {
             cargarAbastecimiento();
+        } else {
+            setLoading(false);
         }
     }, [state.productos, showToast]);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
-        return rows.filter(r =>
-            r.nombre.toLowerCase().includes(q) || r.codigo.toLowerCase().includes(q)
-        );
-    }, [rows, search]);
-
-    const total = filtered.length;
-    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+        return rows.filter(r => {
+            const matchSearch = r.nombre.toLowerCase().includes(q) || r.codigo.toLowerCase().includes(q);
+            const matchEnviar = filtroEnviar === 'TODOS' || r.enviar === filtroEnviar;
+            return matchSearch && matchEnviar;
+        });
+    }, [rows, search, filtroEnviar]);
 
     const paraSI = rows.filter(r => r.enviar === 'SI').length;
+    
+    // Filtrar productos según el filtro seleccionado para la imagen
+    const rowsParaImagen = useMemo(() => {
+        if (filtroEnviar === 'SI') {
+            return rows.filter(r => r.enviar === 'SI');
+        } else if (filtroEnviar === 'NO') {
+            return rows.filter(r => r.enviar === 'NO');
+        } else {
+            // TODOS
+            return rows;
+        }
+    }, [rows, filtroEnviar]);
+
+    const handleAbrirPrevisualizacion = () => {
+        if (rowsParaImagen.length === 0) {
+            const mensaje = filtroEnviar === 'SI' 
+                ? 'No hay productos con ENVIAR = SI para generar la imagen'
+                : filtroEnviar === 'NO'
+                ? 'No hay productos con ENVIAR = NO para generar la imagen'
+                : 'No hay productos para generar la imagen';
+            showToast('error', mensaje);
+            return;
+        }
+        setModalImagenOpen(true);
+    };
+
+    const handleDescargarImagen = async () => {
+        if (generandoImagen) return;
+        if (!capturaRef.current) {
+            showToast('error', 'No se encontró el contenedor para generar la imagen');
+            return;
+        }
+
+        setGenerandoImagen(true);
+        try {
+            const html2canvas = (await import('html2canvas')).default;
+
+            const original = capturaRef.current;
+            const clone = original.cloneNode(true) as HTMLElement;
+            clone.style.width = '1600px';
+            clone.style.position = 'absolute';
+            clone.style.left = '-9999px';
+            clone.style.top = '0';
+            clone.style.zIndex = '-1';
+            clone.style.backgroundColor = '#ffffff';
+            document.body.appendChild(clone);
+
+            // Esperar un tick para que el DOM aplique estilos
+            await new Promise(resolve => setTimeout(resolve, 120));
+
+            const height = Math.max(clone.scrollHeight, clone.offsetHeight, 600);
+
+            const canvas = await html2canvas(clone, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff',
+                width: 1600,
+                height,
+                windowWidth: 1600,
+                windowHeight: height,
+                imageTimeout: 20000,
+                removeContainer: true,
+                onclone: (clonedDoc) => {
+                    // Forzar antialiasing para texto
+                    const all = clonedDoc.querySelectorAll('*');
+                    all.forEach((el: any) => {
+                        try {
+                            el.style.webkitFontSmoothing = 'antialiased';
+                            el.style.mozOsxFontSmoothing = 'grayscale';
+                            el.style.textRendering = 'optimizeLegibility';
+                        } catch {}
+                    });
+                },
+            });
+
+            // Descargar como JPG
+            const imgData = canvas.toDataURL('image/jpeg', 1.0);
+            const a = document.createElement('a');
+            const fecha = new Date().toISOString().split('T')[0];
+            a.href = imgData;
+            a.download = `abastecimiento_stock_${fecha}.jpg`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => document.body.removeChild(a), 100);
+
+            document.body.removeChild(clone);
+            showToast('success', 'Imagen generada y descargada correctamente');
+            setModalImagenOpen(false);
+        } catch (e: any) {
+            console.error('Error generando imagen stock:', e);
+            showToast('error', e?.message || 'Error al generar la imagen');
+        } finally {
+            setGenerandoImagen(false);
+        }
+    };
 
     return (
         <div id="view-abastecimiento" className="animate-in fade-in duration-500 font-poppins">
@@ -282,6 +391,14 @@ export default function AbastecimientoPage() {
                                 </div>
                             )}
                             <button
+                                onClick={handleAbrirPrevisualizacion}
+                                disabled={rowsParaImagen.length === 0}
+                                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-[#0f172a] hover:bg-[#0b1223] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95 border-b-2 border-black/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                            >
+                                <ImageIcon className="w-3.5 h-3.5 stroke-[3px]" />
+                                <span>GENERAR IMAGEN STOCK</span>
+                            </button>
+                            <button
                                 onClick={() => setModalOpen(true)}
                                 disabled={rows.length === 0}
                                 className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-[#059669] hover:bg-[#047857] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95 border-b-2 border-black/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
@@ -291,6 +408,100 @@ export default function AbastecimientoPage() {
                             </button>
                         </div>
                     </header>
+
+                    {/* Contenedor oculto para generar la imagen (solo ENVIAR = SI) */}
+                    <div
+                        ref={capturaRef}
+                        style={{
+                            position: 'absolute',
+                            left: -9999,
+                            top: 0,
+                            width: 1600,
+                            background: '#ffffff',
+                            padding: 16,
+                            color: '#0f172a',
+                            fontFamily: 'var(--font-poppins)',
+                        }}
+                    >
+                        <div
+                            style={{
+                                background: '#002D5A',
+                                color: 'white',
+                                padding: '14px 16px',
+                                borderRadius: 12,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                marginBottom: 12,
+                            }}
+                        >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: 0.2 }}>
+                                    ABASTECIMIENTO AUTOMÁTICO - STOCK
+                                </div>
+                                <div style={{ fontSize: 12, opacity: 0.85 }}>
+                                    Generado: {fechaGeneracion || 'Cargando...'}
+                                </div>
+                            </div>
+                            <div style={{ fontSize: 14, fontWeight: 800 }}>
+                                Total: {rowsParaImagen.length}
+                            </div>
+                        </div>
+
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                                <tr style={{ background: '#001f3d', color: 'white' }}>
+                                    <th style={{ textAlign: 'left', padding: 10, border: '1px solid #0b2b52' }}>Código</th>
+                                    <th style={{ textAlign: 'left', padding: 10, border: '1px solid #0b2b52' }}>Producto</th>
+                                    <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>Cant.</th>
+                                    <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>U. Medida</th>
+                                    {TIENDAS.map(t => (
+                                        <th key={`img-${t}`} style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>
+                                            {t.replace('TIENDA ', '')}
+                                        </th>
+                                    ))}
+                                    <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>Abastecer Cajas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rowsParaImagen.map((r, idx) => (
+                                    <tr key={`img-row-${r.productoId}-${idx}`} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                                        <td style={{ padding: 10, border: '1px solid #e5e7eb', fontWeight: 800, color: '#002D5A' }}>{r.codigo}</td>
+                                        <td style={{ padding: 10, border: '1px solid #e5e7eb', fontWeight: 700 }}>{r.nombre}</td>
+                                        <td style={{ padding: 10, border: '1px solid #e5e7eb', textAlign: 'center', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                                            {r.cantidad}
+                                        </td>
+                                        <td style={{ padding: 10, border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 800, color: '#1d4ed8' }}>
+                                            {r.unidadMedida}
+                                        </td>
+                                        {TIENDAS.map(t => {
+                                            const val = r.tiendas[t];
+                                            const color =
+                                                val === 0 ? '#94a3b8' : val < 0 ? '#dc2626' : '#059669';
+                                            const text = val > 0 ? `+${val}` : `${val}`;
+                                            return (
+                                                <td
+                                                    key={`img-cell-${r.productoId}-${t}`}
+                                                    style={{
+                                                        padding: 10,
+                                                        border: '1px solid #e5e7eb',
+                                                        textAlign: 'center',
+                                                        fontWeight: 900,
+                                                        color,
+                                                    }}
+                                                >
+                                                    {text}
+                                                </td>
+                                            );
+                                        })}
+                                        <td style={{ padding: 10, border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 900, fontSize: 14, color: '#059669' }}>
+                                            {r.abastecerCajas}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
 
                     {/* Toolbar - Moved out of the card table area */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
@@ -309,11 +520,24 @@ export default function AbastecimientoPage() {
                                     type="text"
                                     placeholder="Buscar producto..."
                                     value={search}
-                                    onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                    onChange={e => setSearch(e.target.value)}
                                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-emerald-50 focus:border-[#059669] outline-none transition-all shadow-sm"
                                 />
                             </div>
-                            <button onClick={() => setSearch('')} className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm active:scale-95">
+                            <div className="relative">
+                                <select
+                                    value={filtroEnviar}
+                                    onChange={e => setFiltroEnviar(e.target.value as 'SI' | 'NO' | 'TODOS')}
+                                    className="w-full pl-4 pr-8 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-emerald-50 focus:border-[#059669] outline-none transition-all shadow-sm appearance-none"
+                                    style={{ paddingRight: 32 }}
+                                >
+                                    <option value="SI">Si</option>
+                                    <option value="NO">No</option>
+                                    <option value="TODOS">Todos</option>
+                                </select>
+                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            </div>
+                            <button onClick={() => { setSearch(''); setFiltroEnviar('SI'); }} className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm active:scale-95">
                                 <RefreshCw className="w-4 h-4 text-gray-500" />
                             </button>
                         </div>
@@ -325,7 +549,7 @@ export default function AbastecimientoPage() {
                         {/* Table */}
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left border-collapse">
-                                <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                <thead className="text-[9px] uppercase font-bold tracking-wider">
                                     <tr className="bg-[#002D5A] text-white">
                                         <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a]">Código</th>
                                         <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a] min-w-[200px]">Producto</th>
@@ -342,7 +566,21 @@ export default function AbastecimientoPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 font-poppins">
-                                    {paginated.map(r => (
+                                    {loading ? (
+                                        <TableSkeleton rows={5} cols={10} />
+                                    ) : filtered.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={10} className="px-4 py-20 text-center">
+                                                <div className="flex flex-col items-center justify-center opacity-40">
+                                                    <Search className="w-12 h-12 mb-4" />
+                                                    <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">
+                                                        {search || filtroEnviar !== 'TODOS' ? 'No se encontraron productos con ese criterio' : 'No hay productos para abastecer'}
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filtered.map(r => (
                                         <tr key={r.productoId} className="hover:bg-emerald-50/30 transition-colors">
                                             <td className="px-4 py-3 font-bold text-[#002D5A] border-r border-gray-50 text-[11px] uppercase tracking-tight">{r.codigo}</td>
                                             <td className="px-4 py-3 font-semibold text-gray-800 border-r border-gray-50 text-[11px] uppercase tracking-tight">{r.nombre}</td>
@@ -371,62 +609,16 @@ export default function AbastecimientoPage() {
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-widest ${r.enviar === 'SI' ? 'bg-emerald-100 text-emerald-700 shadow-sm' : 'bg-gray-100 text-gray-400 opacity-50'
+                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-widest ${r.enviar === 'SI' ? 'bg-emerald-100 text-emerald-700 shadow-sm' : 'bg-red-100 text-red-700 shadow-sm'
                                                     }`}>
                                                     {r.enviar}
                                                 </span>
                                             </td>
                                         </tr>
-                                    ))}
+                                    ))
+                                    )}
                                 </tbody>
                             </table>
-                        </div>
-
-                        {/* Pagination */}
-                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage(1)}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    «
-                                </button>
-                                <button
-                                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    ‹
-                                </button>
-                            </div>
-
-                            <div className="flex flex-col items-center">
-                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
-                                    Página {page} de {pages}
-                                </span>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
-                                    disabled={page === pages}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    ›
-                                </button>
-                                <button
-                                    onClick={() => setPage(pages)}
-                                    disabled={page === pages}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    »
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -437,6 +629,137 @@ export default function AbastecimientoPage() {
                 onClose={() => setModalOpen(false)}
                 rows={rows}
             />
+
+            {/* Modal Previsualización Imagen */}
+            {modalImagenOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalImagenOpen(false)}>
+                    <div className="modal-box" style={{ maxWidth: '95vw', width: 1400, maxHeight: '95vh', overflow: 'auto' }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                    Previsualización de Imagen Stock
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    Vista previa de la imagen que se generará 
+                                    {filtroEnviar === 'SI' && ' (solo productos con ENVIAR = SI)'}
+                                    {filtroEnviar === 'NO' && ' (solo productos con ENVIAR = NO)'}
+                                    {filtroEnviar === 'TODOS' && ' (todos los productos)'}
+                                </p>
+                            </div>
+                            <button onClick={() => setModalImagenOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body" style={{ padding: 0 }}>
+                            <div
+                                style={{
+                                    width: '100%',
+                                    background: '#ffffff',
+                                    padding: 16,
+                                    color: '#0f172a',
+                                    fontFamily: 'var(--font-poppins)',
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        background: '#002D5A',
+                                        color: 'white',
+                                        padding: '14px 16px',
+                                        borderRadius: 12,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        marginBottom: 12,
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: 0.2 }}>
+                                            ABASTECIMIENTO AUTOMÁTICO - STOCK
+                                        </div>
+                                        <div style={{ fontSize: 12, opacity: 0.85 }}>
+                                            Generado: {fechaGeneracion || 'Cargando...'}
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: 14, fontWeight: 800 }}>
+                                        Total: {rowsParaImagen.length}
+                                    </div>
+                                </div>
+
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 1200 }}>
+                                        <thead>
+                                            <tr style={{ background: '#001f3d', color: 'white' }}>
+                                                <th style={{ textAlign: 'left', padding: 10, border: '1px solid #0b2b52' }}>Código</th>
+                                                <th style={{ textAlign: 'left', padding: 10, border: '1px solid #0b2b52' }}>Producto</th>
+                                                <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>Cant.</th>
+                                                <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>U. Medida</th>
+                                                {TIENDAS.map(t => (
+                                                    <th key={`prev-${t}`} style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>
+                                                        {t.replace('TIENDA ', '')}
+                                                    </th>
+                                                ))}
+                                                <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>Abastecer Cajas</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {rowsParaImagen.map((r, idx) => (
+                                                <tr key={`prev-row-${r.productoId}-${idx}`} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                                                    <td style={{ padding: 10, border: '1px solid #e5e7eb', fontWeight: 800, color: '#002D5A' }}>{r.codigo}</td>
+                                                    <td style={{ padding: 10, border: '1px solid #e5e7eb', fontWeight: 700 }}>{r.nombre}</td>
+                                                    <td style={{ padding: 10, border: '1px solid #e5e7eb', textAlign: 'center', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                                                        {r.cantidad}
+                                                    </td>
+                                                    <td style={{ padding: 10, border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 800, color: '#1d4ed8' }}>
+                                                        {r.unidadMedida}
+                                                    </td>
+                                                    {TIENDAS.map(t => {
+                                                        const val = r.tiendas[t];
+                                                        const color =
+                                                            val === 0 ? '#94a3b8' : val < 0 ? '#dc2626' : '#059669';
+                                                        const text = val > 0 ? `+${val}` : `${val}`;
+                                                        return (
+                                                            <td
+                                                                key={`prev-cell-${r.productoId}-${t}`}
+                                                                style={{
+                                                                    padding: 10,
+                                                                    border: '1px solid #e5e7eb',
+                                                                    textAlign: 'center',
+                                                                    fontWeight: 800,
+                                                                    color,
+                                                                }}
+                                                            >
+                                                                {text}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                    <td style={{ padding: 10, border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 900, fontSize: 14, color: '#059669' }}>
+                                                        {r.abastecerCajas}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="modal-footer">
+                            <button onClick={() => setModalImagenOpen(false)} className="btn btn-secondary">
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={handleDescargarImagen} 
+                                disabled={generandoImagen}
+                                className="btn btn-success"
+                            >
+                                <Download className="w-4 h-4" />
+                                {generandoImagen ? 'Generando...' : 'Descargar Imagen'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

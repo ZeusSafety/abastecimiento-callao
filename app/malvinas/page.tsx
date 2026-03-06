@@ -1,21 +1,37 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { useMalvinas, TIENDAS, Tienda } from '../context/MalvinasContext';
-import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2 } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { useMalvinas, TIENDAS, Tienda, Producto } from '../context/MalvinasContext';
+import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
+import * as api from '../services/api';
+
+interface EditingProduct extends Producto {
+    editing: {
+        cantidadRegCalculo: number;
+        stockMinimo: Record<Tienda, number>;
+        // Existencia no se edita, solo se actualiza con entradas/salidas
+    };
+}
 
 function StockBadge({ value, min }: { value: number; min: number }) {
-    if (value === 0) return <span className="value-zero">0</span>;
-    if (value < min) return <span className="value-negative">{value}</span>;
-    return <span className="value-positive">{value}</span>;
+    if (value === 0) return <span className="text-gray-400">0</span>;
+    if (value < min && min > 0) {
+        return (
+            <span className="text-white font-bold px-2 py-1 rounded" style={{ backgroundColor: '#dc2626' }}>
+                {value}
+            </span>
+        );
+    }
+    return <span className="text-gray-900 font-medium">{value}</span>;
 }
 
 export default function StockTotalPage() {
-    const { state } = useMalvinas();
+    const { state, refreshProductos, showToast } = useMalvinas();
     const [search, setSearch] = useState('');
-    const [page, setPage] = useState(1);
-    const PER_PAGE = 20;
+    const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+    const [editingProducts, setEditingProducts] = useState<Map<string, EditingProduct>>(new Map());
+    const [isSaving, setIsSaving] = useState(false);
     const isLoading = state.loading;
 
     const filtered = useMemo(() => {
@@ -24,10 +40,6 @@ export default function StockTotalPage() {
             p => p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)
         );
     }, [state.productos, search]);
-
-    const total = filtered.length;
-    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
     // Stats cards
     const totalProductos = state.productos.length;
@@ -43,6 +55,101 @@ export default function StockTotalPage() {
         { label: 'Salidas', value: salidas, icon: TrendingUp, color: '#9d174d', bg: '#fce7f3' },
         { label: 'Stock Bajo', value: alertas, icon: AlertTriangle, color: '#92400e', bg: '#fffbeb' },
     ];
+
+    // Manejar selección de fila
+    const handleRowClick = (productId: string) => {
+        const newSelected = new Set(selectedProducts);
+        if (newSelected.has(productId)) {
+            newSelected.delete(productId);
+            // Si estaba editando, cancelar edición
+            const newEditing = new Map(editingProducts);
+            newEditing.delete(productId);
+            setEditingProducts(newEditing);
+        } else {
+            newSelected.add(productId);
+            // Iniciar modo edición
+            const producto = state.productos.find(p => p.id === productId);
+            if (producto) {
+                const newEditing = new Map(editingProducts);
+                newEditing.set(productId, {
+                    ...producto,
+                    editing: {
+                        cantidadRegCalculo: producto.cantidadRegCalculo,
+                        stockMinimo: { ...producto.stockMinimo },
+                        // Existencia no se edita, solo se actualiza con entradas/salidas
+                    },
+                });
+                setEditingProducts(newEditing);
+            }
+        }
+        setSelectedProducts(newSelected);
+    };
+
+    // Actualizar valor en edición
+    const updateEditingValue = (productId: string, field: 'cantidadRegCalculo' | 'stockMinimo', tienda?: Tienda, value?: number) => {
+        const editing = editingProducts.get(productId);
+        if (!editing) return;
+
+        const newEditing = new Map(editingProducts);
+        const updated = { ...editing };
+        
+        if (field === 'cantidadRegCalculo') {
+            updated.editing.cantidadRegCalculo = value || 0;
+        } else if (field === 'stockMinimo' && tienda) {
+            updated.editing.stockMinimo[tienda] = value || 0;
+        }
+        
+        newEditing.set(productId, updated);
+        setEditingProducts(newEditing);
+    };
+
+    // Confirmar todos los cambios
+    const handleConfirmAll = async () => {
+        if (editingProducts.size === 0) return;
+
+        setIsSaving(true);
+        try {
+            // Preparar payload masivo para el backend
+            const productosPayload = Array.from(editingProducts.entries()).map(([productId, editing]) => {
+                const stockMinimoMap: Record<string, number> = {};
+                TIENDAS.forEach(t => {
+                    const codigo = t.replace('TIENDA ', '');
+                    stockMinimoMap[codigo] = editing.editing.stockMinimo[t];
+                });
+                return {
+                    id: parseInt(productId),
+                    cantidad_reg_calculo: editing.editing.cantidadRegCalculo,
+                    stock_minimo: stockMinimoMap,
+                };
+            });
+
+            await api.updateProductosMasivo(productosPayload);
+
+            // Refrescar UNA sola vez
+            await refreshProductos();
+
+            // Limpiar selección/edición de UNA sola vez
+            setSelectedProducts(new Set());
+            setEditingProducts(new Map());
+
+            showToast('success', 'Productos actualizados exitosamente');
+        } catch (error: any) {
+            showToast('error', error.message || 'Error al actualizar productos');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // Cancelar edición de un producto
+    const handleCancelProduct = (productId: string) => {
+        const newSelected = new Set(selectedProducts);
+        newSelected.delete(productId);
+        setSelectedProducts(newSelected);
+        
+        const newEditing = new Map(editingProducts);
+        newEditing.delete(productId);
+        setEditingProducts(newEditing);
+    };
 
     return (
         <div id="view-malvinas" className="animate-in fade-in duration-500 font-poppins">
@@ -61,6 +168,21 @@ export default function StockTotalPage() {
                                 <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Vista general del stock y gestión por tienda</p>
                             </div>
                         </div>
+                        {editingProducts.size > 0 && (
+                            <div className="flex items-center gap-3">
+                                <span className="text-sm font-bold text-orange-600">
+                                    {editingProducts.size} producto(s) en edición
+                                </span>
+                                <button
+                                    onClick={handleConfirmAll}
+                                    disabled={isSaving}
+                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[11px] bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                >
+                                    <Check className="w-4 h-4" />
+                                    <span>Confirmar Todo</span>
+                                </button>
+                            </div>
+                        )}
                     </header>
 
                     {/* Stats */}
@@ -84,7 +206,7 @@ export default function StockTotalPage() {
                         })}
                     </div>
 
-                    {/* Toolbar - Moved out of table card for better accessibility */}
+                    {/* Toolbar */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-6 border-b border-gray-100 bg-transparent">
                         <div className="flex items-center gap-3">
                             <div className="p-2.5 bg-blue-100 rounded-xl shadow-sm">
@@ -104,7 +226,7 @@ export default function StockTotalPage() {
                                     type="text"
                                     placeholder="Buscar código o nombre..."
                                     value={search}
-                                    onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                    onChange={e => setSearch(e.target.value)}
                                     className="w-full pl-12 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
@@ -120,12 +242,9 @@ export default function StockTotalPage() {
 
                     {/* Table card */}
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl mt-2">
-                        {/* Table */}
-
-                        {/* Table */}
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left">
-                                <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                <thead className="text-[9px] uppercase font-bold tracking-wider">
                                     <tr className="bg-[#002D5A] text-white">
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20]">Código</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] min-w-[200px]">Producto</th>
@@ -159,8 +278,8 @@ export default function StockTotalPage() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {isLoading ? (
-                                        <TableSkeleton rows={PER_PAGE} cols={17} />
-                                    ) : paginated.length === 0 ? (
+                                        <TableSkeleton rows={20} cols={17} />
+                                    ) : filtered.length === 0 ? (
                                         <tr>
                                             <td colSpan={17} className="px-4 py-12 text-center">
                                                 <div className="flex flex-col items-center gap-3">
@@ -172,19 +291,66 @@ export default function StockTotalPage() {
                                             </td>
                                         </tr>
                                     ) : (
-                                        paginated.map(p => {
-                                            const stockGlobalMin = TIENDAS.reduce((acc, t) => acc + p.stockMinimo[t], 0);
-                                            const disponibles = TIENDAS.reduce((acc, t) => acc + p.existencia[t], 0);
-                                            const cajas = Math.floor(disponibles / p.cantidadRegCalculo);
-                                            const medida = (cajas * p.cantidadRegCalculo) - disponibles;
+                                        filtered.map(p => {
+                                            const isSelected = selectedProducts.has(p.id);
+                                            const editing = editingProducts.get(p.id);
+                                            const isEditing = !!editing;
+                                            
+                                            const stockGlobalMin = TIENDAS.reduce((acc, t) => 
+                                                acc + (editing ? editing.editing.stockMinimo[t] : p.stockMinimo[t]), 0
+                                            );
+                                            // Existencia siempre usa el valor original porque no se puede editar
+                                            const disponibles = TIENDAS.reduce((acc, t) => 
+                                                acc + p.existencia[t], 0
+                                            );
+                                            const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
+                                            const cajas = Math.floor(disponibles / cantidadReg);
+                                            const medida = (cajas * cantidadReg) - disponibles;
+                                            
                                             return (
-                                                <tr key={p.id} className="hover:bg-blue-50/30 transition-colors">
+                                                <tr
+                                                    key={p.id}
+                                                    onClick={() => handleRowClick(p.id)}
+                                                    className={`transition-all duration-200 cursor-pointer border-b border-gray-100 ${
+                                                        isEditing
+                                                            ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-l-4 border-yellow-500 shadow-sm'
+                                                            : isSelected
+                                                            ? 'bg-blue-50'
+                                                            : 'hover:bg-blue-50/30'
+                                                    }`}
+                                                >
                                                     <td className="px-4 py-3 font-bold text-[#002D5A] text-[11px]">{p.codigo}</td>
                                                     <td className="px-4 py-3 font-medium text-gray-700 text-[11px] uppercase tracking-tight">{p.nombre}</td>
-                                                    <td className="px-4 py-3 text-center font-bold text-gray-800 text-[11px]">{p.cantidadRegCalculo}</td>
+                                                    <td className="px-4 py-3 text-center font-bold text-gray-800 text-[11px]">
+                                                        {isEditing ? (
+                                                            <input
+                                                                type="number"
+                                                                value={editing.editing.cantidadRegCalculo === 0 ? '' : editing.editing.cantidadRegCalculo}
+                                                                onChange={e => updateEditingValue(p.id, 'cantidadRegCalculo', undefined, Number(e.target.value) || 0)}
+                                                                onClick={e => e.stopPropagation()}
+                                                                className="w-full px-2 py-1 border-2 border-yellow-500 rounded text-[10px] text-gray-900 font-semibold text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                                placeholder="0"
+                                                            />
+                                                        ) : (
+                                                            p.cantidadRegCalculo
+                                                        )}
+                                                    </td>
                                                     {TIENDAS.map(t => (
-                                                        <td key={`min-${t}`} className="px-2 py-3 text-center text-gray-400 text-[11px]">
-                                                            {p.stockMinimo[t] > 0 ? p.stockMinimo[t] : '-'}
+                                                        <td key={`min-${t}`} className="px-2 py-3 text-center text-[11px]">
+                                                            {isEditing ? (
+                                                                <input
+                                                                    type="number"
+                                                                    value={editing.editing.stockMinimo[t] === 0 ? '' : editing.editing.stockMinimo[t]}
+                                                                    onChange={e => updateEditingValue(p.id, 'stockMinimo', t, Number(e.target.value) || 0)}
+                                                                    onClick={e => e.stopPropagation()}
+                                                                    className="w-full px-2 py-1 border-2 border-yellow-500 rounded text-[10px] text-gray-900 font-semibold text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                                    placeholder="0"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-gray-400">
+                                                                    {p.stockMinimo[t] > 0 ? p.stockMinimo[t] : '-'}
+                                                                </span>
+                                                            )}
                                                         </td>
                                                     ))}
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]">{stockGlobalMin}</td>
@@ -193,11 +359,24 @@ export default function StockTotalPage() {
                                                             {p.unidadMedidaRegCalculo}
                                                         </span>
                                                     </td>
-                                                    {TIENDAS.map(t => (
-                                                        <td key={`ex-${t}`} className="px-2 py-3 text-center text-[11px]">
-                                                            <StockBadge value={p.existencia[t]} min={p.stockMinimo[t]} />
-                                                        </td>
-                                                    ))}
+                                                    {TIENDAS.map(t => {
+                                                        // Calcular el stock mínimo actual (puede estar en edición)
+                                                        const stockMinActual = editing ? editing.editing.stockMinimo[t] : p.stockMinimo[t];
+                                                        const existenciaActual = p.existencia[t];
+                                                        
+                                                        return (
+                                                            <td 
+                                                                key={`ex-${t}`} 
+                                                                className={`px-2 py-3 text-center text-[11px] ${
+                                                                    existenciaActual < stockMinActual && stockMinActual > 0 
+                                                                        ? 'bg-red-50' 
+                                                                        : ''
+                                                                }`}
+                                                            >
+                                                                <StockBadge value={existenciaActual} min={stockMinActual} />
+                                                            </td>
+                                                        );
+                                                    })}
                                                     <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{disponibles}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]">{cajas}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: medida < 0 ? '#dc2626' : '#22c55e' }}>
@@ -212,53 +391,6 @@ export default function StockTotalPage() {
                                     )}
                                 </tbody>
                             </table>
-                        </div>
-
-                        {/* Pagination */}
-                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage(1)}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    «
-                                </button>
-                                <button
-                                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    ‹
-                                </button>
-                            </div>
-
-                            <div className="flex flex-col items-center">
-                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
-                                    Página {page} de {pages}
-                                </span>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
-                                    disabled={page === pages}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    ›
-                                </button>
-                                <button
-                                    onClick={() => setPage(pages)}
-                                    disabled={page === pages}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    »
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>

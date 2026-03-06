@@ -216,6 +216,205 @@ def create_producto(request, headers):
         cursor.close()
         conn.close()
 
+def update_producto(request, headers, producto_id):
+    """Actualiza un producto: cantidad_reg_calculo, stock_minimo y existencia por tienda."""
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Mapeo de códigos de tienda válidos
+        tiendas_map = {
+            '3006': '3006',
+            '3131': '3131',
+            '412-A': '412-A',
+            '3133': '3133'
+        }
+
+        # Verificar que el producto existe
+        cursor.execute("SELECT id FROM productos_abastecimiento WHERE id = %s", (producto_id,))
+        if not cursor.fetchone():
+            return not_found_error(f"Producto con ID {producto_id} no encontrado", headers)
+
+        # Actualizar cantidad_reg_calculo si viene en los datos
+        if 'cantidad_reg_calculo' in data:
+            cursor.execute(
+                "UPDATE productos_abastecimiento SET cantidad_reg_calculo = %s WHERE id = %s",
+                (data['cantidad_reg_calculo'], producto_id)
+            )
+
+        # Actualizar stock_minimo por tienda
+        if 'stock_minimo' in data:
+            stock_minimo = data['stock_minimo']
+            
+            for codigo_tienda, valor in stock_minimo.items():
+                if codigo_tienda in tiendas_map:
+                    # Obtener ID de tienda
+                    cursor.execute("SELECT id FROM tiendas_gestion_sea WHERE codigo = %s", (codigo_tienda,))
+                    tienda_row = cursor.fetchone()
+                    if tienda_row:
+                        id_tienda = tienda_row['id']
+                        # Verificar si existe registro
+                        cursor.execute(
+                            "SELECT id FROM stock_minimo_tienda WHERE id_producto = %s AND id_tienda = %s",
+                            (producto_id, id_tienda)
+                        )
+                        existe = cursor.fetchone()
+                        if existe:
+                            # Actualizar
+                            cursor.execute(
+                                "UPDATE stock_minimo_tienda SET stock_minimo = %s WHERE id_producto = %s AND id_tienda = %s",
+                                (valor or 0, producto_id, id_tienda)
+                            )
+                        else:
+                            # Insertar
+                            cursor.execute(
+                                "INSERT INTO stock_minimo_tienda (id_producto, id_tienda, stock_minimo) VALUES (%s, %s, %s)",
+                                (producto_id, id_tienda, valor or 0)
+                            )
+
+        # Actualizar existencia por tienda
+        if 'existencia' in data:
+            existencia = data['existencia']
+            for codigo_tienda, valor in existencia.items():
+                if codigo_tienda in tiendas_map:
+                    # Obtener ID de tienda
+                    cursor.execute("SELECT id FROM tiendas_gestion_sea WHERE codigo = %s", (codigo_tienda,))
+                    tienda_row = cursor.fetchone()
+                    if tienda_row:
+                        id_tienda = tienda_row['id']
+                        # Verificar si existe registro
+                        cursor.execute(
+                            "SELECT id FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+                            (producto_id, id_tienda)
+                        )
+                        existe = cursor.fetchone()
+                        if existe:
+                            # Actualizar
+                            cursor.execute(
+                                "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                                (valor or 0, producto_id, id_tienda)
+                            )
+                        else:
+                            # Insertar
+                            cursor.execute(
+                                "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                                (producto_id, id_tienda, valor or 0)
+                            )
+
+        conn.commit()
+        return success_response(message="Producto actualizado exitosamente", headers=headers)
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error actualizando producto: {traceback.format_exc()}")
+        return server_error(f"Error actualizando producto: {str(e)}", headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_productos_masivo(request, headers):
+    """
+    Actualiza productos en lote (1 request / 1 transacción).
+    Solo permite actualizar: cantidad_reg_calculo y stock_minimo por tienda.
+    NOTA: existencia se actualiza únicamente con entradas/salidas.
+    """
+    data = request.get_json()
+    if not data or 'productos' not in data or not isinstance(data['productos'], list):
+        return bad_request_error("Se requiere JSON con { productos: [...] }", headers)
+
+    productos = data['productos']
+    if len(productos) == 0:
+        return bad_request_error("La lista 'productos' está vacía", headers)
+
+    # Mapeo de códigos de tienda válidos
+    tiendas_map = {
+        '3006': '3006',
+        '3131': '3131',
+        '412-A': '412-A',
+        '3133': '3133'
+    }
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        errores = []
+        ids_actualizados = []
+
+        for idx, item in enumerate(productos):
+            if not isinstance(item, dict):
+                errores.append(f"Item #{idx + 1}: formato inválido (se esperaba objeto)")
+                continue
+
+            producto_id = item.get('id')
+            if producto_id is None or not str(producto_id).isdigit():
+                errores.append(f"Item #{idx + 1}: 'id' inválido")
+                continue
+
+            producto_id = int(producto_id)
+
+            # Verificar que el producto existe
+            cursor.execute("SELECT id FROM productos_abastecimiento WHERE id = %s", (producto_id,))
+            if not cursor.fetchone():
+                errores.append(f"Item #{idx + 1}: producto con ID {producto_id} no encontrado")
+                continue
+
+            # cantidad_reg_calculo
+            if 'cantidad_reg_calculo' in item:
+                cursor.execute(
+                    "UPDATE productos_abastecimiento SET cantidad_reg_calculo = %s WHERE id = %s",
+                    (item.get('cantidad_reg_calculo'), producto_id)
+                )
+
+            # stock_minimo
+            if 'stock_minimo' in item and isinstance(item.get('stock_minimo'), dict):
+                for codigo_tienda, valor in item['stock_minimo'].items():
+                    if codigo_tienda in tiendas_map:
+                        cursor.execute("SELECT id FROM tiendas_gestion_sea WHERE codigo = %s", (codigo_tienda,))
+                        tienda_row = cursor.fetchone()
+                        if not tienda_row:
+                            continue
+                        id_tienda = tienda_row['id']
+
+                        cursor.execute(
+                            "SELECT id FROM stock_minimo_tienda WHERE id_producto = %s AND id_tienda = %s",
+                            (producto_id, id_tienda)
+                        )
+                        existe = cursor.fetchone()
+                        if existe:
+                            cursor.execute(
+                                "UPDATE stock_minimo_tienda SET stock_minimo = %s WHERE id_producto = %s AND id_tienda = %s",
+                                (valor or 0, producto_id, id_tienda)
+                            )
+                        else:
+                            cursor.execute(
+                                "INSERT INTO stock_minimo_tienda (id_producto, id_tienda, stock_minimo) VALUES (%s, %s, %s)",
+                                (producto_id, id_tienda, valor or 0)
+                            )
+
+            # existencia: ignorada a propósito
+            ids_actualizados.append(producto_id)
+
+        if errores:
+            conn.rollback()
+            return bad_request_error(f"Errores al actualizar productos: {'; '.join(errores)}", headers)
+
+        conn.commit()
+        return success_response(
+            data={'total': len(ids_actualizados), 'ids': ids_actualizados},
+            message="Productos actualizados exitosamente",
+            headers=headers
+        )
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error en update_productos_masivo: {traceback.format_exc()}")
+        return server_error(f"Error actualizando productos: {str(e)}", headers)
+    finally:
+        cursor.close()
+        conn.close()
+
 # --- MÓDULO ENTRADAS ---
 def get_entradas(request, headers):
     """Obtiene el listado de movimientos de entrada."""
@@ -293,6 +492,84 @@ def create_entrada(request, headers):
             return server_error(f"Error al registrar entrada: {message}", headers)
 
     finally:
+        conn.close()
+
+def create_entradas_masivo(request, headers):
+    """Registra múltiples entradas en una sola transacción."""
+    data = request.get_json()
+    if not data or 'entradas' not in data:
+        return bad_request_error("Datos JSON inválidos. Se espera un array 'entradas'", headers)
+    
+    entradas = data.get('entradas', [])
+    if not isinstance(entradas, list) or len(entradas) == 0:
+        return bad_request_error("El array 'entradas' no puede estar vacío", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    ids_generados = []
+    errores = []
+
+    try:
+        for idx, entrada_data in enumerate(entradas):
+            try:
+                # Convertir nombres/códigos a IDs
+                producto_id = _get_id_producto_por_codigo_o_nombre(entrada_data.get('producto'), conn)
+                if not producto_id:
+                    errores.append(f"Entrada {idx + 1}: Producto no encontrado")
+                    continue
+
+                tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(entrada_data.get('operacion'), 'ENTRADA', conn)
+                if not tipo_op_id:
+                    errores.append(f"Entrada {idx + 1}: Tipo de operación '{entrada_data.get('operacion')}' no válido")
+                    continue
+
+                tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(entrada_data.get('almacen_salida'), conn)
+                if not tienda_salida_id:
+                    errores.append(f"Entrada {idx + 1}: Almacén/Tienda de salida '{entrada_data.get('almacen_salida')}' no encontrado")
+                    continue
+
+                tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(entrada_data.get('almacen_ingreso'), conn)
+                if not tienda_ingreso_id:
+                    errores.append(f"Entrada {idx + 1}: Tienda de ingreso '{entrada_data.get('almacen_ingreso')}' no encontrada")
+                    continue
+
+                um_id = _get_id_unidad_medida_por_nombre(entrada_data.get('unidad_medida'), conn)
+                if not um_id:
+                    errores.append(f"Entrada {idx + 1}: Unidad de medida '{entrada_data.get('unidad_medida')}' no válida")
+                    continue
+
+                # Llamar al SP sin commit automático
+                params = [
+                    producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
+                    entrada_data.get('operador'), entrada_data.get('cantidad'), um_id,
+                    entrada_data.get('entregado_por'), entrada_data.get('registrado_por'), entrada_data.get('observaciones')
+                ]
+                sp_call = 'sp_registrar_entrada'
+                logging.info(f"Ejecutando SP: {sp_call} con parámetros: {params}")
+                cursor.callproc(sp_call, params)
+                result_set = cursor.fetchall()
+                nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+                ids_generados.append(nuevo_id)
+            except Exception as e:
+                errores.append(f"Entrada {idx + 1}: {str(e)}")
+                logging.error(f"Error en entrada {idx + 1}: {traceback.format_exc()}")
+
+        if errores:
+            conn.rollback()
+            return bad_request_error(f"Errores al procesar entradas: {'; '.join(errores)}", headers)
+        
+        conn.commit()
+        return created_response(
+            data={'ids': ids_generados, 'total': len(ids_generados)},
+            message=f"{len(ids_generados)} entrada(s) registrada(s) exitosamente",
+            headers=headers
+        )
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error en create_entradas_masivo: {traceback.format_exc()}")
+        return server_error(f"Error al registrar entradas: {str(e)}", headers)
+    finally:
+        cursor.close()
         conn.close()
 
 def update_entrada(request, headers, id_entrada):
@@ -415,6 +692,78 @@ def create_salida(request, headers):
             return server_error(f"Error al registrar salida: {message}", headers)
 
     finally:
+        conn.close()
+
+def create_salidas_masivo(request, headers):
+    """Registra múltiples salidas en una sola transacción."""
+    data = request.get_json()
+    if not data or 'salidas' not in data:
+        return bad_request_error("Datos JSON inválidos. Se espera un array 'salidas'", headers)
+    
+    salidas = data.get('salidas', [])
+    if not isinstance(salidas, list) or len(salidas) == 0:
+        return bad_request_error("El array 'salidas' no puede estar vacío", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    ids_generados = []
+    errores = []
+
+    try:
+        for idx, salida_data in enumerate(salidas):
+            try:
+                producto_id = _get_id_producto_por_codigo_o_nombre(salida_data.get('producto'), conn)
+                if not producto_id:
+                    errores.append(f"Salida {idx + 1}: Producto no encontrado")
+                    continue
+
+                tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(salida_data.get('operacion'), 'SALIDA', conn)
+                if not tipo_op_id:
+                    errores.append(f"Salida {idx + 1}: Tipo de operación '{salida_data.get('operacion')}' no válido")
+                    continue
+
+                tienda_id = _get_id_tienda_por_nombre_o_codigo(salida_data.get('almacen'), conn)
+                if not tienda_id:
+                    errores.append(f"Salida {idx + 1}: Almacén/Tienda '{salida_data.get('almacen')}' no encontrado")
+                    continue
+
+                um_id = _get_id_unidad_medida_por_nombre(salida_data.get('unidad_medida'), conn)
+                if not um_id:
+                    errores.append(f"Salida {idx + 1}: Unidad de medida '{salida_data.get('unidad_medida')}' no válida")
+                    continue
+
+                # Llamar al SP sin commit automático
+                params = [
+                    producto_id, tipo_op_id, salida_data.get('nro_comprobante'), salida_data.get('asesor'),
+                    salida_data.get('cantidad'), um_id, tienda_id,
+                    salida_data.get('entregado_por'), salida_data.get('registrado_por'), salida_data.get('observaciones')
+                ]
+                sp_call = 'sp_registrar_salida'
+                logging.info(f"Ejecutando SP: {sp_call} con parámetros: {params}")
+                cursor.callproc(sp_call, params)
+                result_set = cursor.fetchall()
+                nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+                ids_generados.append(nuevo_id)
+            except Exception as e:
+                errores.append(f"Salida {idx + 1}: {str(e)}")
+                logging.error(f"Error en salida {idx + 1}: {traceback.format_exc()}")
+
+        if errores:
+            conn.rollback()
+            return bad_request_error(f"Errores al procesar salidas: {'; '.join(errores)}", headers)
+        
+        conn.commit()
+        return created_response(
+            data={'ids': ids_generados, 'total': len(ids_generados)},
+            message=f"{len(ids_generados)} salida(s) registrada(s) exitosamente",
+            headers=headers
+        )
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error en create_salidas_masivo: {traceback.format_exc()}")
+        return server_error(f"Error al registrar salidas: {str(e)}", headers)
+    finally:
+        cursor.close()
         conn.close()
 
 def update_salida(request, headers, id_salida):
@@ -870,13 +1219,23 @@ def abastecimiento_entra_salida_malvinas(request):
             return get_productos(request, headers)
         elif path == '/api/productos' and method == 'POST':
             return create_producto(request, headers)
-        # (Aquí podrías añadir PUT y DELETE para productos si es necesario)
+        elif path == '/api/productos/masivo' and method in ['PUT', 'POST']:
+            return update_productos_masivo(request, headers)
+        elif path.startswith('/api/productos/') and method == 'PUT':
+            # Extraer ID de la ruta: /api/productos/123
+            id_producto = path.split('/')[-1]
+            if id_producto.isdigit():
+                return update_producto(request, headers, int(id_producto))
+            else:
+                return not_found_error("ID de producto inválido", headers)
 
         # ==================== MÓDULO: ENTRADAS ====================
         elif path == '/api/entradas' and method == 'GET':
             return get_entradas(request, headers)
         elif path == '/api/entradas' and method == 'POST':
             return create_entrada(request, headers)
+        elif path == '/api/entradas/masivo' and method == 'POST':
+            return create_entradas_masivo(request, headers)
         elif path.startswith('/api/entradas/') and method == 'PUT':
             # Extraer ID de la ruta: /api/entradas/123
             id_entrada = path.split('/')[-1]
@@ -893,6 +1252,8 @@ def abastecimiento_entra_salida_malvinas(request):
             return get_salidas(request, headers)
         elif path == '/api/salidas' and method == 'POST':
             return create_salida(request, headers)
+        elif path == '/api/salidas/masivo' and method == 'POST':
+            return create_salidas_masivo(request, headers)
         elif path.startswith('/api/salidas/') and method == 'PUT':
             id_salida = path.split('/')[-1]
             if id_salida.isdigit():

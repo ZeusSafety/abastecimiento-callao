@@ -2,15 +2,14 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas, TIENDAS } from '../../context/MalvinasContext';
-import { Search, RefreshCw, Package, Columns2, AlertTriangle } from 'lucide-react';
+import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown } from 'lucide-react';
 
 export default function HistorialCargaPage() {
     const { state, cargarDetalleAbastecimiento, refreshAbastecimiento } = useMalvinas();
     const [selectedId, setSelectedId] = useState<string>('');
     const [search, setSearch] = useState('');
-    const [page, setPage] = useState(1);
+    const [filtroEnviar, setFiltroEnviar] = useState<'SI' | 'NO' | 'TODOS'>('TODOS');
     const [loading, setLoading] = useState(false);
-    const PER_PAGE = 20;
 
     // Cargar historial de abastecimientos al montar la página
     useEffect(() => {
@@ -34,14 +33,14 @@ export default function HistorialCargaPage() {
     const filtered = useMemo(() => {
         if (!selectedHistorial) return [];
         const q = search.toLowerCase();
-        return selectedHistorial.items.filter(
-            r => r.nombre.toLowerCase().includes(q) || r.codigo.toLowerCase().includes(q)
-        );
-    }, [selectedHistorial, search]);
+        return selectedHistorial.items.filter(r => {
+            const matchSearch = r.nombre.toLowerCase().includes(q) || r.codigo.toLowerCase().includes(q);
+            const matchEnviar = filtroEnviar === 'TODOS' || r.enviar === filtroEnviar;
+            return matchSearch && matchEnviar;
+        });
+    }, [selectedHistorial, search, filtroEnviar]);
 
     const total = filtered.length;
-    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
     return (
         <div id="view-historial-carga" className="animate-in fade-in duration-500 font-poppins text-[#002D5A]">
@@ -70,7 +69,7 @@ export default function HistorialCargaPage() {
                                 <div className="relative">
                                     <select
                                         value={selectedId}
-                                        onChange={e => { setSelectedId(e.target.value); setPage(1); setSearch(''); }}
+                                        onChange={e => { setSelectedId(e.target.value); setSearch(''); setFiltroEnviar('TODOS'); }}
                                         className="w-full pl-4 pr-10 py-3 bg-gray-100/60 border border-gray-200/70 rounded-xl font-bold text-sm text-[#002D5A] focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all appearance-none cursor-pointer shadow-sm"
                                     >
                                         <option value="">Seleccione un Reporte</option>
@@ -131,11 +130,24 @@ export default function HistorialCargaPage() {
                                             type="text"
                                             placeholder="Filtrar por código o nombre..."
                                             value={search}
-                                            onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                            onChange={e => setSearch(e.target.value)}
                                             className="w-full pl-12 pr-4 py-2.5 text-xs bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm font-medium"
                                         />
                                     </div>
-                                    <button onClick={() => setSearch('')} className="p-2.5 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 transition-all active:scale-95 shadow-sm text-gray-500">
+                                    <div className="relative">
+                                        <select
+                                            value={filtroEnviar}
+                                            onChange={e => setFiltroEnviar(e.target.value as 'SI' | 'NO' | 'TODOS')}
+                                            className="w-full pl-4 pr-8 py-2.5 text-xs bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm appearance-none font-medium"
+                                            style={{ paddingRight: 32 }}
+                                        >
+                                            <option value="SI">Si</option>
+                                            <option value="NO">No</option>
+                                            <option value="TODOS">Todos</option>
+                                        </select>
+                                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                    </div>
+                                    <button onClick={() => { setSearch(''); setFiltroEnviar('TODOS'); }} className="p-2.5 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 transition-all active:scale-95 shadow-sm text-gray-500">
                                         <RefreshCw className="w-4 h-4" />
                                     </button>
                                 </div>
@@ -145,7 +157,7 @@ export default function HistorialCargaPage() {
                             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm text-left">
-                                        <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                        <thead className="text-[9px] uppercase font-bold tracking-wider">
                                             <tr className="bg-[#002D5A] text-white">
                                                 <th className="px-5 py-4 border-r border-[#ffffff1a] whitespace-nowrap">Código</th>
                                                 <th className="px-5 py-4 border-r border-[#ffffff1a] min-w-[200px]">Producto</th>
@@ -168,17 +180,19 @@ export default function HistorialCargaPage() {
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            ) : paginated.length === 0 ? (
+                                            ) : filtered.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={7 + TIENDAS.length} className="px-6 py-20 text-center">
                                                         <div className="flex flex-col items-center justify-center opacity-40">
                                                             <Search className="w-12 h-12 mb-4" />
-                                                            <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">No se encontraron productos.</p>
+                                                            <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">
+                                                                {search || filtroEnviar !== 'TODOS' ? 'No se encontraron productos con ese criterio' : 'No hay productos registrados'}
+                                                            </p>
                                                         </div>
                                                     </td>
                                                 </tr>
                                             ) : (
-                                                paginated.map(r => (
+                                                filtered.map(r => (
                                                     <tr key={r.productoId} className="hover:bg-blue-50/40 transition-colors group">
                                                         <td className="px-5 py-3 font-bold text-[#002D5A] border-r border-gray-50/50 text-[11px] uppercase">{r.codigo}</td>
                                                         <td className="px-5 py-3 font-semibold text-gray-800 border-r border-gray-50/50 text-[11px] uppercase tracking-tight">{r.nombre}</td>
@@ -200,8 +214,8 @@ export default function HistorialCargaPage() {
                                                         </td>
                                                         <td className="px-5 py-3 text-center">
                                                             <span className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest transition-all ${r.enviar === 'SI'
-                                                                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                                                                : 'bg-gray-100 text-gray-400 opacity-60'
+                                                                ? 'bg-emerald-100 text-emerald-700 shadow-sm'
+                                                                : 'bg-red-100 text-red-700 shadow-sm'
                                                                 }`}>
                                                                 {r.enviar}
                                                             </span>
@@ -211,49 +225,6 @@ export default function HistorialCargaPage() {
                                             )}
                                         </tbody>
                                     </table>
-                                </div>
-
-                                {/* Pagination Premium New Style */}
-                                <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => setPage(1)}
-                                            disabled={page === 1}
-                                            className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                        >
-                                            «
-                                        </button>
-                                        <button
-                                            onClick={() => setPage(p => Math.max(1, p - 1))}
-                                            disabled={page === 1}
-                                            className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                        >
-                                            ‹
-                                        </button>
-                                    </div>
-
-                                    <div className="flex flex-col items-center">
-                                        <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest">
-                                            Página {page} de {pages}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => setPage(p => Math.min(pages, p + 1))}
-                                            disabled={page === pages}
-                                            className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                        >
-                                            ›
-                                        </button>
-                                        <button
-                                            onClick={() => setPage(pages)}
-                                            disabled={page === pages}
-                                            className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                        >
-                                            »
-                                        </button>
-                                    </div>
                                 </div>
                             </div>
                         </div>

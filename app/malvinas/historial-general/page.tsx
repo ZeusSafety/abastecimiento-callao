@@ -1,40 +1,88 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { useMalvinas, TIENDAS } from '../../context/MalvinasContext';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useMalvinas, TIENDAS, UnidadMedida } from '../../context/MalvinasContext';
 import { Search } from 'lucide-react';
+import TableSkeleton from '../../components/TableSkeleton';
+import * as api from '../../services/api';
+
+interface HistorialGeneralRow {
+    productoId: string;
+    codigo: string;
+    nombre: string;
+    cantidad: number;
+    unidadMedida: UnidadMedida;
+    tiendas: Record<string, number>;
+    abastecerCajas: number;
+    enviar: 'SI' | 'NO';
+    nombreAbastecimiento: string;
+    fechaHora: string;
+    registradoPor: string;
+}
 
 export default function HistorialGeneralPage() {
     const { state } = useMalvinas();
     const [search, setSearch] = useState('');
-    const [filterName, setFilterName] = useState('');
     const [page, setPage] = useState(1);
-    const PER_PAGE = 20;
+    const [loading, setLoading] = useState(true);
+    const [allRows, setAllRows] = useState<HistorialGeneralRow[]>([]);
+    const PER_PAGE = 40;
 
-    // Flatten all items from all historial entries
-    const allRows = useMemo(() => {
-        return state.historialAbastecimiento.flatMap(h =>
-            h.items.map(item => ({
-                ...item,
-                nombreAbastecimiento: h.nombre,
-                fechaHora: h.fecha,
-                registradoPor: h.registradoPor,
-            }))
-        );
-    }, [state.historialAbastecimiento]);
+    // Cargar todos los registros del historial general al montar
+    useEffect(() => {
+        const cargarHistorialGeneral = async () => {
+            setLoading(true);
+            try {
+                const historialData = await api.getHistorialAbastecimientoGeneral();
+                
+                // Crear mapa de productos por código
+                const productosMap = new Map(state.productos.map(p => [p.codigo, p]));
+                
+                // Convertir datos de la API al formato del frontend
+                const rows: HistorialGeneralRow[] = historialData.map((item: any) => {
+                    const producto = productosMap.get(item.codigo);
+                    return {
+                        productoId: producto?.id || '',
+                        codigo: item.codigo,
+                        nombre: item.nombre,
+                        cantidad: item.cantidad,
+                        unidadMedida: item.unidad_medida as UnidadMedida,
+                        tiendas: {
+                            'TIENDA 3006': item.cant_tienda_3006 || 0,
+                            'TIENDA 3131': item.cant_tienda_3131 || 0,
+                            'TIENDA 412-A': item.cant_tienda_412a || 0,
+                            'TIENDA 3133': item.cant_tienda_3133 || 0,
+                        },
+                        abastecerCajas: item.abastecer_cajas || 0,
+                        enviar: item.enviar as 'SI' | 'NO',
+                        nombreAbastecimiento: item.nombre_abastecimiento,
+                        fechaHora: item.fecha_registro ? new Date(item.fecha_registro).toLocaleString('es-PE') : '',
+                        registradoPor: item.registrado_por || '',
+                    };
+                });
+                
+                setAllRows(rows);
+            } catch (error: any) {
+                console.error('Error cargando historial general:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-    const nombres = useMemo(() => {
-        return Array.from(new Set(state.historialAbastecimiento.map(h => h.nombre)));
-    }, [state.historialAbastecimiento]);
+        if (state.productos.length > 0) {
+            cargarHistorialGeneral();
+        } else {
+            setLoading(false);
+        }
+    }, [state.productos]);
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
         return allRows.filter(r => {
-            const matchName = filterName ? r.nombreAbastecimiento === filterName : true;
             const matchSearch = r.nombre.toLowerCase().includes(q) || r.codigo.toLowerCase().includes(q);
-            return matchName && matchSearch;
+            return matchSearch;
         });
-    }, [allRows, search, filterName]);
+    }, [allRows, search]);
 
     const total = filtered.length;
     const pages = Math.max(1, Math.ceil(total / PER_PAGE));
@@ -62,18 +110,7 @@ export default function HistorialGeneralPage() {
                     {/* Toolbar - Moved out of the card table area */}
                     <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100 mb-8 shadow-inner">
                         <div className="flex flex-col lg:flex-row items-end justify-between gap-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 w-full">
-                                <div className="space-y-2">
-                                    <label className="block text-[10px] font-black text-[#002D5A] uppercase tracking-widest opacity-60">Abastecimiento</label>
-                                    <select
-                                        value={filterName}
-                                        onChange={e => { setFilterName(e.target.value); setPage(1); }}
-                                        className="w-full pl-4 pr-10 py-3 bg-white border border-gray-200 rounded-xl font-bold text-sm text-[#002D5A] focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all appearance-none cursor-pointer shadow-sm"
-                                    >
-                                        <option value="">Todos los registros</option>
-                                        {nombres.map(n => <option key={n} value={n}>{n}</option>)}
-                                    </select>
-                                </div>
+                            <div className="flex-1 w-full">
                                 <div className="space-y-2">
                                     <label className="block text-[10px] font-black text-[#002D5A] uppercase tracking-widest opacity-60">Buscar</label>
                                     <div className="relative">
@@ -99,7 +136,7 @@ export default function HistorialGeneralPage() {
                     <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-2xl">
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left">
-                                <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                <thead className="text-[9px] uppercase font-bold tracking-wider">
                                     <tr className="bg-[#002D5A] text-white">
                                         <th className="px-5 py-4 border-r border-[#ffffff1a] whitespace-nowrap">Código</th>
                                         <th className="px-5 py-4 border-r border-[#ffffff1a] min-w-[200px]">Producto</th>
@@ -115,7 +152,19 @@ export default function HistorialGeneralPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {paginated.map((r, i) => (
+                                    {loading ? (
+                                        <TableSkeleton rows={5} cols={14} />
+                                    ) : paginated.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={14} className="px-6 py-20 text-center">
+                                                <div className="flex flex-col items-center justify-center opacity-40">
+                                                    <Search className="w-12 h-12 mb-4" />
+                                                    <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">No se encontraron registros</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginated.map((r, i) => (
                                         <tr key={`${r.productoId}-${i}`} className="hover:bg-blue-50/40 transition-colors group">
                                             <td className="px-5 py-3 font-bold text-[#002D5A] border-r border-gray-50/50 text-[11px] uppercase">{r.codigo}</td>
                                             <td className="px-5 py-3 font-semibold text-gray-800 border-r border-gray-50/50 text-[11px] uppercase tracking-tight">{r.nombre}</td>
@@ -135,8 +184,8 @@ export default function HistorialGeneralPage() {
                                             <td className="px-5 py-3 text-center font-black text-[#002D5A] bg-blue-50/20 border-l border-gray-50 text-[13px]">{r.abastecerCajas}</td>
                                             <td className="px-5 py-3 text-center">
                                                 <span className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest transition-all ${r.enviar === 'SI'
-                                                    ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                                                    : 'bg-gray-100 text-gray-400 opacity-60'
+                                                    ? 'bg-emerald-100 text-emerald-700 shadow-sm'
+                                                    : 'bg-red-100 text-red-700 shadow-sm'
                                                     }`}>
                                                     {r.enviar}
                                                 </span>
@@ -148,16 +197,7 @@ export default function HistorialGeneralPage() {
                                                 {r.fechaHora}
                                             </td>
                                         </tr>
-                                    ))}
-                                    {paginated.length === 0 && (
-                                        <tr>
-                                            <td colSpan={14} className="px-6 py-20 text-center">
-                                                <div className="flex flex-col items-center justify-center opacity-40">
-                                                    <Search className="w-12 h-12 mb-4" />
-                                                    <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">No se encontraron registros</p>
-                                                </div>
-                                            </td>
-                                        </tr>
+                                    ))
                                     )}
                                 </tbody>
                             </table>

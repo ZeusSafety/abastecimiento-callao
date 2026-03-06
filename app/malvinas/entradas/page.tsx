@@ -12,11 +12,15 @@ import {
     Tienda,
     AlmacenCompleto,
     UnidadMedida,
+    Producto,
+    getOperacionColor,
 } from '../../context/MalvinasContext';
 import {
-    Plus, Search, Edit3, X, Save, PackagePlus, ChevronDown
+    Plus, Search, Edit3, X, Save, PackagePlus, ChevronDown, Loader2, Trash2
 } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
+import ProductoAutocomplete from '../../components/ProductoAutocomplete';
+import * as api from '../../services/api';
 
 // ─── Modal Registro Entrada ───────────────────────────────────────────────────
 function ModalEntrada({
@@ -34,6 +38,7 @@ function ModalEntrada({
         productoId: editData?.productoId ?? '',
         producto: editData?.producto ?? '',
         operacion: editData?.operacion ?? OPS_ENTRADA[0],
+        operacionPersonalizada: '',
         almacenSalida: (editData?.almacenSalida ?? 'ALMACEN CALLAO') as AlmacenCompleto,
         almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA 3006') as Tienda,
         operador: editData?.operador ?? OPERADORES[0],
@@ -47,6 +52,45 @@ function ModalEntrada({
 
     const isEdit = !!editData;
     const [fechaActual, setFechaActual] = useState('');
+    const [productosAgregados, setProductosAgregados] = useState<Array<{
+        productoId: string;
+        producto: string;
+        codigo: string;
+        operacion: string;
+        almacenSalida: AlmacenCompleto;
+        almacenIngreso: Tienda;
+        operador: string;
+        cantidad: number;
+        unidadMedida: UnidadMedida;
+        entregado: string;
+        registradoPor: string;
+        observaciones: string;
+    }>>([]);
+    const [isSaving, setIsSaving] = useState(false);
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+    // Limpiar productos agregados cuando se abre el modal (solo para nuevo registro)
+    useEffect(() => {
+        if (isOpen && !isEdit) {
+            setProductosAgregados([]);
+            setEditingIndex(null);
+            setForm({
+                productoId: '',
+                producto: '',
+                operacion: OPS_ENTRADA[0],
+                operacionPersonalizada: '',
+                almacenSalida: 'ALMACEN CALLAO',
+                almacenIngreso: 'TIENDA 3006',
+                operador: OPERADORES[0],
+                cantidad: 0,
+                unidadMedida: 'DOCENAS' as UnidadMedida,
+                entregado: OPERADORES[0],
+                registradoPor: REGISTRADORES[0],
+                observaciones: '',
+                motivoCambio: '',
+            });
+        }
+    }, [isOpen, isEdit]);
 
     // Inicializar fecha solo en el cliente
     useEffect(() => {
@@ -73,21 +117,27 @@ function ModalEntrada({
     }, [editData, state.productos]);
 
     // Auto-fill unidad/codigo al seleccionar producto
-    const handleProductoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const p = state.productos.find(pr => pr.id === e.target.value);
-        if (p) {
+    const handleProductoChange = (productoId: string, producto: Producto | null) => {
+        if (!producto) {
             setForm(f => ({
                 ...f,
-                productoId: p.id,
-                producto: p.nombre,
-                unidadMedida: p.unidadMedidaRegCalculo,
+                productoId: '',
+                producto: '',
+                unidadMedida: 'DOCENAS' as UnidadMedida,
             }));
+            return;
         }
+        setForm(f => ({
+            ...f,
+            productoId: productoId,
+            producto: producto.nombre,
+            unidadMedida: producto.unidadMedidaRegCalculo,
+        }));
     };
 
     const selectedProducto = state.productos.find(p => p.id === form.productoId);
 
-    const handleSubmit = async () => {
+    const handleAgregarProducto = () => {
         if (!form.productoId || form.productoId === '') { 
             showToast('error', 'Selecciona un producto'); 
             return; 
@@ -96,17 +146,115 @@ function ModalEntrada({
             showToast('error', 'Ingresa una cantidad válida mayor a 0'); 
             return; 
         }
-        if (isEdit && !form.motivoCambio.trim()) { 
-            showToast('error', 'Ingresa el motivo del cambio'); 
-            return; 
+        if (form.operacion === 'OTROS' && !form.operacionPersonalizada.trim()) {
+            showToast('error', 'Especifica el nombre de la operación');
+            return;
         }
 
-        try {
-            if (isEdit) {
+        const nuevoProducto = {
+            productoId: form.productoId,
+            producto: form.producto,
+            codigo: selectedProducto?.codigo || '',
+            operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
+            almacenSalida: form.almacenSalida,
+            almacenIngreso: form.almacenIngreso,
+            operador: form.operador,
+            cantidad: Number(form.cantidad),
+            unidadMedida: form.unidadMedida,
+            entregado: form.entregado,
+            registradoPor: form.registradoPor,
+            observaciones: form.observaciones,
+        };
+
+        setProductosAgregados([...productosAgregados, nuevoProducto]);
+        
+        // Limpiar formulario excepto campos comunes
+        setForm(f => ({
+            ...f,
+            productoId: '',
+            producto: '',
+            cantidad: 0,
+            observaciones: '',
+        }));
+        
+        showToast('success', 'Producto agregado a la lista');
+    };
+
+    const handleEliminarProducto = (index: number) => {
+        setProductosAgregados(productosAgregados.filter((_, i) => i !== index));
+        if (editingIndex === index) setEditingIndex(null);
+        else if (editingIndex !== null && editingIndex > index) setEditingIndex(editingIndex - 1);
+        showToast('success', 'Producto eliminado de la lista');
+    };
+
+    const handleEditarProducto = (index: number) => {
+        setEditingIndex(index);
+    };
+
+    const handleActualizarProducto = (index: number, campo: string, valor: any) => {
+        setProductosAgregados(productosAgregados.map((p, i) => {
+            if (i === index) {
+                if (campo === 'productoId' || campo === 'producto') {
+                    const producto = state.productos.find(pr => pr.id === valor);
+                    return {
+                        ...p,
+                        productoId: valor,
+                        producto: producto?.nombre || p.producto,
+                        codigo: producto?.codigo || p.codigo,
+                        unidadMedida: producto?.unidadMedidaRegCalculo || p.unidadMedida,
+                    };
+                }
+                return { ...p, [campo]: valor };
+            }
+            return p;
+        }));
+    };
+
+    const handleProductoChangeInTable = (index: number, productoId: string, producto: Producto | null) => {
+        setProductosAgregados(productosAgregados.map((p, i) => {
+            if (i === index) {
+                if (!producto) {
+                    return {
+                        ...p,
+                        productoId: '',
+                        producto: '',
+                        codigo: '',
+                        unidadMedida: 'DOCENAS' as UnidadMedida,
+                    };
+                }
+                return {
+                    ...p,
+                    productoId: productoId,
+                    producto: producto.nombre,
+                    codigo: producto.codigo,
+                    unidadMedida: producto.unidadMedidaRegCalculo,
+                };
+            }
+            return p;
+        }));
+    };
+
+    const handleSubmit = async () => {
+        if (isEdit) {
+            // Modo edición: comportamiento original
+            if (!form.productoId || form.productoId === '') { 
+                showToast('error', 'Selecciona un producto'); 
+                return; 
+            }
+            if (!form.cantidad || form.cantidad <= 0) { 
+                showToast('error', 'Ingresa una cantidad válida mayor a 0'); 
+                return; 
+            }
+            if (!form.motivoCambio.trim()) { 
+                showToast('error', 'Ingresa el motivo del cambio'); 
+                return; 
+            }
+
+            try {
                 await updateEntrada(editData!.id, {
                     productoId: form.productoId,
                     producto: form.producto,
-                    operacion: form.operacion,
+                    operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
                     almacenSalida: form.almacenSalida,
                     almacenIngreso: form.almacenIngreso,
                     operador: form.operador,
@@ -116,25 +264,56 @@ function ModalEntrada({
                     registradoPor: form.registradoPor,
                     observaciones: form.observaciones,
                 }, form.motivoCambio);
-            } else {
-                await addEntrada({
-                    productoId: form.productoId,
-                    producto: form.producto,
-                    operacion: form.operacion,
-                    almacenSalida: form.almacenSalida,
-                    almacenIngreso: form.almacenIngreso,
-                    operador: form.operador,
-                    cantidad: Number(form.cantidad),
-                    unidadMedida: form.unidadMedida,
-                    entregado: form.entregado,
-                    registradoPor: form.registradoPor,
-                    observaciones: form.observaciones,
-                });
+                await refreshEntradas();
+                onClose();
+            } catch (error) {
+                // El error ya se maneja en las funciones del contexto
             }
-            await refreshEntradas();
-            onClose();
-        } catch (error) {
-            // El error ya se maneja en las funciones del contexto
+        } else {
+            // Modo nuevo: guardar todos los productos agregados
+            if (productosAgregados.length === 0) {
+                showToast('error', 'Agrega al menos un producto antes de guardar');
+                return;
+            }
+
+            setIsSaving(true);
+            try {
+                // Preparar datos para el endpoint masivo
+                const entradasData = productosAgregados.map(p => {
+                    const prod = state.productos.find(pr => pr.id === p.productoId);
+                    if (!prod) throw new Error(`Producto ${p.productoId} no encontrado`);
+
+                    const almacenSalidaStr = p.almacenSalida === 'ALMACEN CALLAO' ? 'CALLAO' :
+                                           p.almacenSalida === 'ALMACEN MALVINAS' ? 'MALVINAS' :
+                                           p.almacenSalida.replace('TIENDA ', '');
+                    
+                    const almacenIngresoStr = p.almacenIngreso.replace('TIENDA ', '');
+
+                    return {
+                        producto: prod.codigo,
+                        operacion: p.operacion,
+                        almacen_salida: almacenSalidaStr,
+                        almacen_ingreso: almacenIngresoStr,
+                        operador: p.operador,
+                        cantidad: p.cantidad,
+                        unidad_medida: p.unidadMedida,
+                        entregado_por: p.entregado,
+                        registrado_por: p.registradoPor,
+                        observaciones: p.observaciones,
+                    };
+                });
+
+                // Llamar al endpoint masivo
+                await api.createEntradasMasivo(entradasData);
+                
+                await refreshEntradas();
+                setIsSaving(false);
+                onClose();
+                showToast('success', `${productosAgregados.length} producto(s) registrado(s) exitosamente`);
+            } catch (error: any) {
+                setIsSaving(false);
+                showToast('error', error.message || 'Error al registrar entradas');
+            }
         }
     };
 
@@ -142,7 +321,7 @@ function ModalEntrada({
 
     return (
         <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-            <div className="modal-box" style={{ maxWidth: 680 }}>
+            <div className="modal-box" style={{ maxWidth: isEdit ? 680 : 1200 }}>
                 <div className="modal-header">
                     <div className="flex items-center gap-2">
                         <div
@@ -182,31 +361,24 @@ function ModalEntrada({
                         {/* Producto */}
                         <div>
                             <label className="form-label">Producto *</label>
-                            <div className="relative">
-                                <select
-                                    value={form.productoId}
-                                    onChange={handleProductoChange}
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    <option value="">-- Seleccionar --</option>
-                                    {state.productos.map(p => (
-                                        <option key={p.id} value={p.id}>{p.codigo} - {p.nombre}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
+                            <ProductoAutocomplete
+                                productos={state.productos}
+                                value={form.productoId}
+                                onChange={handleProductoChange}
+                                placeholder="Buscar producto..."
+                            />
                         </div>
 
-                        {/* Código auto */}
+                        {/* Código */}
                         <div>
-                            <label className="form-label">Código del Producto</label>
+                            <label className="form-label">Código</label>
                             <input
                                 type="text"
                                 value={selectedProducto?.codigo ?? ''}
                                 readOnly
                                 className="form-input"
                                 style={{ background: '#f8fafc', color: '#6b7280', fontSize: 12 }}
+                                placeholder="Selecciona un producto"
                             />
                         </div>
 
@@ -216,7 +388,7 @@ function ModalEntrada({
                             <div className="relative">
                                 <select
                                     value={form.operacion}
-                                    onChange={e => setForm(f => ({ ...f, operacion: e.target.value }))}
+                                    onChange={e => setForm(f => ({ ...f, operacion: e.target.value, operacionPersonalizada: e.target.value !== 'OTROS' ? '' : f.operacionPersonalizada }))}
                                     className="form-input"
                                     style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                 >
@@ -225,6 +397,19 @@ function ModalEntrada({
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
                         </div>
+                        {form.operacion === 'OTROS' && (
+                            <div className="col-span-2">
+                                <label className="form-label">Especificar Operación *</label>
+                                <input
+                                    type="text"
+                                    value={form.operacionPersonalizada}
+                                    onChange={e => setForm(f => ({ ...f, operacionPersonalizada: e.target.value }))}
+                                    placeholder="Escribe el nombre de la operación..."
+                                    className="form-input"
+                                    style={{ fontSize: 12 }}
+                                />
+                            </div>
+                        )}
 
                         {/* Almacén Salida */}
                         <div>
@@ -354,6 +539,195 @@ function ModalEntrada({
                             />
                         </div>
 
+                        {/* Botón Agregar Producto (solo en modo nuevo) */}
+                        {!isEdit && (
+                            <div className="col-span-2">
+                            <button
+                                type="button"
+                                onClick={handleAgregarProducto}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-green-700 bg-green-50/50 hover:bg-green-100 border border-green-200 rounded-lg transition-all duration-200 group"
+                                style={{ fontSize: 12 }}
+                            >
+                                <Plus className="w-4 h-4 text-green-600 group-hover:scale-110 transition-transform" />
+                                <span className="font-bold">Agregar Producto a la Lista</span>
+                            </button>
+                        </div>
+                        )}
+
+                        {/* Tabla Productos Agregados (solo en modo nuevo) */}
+                        {!isEdit && (
+                            <div className="col-span-2 mt-4">
+                                <label className="form-label mb-2">Productos Agregados</label>
+                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                    <div className="overflow-x-auto max-h-[300px]">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-[#002D5A] text-white sticky top-0">
+                                                <tr>
+                                                    <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Producto</th>
+                                                    <th className="px-3 py-2 text-left text-[9px] font-bold uppercase" style={{ minWidth: '100px' }}>Código</th>
+                                                    <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Operación</th>
+                                                    <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Almacén Salida</th>
+                                                    <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Ingreso</th>
+                                                    <th className="px-2 py-2 text-center text-[9px] font-bold uppercase" style={{ width: '60px' }}>Cant.</th>
+                                                    <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">U.M</th>
+                                                    <th className="px-3 py-2 text-center text-[9px] font-bold uppercase">Acción</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {productosAgregados.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-xs">
+                                                            No hay productos agregados. Completa el formulario y presiona "Agregar Producto a la Lista"
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    productosAgregados.map((p, index) => {
+                                                        const operacionColor = getOperacionColor(p.operacion);
+                                                        const isEditing = editingIndex === index;
+                                                        return (
+                                                            <tr 
+                                                                key={index} 
+                                                                className={`hover:bg-gray-50 ${isEditing ? 'bg-yellow-50 border-l-4 border-yellow-500' : ''}`}
+                                                                onClick={() => !isEditing && handleEditarProducto(index)}
+                                                                style={{ cursor: isEditing ? 'default' : 'pointer' }}
+                                                            >
+                                                                {/* Producto */}
+                                                                <td className="px-3 py-2">
+                                                                    {isEditing ? (
+                                                                        <ProductoAutocomplete
+                                                                            productos={state.productos}
+                                                                            value={p.productoId}
+                                                                            onChange={(productoId, producto) => handleProductoChangeInTable(index, productoId, producto)}
+                                                                            placeholder="Buscar producto..."
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-medium text-gray-900">{p.producto}</span>
+                                                                    )}
+                                                                </td>
+                                                                {/* Código */}
+                                                                <td className="px-3 py-2" style={{ minWidth: '100px' }}>
+                                                                    <span className="text-[10px] text-gray-700 uppercase font-medium">{p.codigo || '-'}</span>
+                                                                </td>
+                                                                {/* Operación */}
+                                                                <td className="px-3 py-2">
+                                                                    {isEditing ? (
+                                                                        <div className="relative">
+                                                                            <select
+                                                                                value={p.operacion}
+                                                                                onChange={e => handleActualizarProducto(index, 'operacion', e.target.value)}
+                                                                                className="form-input text-[9px] py-1 px-2"
+                                                                                style={{ paddingRight: 20, appearance: 'none' }}
+                                                                                onClick={e => e.stopPropagation()}
+                                                                            >
+                                                                                {OPS_ENTRADA.map(op => <option key={op}>{op}</option>)}
+                                                                            </select>
+                                                                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold ${operacionColor.bg} ${operacionColor.text}`}>
+                                                                            {p.operacion}
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                {/* Almacén Salida */}
+                                                                <td className="px-3 py-2">
+                                                                    {isEditing ? (
+                                                                        <div className="relative">
+                                                                            <select
+                                                                                value={p.almacenSalida}
+                                                                                onChange={e => handleActualizarProducto(index, 'almacenSalida', e.target.value)}
+                                                                                className="form-input text-[9px] py-1 px-2"
+                                                                                style={{ paddingRight: 20, appearance: 'none' }}
+                                                                                onClick={e => e.stopPropagation()}
+                                                                            >
+                                                                                {ALMACENES_COMPLETO.map(a => <option key={a}>{a}</option>)}
+                                                                            </select>
+                                                                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-[10px] text-gray-700">{p.almacenSalida}</span>
+                                                                    )}
+                                                                </td>
+                                                                {/* Ingreso */}
+                                                                <td className="px-3 py-2">
+                                                                    {isEditing ? (
+                                                                        <div className="relative">
+                                                                            <select
+                                                                                value={p.almacenIngreso}
+                                                                                onChange={e => handleActualizarProducto(index, 'almacenIngreso', e.target.value)}
+                                                                                className="form-input text-[9px] py-1 px-2"
+                                                                                style={{ paddingRight: 20, appearance: 'none' }}
+                                                                                onClick={e => e.stopPropagation()}
+                                                                            >
+                                                                                {TIENDAS.map(t => <option key={t}>{t}</option>)}
+                                                                            </select>
+                                                                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-[10px] text-gray-700">{p.almacenIngreso}</span>
+                                                                    )}
+                                                                </td>
+                                                                {/* Cantidad */}
+                                                                <td className="px-2 py-2 text-center" style={{ width: '60px' }}>
+                                                                    {isEditing ? (
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            value={p.cantidad === 0 ? '' : p.cantidad}
+                                                                            onChange={e => {
+                                                                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                                                                handleActualizarProducto(index, 'cantidad', val);
+                                                                            }}
+                                                                            className="form-input text-[10px] py-1 px-1 w-full text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                                            style={{ fontSize: 10 }}
+                                                                            onClick={e => e.stopPropagation()}
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-bold text-gray-900">{p.cantidad}</span>
+                                                                    )}
+                                                                </td>
+                                                                {/* U.M */}
+                                                                <td className="px-3 py-2">
+                                                                    <span className="text-[10px] text-gray-700">{p.unidadMedida}</span>
+                                                                </td>
+                                                                {/* Acción */}
+                                                                <td className="px-3 py-2 text-center">
+                                                                    <div className="flex items-center justify-center gap-1">
+                                                                        {isEditing ? (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setEditingIndex(null);
+                                                                                }}
+                                                                                className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                                                                title="Guardar"
+                                                                            >
+                                                                                <Save className="w-4 h-4" />
+                                                                            </button>
+                                                                        ) : null}
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleEliminarProducto(index);
+                                                                            }}
+                                                                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                                            title="Eliminar"
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Motivo del cambio (solo en edición) */}
                         {isEdit && (
                             <div className="col-span-2">
@@ -374,10 +748,23 @@ function ModalEntrada({
                 </div>
 
                 <div className="modal-footer">
-                    <button onClick={onClose} className="btn btn-secondary">Cancelar</button>
-                    <button onClick={handleSubmit} className="btn btn-primary">
-                        <Save className="w-4 h-4" />
-                        {isEdit ? 'Guardar Cambios' : 'Registrar Entrada'}
+                    <button onClick={onClose} className="btn btn-secondary" disabled={isSaving}>Cancelar</button>
+                    <button 
+                        onClick={handleSubmit} 
+                        className="btn btn-primary"
+                        disabled={isSaving}
+                    >
+                        {isSaving ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Guardando...
+                            </>
+                        ) : (
+                            <>
+                                <Save className="w-4 h-4" />
+                                {isEdit ? 'Guardar Cambios' : `Guardar ${productosAgregados.length > 0 ? `(${productosAgregados.length})` : ''}`}
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
@@ -480,7 +867,7 @@ export default function EntradasPage() {
                         {/* Table */}
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left">
-                                <thead className="text-[10px] uppercase font-bold tracking-wider">
+                                <thead className="text-[9px] uppercase font-bold tracking-wider">
                                     <tr className="bg-[#002D5A] text-white">
                                         <th className="px-4 py-4">Fecha</th>
                                         <th className="px-4 py-4">Producto</th>
@@ -490,7 +877,7 @@ export default function EntradasPage() {
                                         <th className="px-4 py-4">Operador</th>
                                         <th className="px-4 py-4 text-center">Cant.</th>
                                         <th className="px-4 py-4">U. Medida</th>
-                                        <th className="px-4 py-4 text-center">Acciones</th>
+                                        <th className="px-4 py-4 text-center hidden">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -513,9 +900,14 @@ export default function EntradasPage() {
                                                 <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{e.fecha}</td>
                                                 <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{e.producto}</td>
                                                 <td className="px-4 py-3">
-                                                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold uppercase tracking-wider">
-                                                        {e.operacion}
-                                                    </span>
+                                                    {(() => {
+                                                        const colors = getOperacionColor(e.operacion);
+                                                        return (
+                                                            <span className={`px-2 py-0.5 rounded-full ${colors.bg} ${colors.text} text-[9px] font-bold uppercase tracking-wider`}>
+                                                                {e.operacion}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.almacenSalida}</td>
                                                 <td className="px-4 py-3 text-[11px] font-medium text-[#002D5A] uppercase">{e.almacenIngreso}</td>
@@ -526,7 +918,7 @@ export default function EntradasPage() {
                                                         {e.unidadMedida}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-center">
+                                                <td className="px-4 py-3 text-center hidden">
                                                     <button
                                                         onClick={() => openEdit(e)}
                                                         className="p-1.5 rounded-lg bg-blue-50 text-[#002D5A] hover:bg-[#002D5A] hover:text-white transition-all shadow-sm"

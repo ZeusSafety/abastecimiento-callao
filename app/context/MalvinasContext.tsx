@@ -17,6 +17,31 @@ export const ALMACENES_COMPLETO: AlmacenCompleto[] = ['ALMACEN CALLAO', 'ALMACEN
 export const OPS_ENTRADA = ['TRASLADO', 'DEVOLUCION', 'CAMBIO', 'MERMA', 'REPOSICION', 'OTROS'] as const;
 export const OPS_SALIDA = ['VENTA', 'TRASLADO', 'DEVOLUCION', 'CAMBIO', 'REPOSICION', 'MERMA', 'VERIFICACION', 'OTROS'] as const;
 
+// ─── Función para obtener colores de operaciones ──────────────────────────────
+export function getOperacionColor(operacion: string): { bg: string; text: string } {
+    const op = operacion.toUpperCase();
+    switch (op) {
+        case 'TRASLADO':
+            return { bg: 'bg-blue-50', text: 'text-blue-700' };
+        case 'DEVOLUCION':
+            return { bg: 'bg-purple-50', text: 'text-purple-700' };
+        case 'CAMBIO':
+            return { bg: 'bg-yellow-50', text: 'text-yellow-700' };
+        case 'MERMA':
+            return { bg: 'bg-red-50', text: 'text-red-700' };
+        case 'REPOSICION':
+            return { bg: 'bg-green-50', text: 'text-green-700' };
+        case 'VENTA':
+            return { bg: 'bg-indigo-50', text: 'text-indigo-700' };
+        case 'VERIFICACION':
+            return { bg: 'bg-cyan-50', text: 'text-cyan-700' };
+        case 'OTROS':
+            return { bg: 'bg-gray-50', text: 'text-gray-700' };
+        default:
+            return { bg: 'bg-gray-50', text: 'text-gray-700' };
+    }
+}
+
 // ─── Mapeo de Unidades de Medida ──────────────────────────────────────────────
 const UNIDAD_MEDIDA_MAP: Record<number, UnidadMedida> = {
   1: 'DOCENAS',
