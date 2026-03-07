@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas, getOperacionColor } from '../../context/MalvinasContext';
-import { Search, TrendingUp, FileDown, FileSpreadsheet } from 'lucide-react';
+import { Search, TrendingUp, FileDown, FileSpreadsheet, Eye, Info, X } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '../../utils/export';
 import TableSkeleton from '../../components/TableSkeleton';
 
@@ -10,6 +10,8 @@ export default function CambiosEntradaPage() {
     const { state, refreshHistorialEntradas } = useMalvinas();
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
+    const [modalObservaciones, setModalObservaciones] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
+    const [modalMotivo, setModalMotivo] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
 
     // Cargar datos al montar el componente
     useEffect(() => {
@@ -188,8 +190,24 @@ export default function CambiosEntradaPage() {
                                                 </td>
                                                 <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{c.entregado}</td>
                                                 <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{c.registradoPor}</td>
-                                                <td className="px-4 py-3 text-[10px] text-gray-400 italic max-w-[150px] truncate">{c.observaciones || '-'}</td>
-                                                <td className="px-4 py-3 text-[11px] text-amber-700 font-medium italic uppercase tracking-tight">{c.motivoCambio}</td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        onClick={() => setModalObservaciones({ isOpen: true, content: c.observaciones || '-' })}
+                                                        className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors"
+                                                        title="Ver Observaciones"
+                                                    >
+                                                        <Eye className="w-4 h-4" />
+                                                    </button>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        onClick={() => setModalMotivo({ isOpen: true, content: c.motivoCambio })}
+                                                        className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-600 transition-colors"
+                                                        title="Ver Motivo"
+                                                    >
+                                                        <Info className="w-4 h-4" />
+                                                    </button>
+                                                </td>
                                                 <td className="px-4 py-3 text-[10px] text-gray-300 whitespace-nowrap">{c.updatedAt}</td>
                                             </tr>
                                         ))
@@ -200,6 +218,72 @@ export default function CambiosEntradaPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Modal Observaciones */}
+            {modalObservaciones.isOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 z-[10000]">
+                        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                    <Eye className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <h2 className="text-xl font-bold text-gray-900">Observaciones</h2>
+                            </div>
+                            <button
+                                onClick={() => setModalObservaciones({ isOpen: false, content: '' })}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-gray-700 whitespace-pre-wrap">{modalObservaciones.content}</p>
+                        </div>
+                        <div className="flex justify-end p-6 border-t border-gray-200">
+                            <button
+                                onClick={() => setModalObservaciones({ isOpen: false, content: '' })}
+                                className="px-6 py-2 bg-[#002D5A] text-white rounded-lg font-semibold hover:bg-[#003d7a] transition-colors"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Motivo */}
+            {modalMotivo.isOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 z-[10000]">
+                        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                                    <Info className="w-5 h-5 text-amber-600" />
+                                </div>
+                                <h2 className="text-xl font-bold text-gray-900">Motivo del Cambio</h2>
+                            </div>
+                            <button
+                                onClick={() => setModalMotivo({ isOpen: false, content: '' })}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-gray-700 whitespace-pre-wrap uppercase font-medium">{modalMotivo.content}</p>
+                        </div>
+                        <div className="flex justify-end p-6 border-t border-gray-200">
+                            <button
+                                onClick={() => setModalMotivo({ isOpen: false, content: '' })}
+                                className="px-6 py-2 bg-[#002D5A] text-white rounded-lg font-semibold hover:bg-[#003d7a] transition-colors"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

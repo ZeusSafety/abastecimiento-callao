@@ -29,11 +29,12 @@ function ModalSalida({
     onClose: () => void;
     editData?: RegistroSalida | null;
 }) {
-    const { state, addSalida, updateSalida, showToast, refreshSalidas } = useMalvinas();
+    const { state, addSalida, updateSalida, showToast, refreshSalidas, refreshProductos } = useMalvinas();
 
     const [form, setForm] = useState({
         productoId: editData?.productoId ?? '',
         producto: editData?.producto ?? '',
+        codigo: '', // Agregar código al estado del formulario
         operacion: editData?.operacion ?? OPS_SALIDA[0],
         operacionPersonalizada: '',
         comprobante: editData?.comprobante ?? '',
@@ -74,6 +75,7 @@ function ModalSalida({
             setForm({
                 productoId: '',
                 producto: '',
+                codigo: '',
                 operacion: OPS_SALIDA[0],
                 operacionPersonalizada: '',
                 comprobante: '',
@@ -108,6 +110,7 @@ function ModalSalida({
                     ...f,
                     productoId: producto.id,
                     producto: producto.nombre,
+                    codigo: producto.codigo,
                 }));
             }
         }
@@ -119,6 +122,7 @@ function ModalSalida({
                 ...f,
                 productoId: '',
                 producto: '',
+                codigo: '',
                 unidadMedida: 'DOCENAS' as UnidadMedida,
             }));
             return;
@@ -127,6 +131,7 @@ function ModalSalida({
             ...f,
             productoId: productoId,
             producto: producto.nombre,
+            codigo: producto.codigo, // Guardar código en el estado
             unidadMedida: producto.unidadMedidaRegCalculo,
         }));
     };
@@ -164,15 +169,15 @@ function ModalSalida({
 
         setProductosAgregados([...productosAgregados, nuevoProducto]);
         
-        // Limpiar formulario excepto campos comunes
+        // Limpiar formulario excepto campos comunes y el código del producto
+        // El código se mantiene hasta que el usuario cambie el producto
         setForm(f => ({
             ...f,
-            productoId: '',
-            producto: '',
             cantidad: 0,
             observaciones: '',
             comprobante: '',
             asesor: '',
+            // NO limpiar productoId, producto ni codigo para mantenerlos visibles
         }));
         
         showToast('success', 'Producto agregado a la lista');
@@ -186,7 +191,12 @@ function ModalSalida({
     };
 
     const handleEditarProducto = (index: number) => {
-        setEditingIndex(index);
+        // Si ya está editando esta fila, deseleccionarla
+        if (editingIndex === index) {
+            setEditingIndex(null);
+        } else {
+            setEditingIndex(index);
+        }
     };
 
     const handleActualizarProducto = (index: number, campo: string, valor: any) => {
@@ -266,7 +276,7 @@ function ModalSalida({
                     registradoPor: form.registradoPor,
                     observaciones: form.observaciones,
                 }, form.motivoCambio);
-                await refreshSalidas();
+                await Promise.all([refreshSalidas(), refreshProductos()]);
                 onClose();
             } catch (error) {
                 // El error ya se maneja en las funciones del contexto
@@ -304,7 +314,8 @@ function ModalSalida({
                 // Llamar al endpoint masivo
                 await api.createSalidasMasivo(salidasData);
                 
-                await refreshSalidas();
+                // Actualizar salidas y productos (stock) en paralelo
+                await Promise.all([refreshSalidas(), refreshProductos()]);
                 setIsSaving(false);
                 onClose();
                 showToast('success', `${productosAgregados.length} producto(s) registrado(s) exitosamente`);
@@ -372,7 +383,7 @@ function ModalSalida({
                             <label className="form-label">Código</label>
                             <input
                                 type="text"
-                                value={selectedProducto?.codigo ?? ''}
+                                value={form.codigo || selectedProducto?.codigo || ''}
                                 readOnly
                                 className="form-input"
                                 style={{ background: '#f8fafc', color: '#6b7280', fontSize: 12 }}
@@ -578,18 +589,20 @@ function ModalSalida({
                                                             <tr 
                                                                 key={index} 
                                                                 className={`hover:bg-gray-50 ${isEditing ? 'bg-yellow-50 border-l-4 border-yellow-500' : ''}`}
-                                                                onClick={() => !isEditing && handleEditarProducto(index)}
-                                                                style={{ cursor: isEditing ? 'default' : 'pointer' }}
+                                                                onClick={() => handleEditarProducto(index)}
+                                                                style={{ cursor: 'pointer' }}
                                                             >
                                                                 {/* Producto */}
                                                                 <td className="px-3 py-2">
                                                                     {isEditing ? (
-                                                                        <ProductoAutocomplete
-                                                                            productos={state.productos}
-                                                                            value={p.productoId}
-                                                                            onChange={(productoId, producto) => handleProductoChangeInTable(index, productoId, producto)}
-                                                                            placeholder="Buscar producto..."
-                                                                        />
+                                                                        <div onClick={e => e.stopPropagation()}>
+                                                                            <ProductoAutocomplete
+                                                                                productos={state.productos}
+                                                                                value={p.productoId}
+                                                                                onChange={(productoId, producto) => handleProductoChangeInTable(index, productoId, producto)}
+                                                                                placeholder="Buscar producto..."
+                                                                            />
+                                                                        </div>
                                                                     ) : (
                                                                         <span className="text-[10px] font-medium text-gray-900">{p.producto}</span>
                                                                     )}

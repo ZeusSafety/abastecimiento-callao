@@ -411,7 +411,8 @@ export default function StockTotalPage() {
                                                 acc + p.existencia[t], 0
                                             );
                                             const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
-                                            const cajas = Math.floor(disponibles / cantidadReg);
+                                            // Redondear hacia arriba: si es 11.1, 11.2, etc., se redondea a 12
+                                            const cajas = cantidadReg > 0 ? Math.ceil(disponibles / cantidadReg) : 0;
                                             const medida = (cajas * cantidadReg) - disponibles;
                                             
                                             return (

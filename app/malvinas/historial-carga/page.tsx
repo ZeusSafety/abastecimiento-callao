@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas, TIENDAS } from '../../context/MalvinasContext';
-import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown } from 'lucide-react';
+import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown, Calendar } from 'lucide-react';
 
 export default function HistorialCargaPage() {
     const { state, cargarDetalleAbastecimiento, refreshAbastecimiento } = useMalvinas();
@@ -10,6 +10,80 @@ export default function HistorialCargaPage() {
     const [search, setSearch] = useState('');
     const [filtroEnviar, setFiltroEnviar] = useState<'SI' | 'NO' | 'TODOS'>('TODOS');
     const [loading, setLoading] = useState(false);
+    const [mesSeleccionado, setMesSeleccionado] = useState<string>('');
+    const [añoSeleccionado, setAñoSeleccionado] = useState<string>('');
+
+    // Función helper para extraer mes y año de una fecha formateada
+    // fmtDate devuelve formato: "07/03/2026 11:22" (día/mes/año hora:minuto)
+    const parsearFecha = (fechaStr: string): { mes: number; año: number } | null => {
+        try {
+            // Intentar parsear directamente
+            const fecha = new Date(fechaStr);
+            if (!isNaN(fecha.getTime())) {
+                return { mes: fecha.getMonth() + 1, año: fecha.getFullYear() };
+            }
+            
+            // Si falla, parsear manualmente el formato "dd/mm/yyyy hh:mm"
+            const partes = fechaStr.split(/[/\s]/).filter(p => p.trim());
+            if (partes.length >= 3) {
+                const dia = parseInt(partes[0]);
+                const mes = parseInt(partes[1]);
+                const año = parseInt(partes[2]);
+                if (!isNaN(dia) && !isNaN(mes) && !isNaN(año) && mes >= 1 && mes <= 12) {
+                    return { mes, año };
+                }
+            }
+            return null;
+        } catch {
+            return null;
+        }
+    };
+
+    // Obtener años únicos de los reportes
+    const añosDisponibles = useMemo(() => {
+        const años = new Set<number>();
+        state.historialAbastecimiento.forEach(h => {
+            const parsed = parsearFecha(h.fecha);
+            if (parsed) años.add(parsed.año);
+        });
+        return Array.from(años).sort((a, b) => b - a); // Orden descendente
+    }, [state.historialAbastecimiento]);
+
+    // Obtener meses únicos del año seleccionado
+    const mesesDisponibles = useMemo(() => {
+        if (!añoSeleccionado) return [];
+        const meses = new Set<number>();
+        state.historialAbastecimiento.forEach(h => {
+            const parsed = parsearFecha(h.fecha);
+            if (parsed && parsed.año.toString() === añoSeleccionado) {
+                meses.add(parsed.mes);
+            }
+        });
+        return Array.from(meses).sort((a, b) => a - b);
+    }, [state.historialAbastecimiento, añoSeleccionado]);
+
+    // Filtrar reportes por mes y año
+    const reportesFiltrados = useMemo(() => {
+        if (!mesSeleccionado && !añoSeleccionado) {
+            return state.historialAbastecimiento;
+        }
+        return state.historialAbastecimiento.filter(h => {
+            const parsed = parsearFecha(h.fecha);
+            if (!parsed) return false;
+            const matchAño = !añoSeleccionado || parsed.año.toString() === añoSeleccionado;
+            const matchMes = !mesSeleccionado || parsed.mes.toString() === mesSeleccionado;
+            return matchAño && matchMes;
+        });
+    }, [state.historialAbastecimiento, mesSeleccionado, añoSeleccionado]);
+
+    // Resetear selección cuando cambian los filtros
+    useEffect(() => {
+        if (selectedId && !reportesFiltrados.find(h => h.id === selectedId)) {
+            setSelectedId('');
+            setSearch('');
+            setFiltroEnviar('TODOS');
+        }
+    }, [reportesFiltrados, selectedId]);
 
     // Cargar historial de abastecimientos al montar la página
     useEffect(() => {
@@ -63,8 +137,63 @@ export default function HistorialCargaPage() {
 
                     {/* Selector de carga Premium */}
                     <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100 mb-8 shadow-inner">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="lg:col-span-1">
+                        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-end">
+                            {/* Filtro Año */}
+                            <div>
+                                <label className="block text-[10px] font-black text-[#002D5A] uppercase tracking-widest mb-2 opacity-60">Año</label>
+                                <div className="relative">
+                                    <select
+                                        value={añoSeleccionado}
+                                        onChange={e => { 
+                                            setAñoSeleccionado(e.target.value);
+                                            setMesSeleccionado('');
+                                            setSelectedId('');
+                                            setSearch('');
+                                            setFiltroEnviar('TODOS');
+                                        }}
+                                        className="w-full pl-4 pr-10 py-3 bg-white border border-gray-200/70 rounded-xl font-bold text-sm text-[#002D5A] focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all appearance-none cursor-pointer shadow-sm"
+                                    >
+                                        <option value="">Todos</option>
+                                        {añosDisponibles.map(año => (
+                                            <option key={año} value={año.toString()}>{año}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                                        <Calendar className="w-4 h-4 text-gray-400" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Filtro Mes */}
+                            <div>
+                                <label className="block text-[10px] font-black text-[#002D5A] uppercase tracking-widest mb-2 opacity-60">Mes</label>
+                                <div className="relative">
+                                    <select
+                                        value={mesSeleccionado}
+                                        onChange={e => { 
+                                            setMesSeleccionado(e.target.value);
+                                            setSelectedId('');
+                                            setSearch('');
+                                            setFiltroEnviar('TODOS');
+                                        }}
+                                        disabled={!añoSeleccionado}
+                                        className="w-full pl-4 pr-10 py-3 bg-white border border-gray-200/70 rounded-xl font-bold text-sm text-[#002D5A] focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all appearance-none cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <option value="">Todos</option>
+                                        {mesesDisponibles.map(mes => (
+                                            <option key={mes} value={mes.toString()}>
+                                                {new Date(2000, mes - 1).toLocaleString('es-PE', { month: 'long' }).charAt(0).toUpperCase() + new Date(2000, mes - 1).toLocaleString('es-PE', { month: 'long' }).slice(1)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                                        <Calendar className="w-4 h-4 text-gray-400" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Seleccionar Abastecimiento */}
+                            <div className="lg:col-span-2">
                                 <label className="block text-[10px] font-black text-[#002D5A] uppercase tracking-widest mb-2 opacity-60">Seleccionar Abastecimiento</label>
                                 <div className="relative">
                                     <select
@@ -73,7 +202,7 @@ export default function HistorialCargaPage() {
                                         className="w-full pl-4 pr-10 py-3 bg-gray-100/60 border border-gray-200/70 rounded-xl font-bold text-sm text-[#002D5A] focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all appearance-none cursor-pointer shadow-sm"
                                     >
                                         <option value="">Seleccione un Reporte</option>
-                                        {state.historialAbastecimiento.map(h => (
+                                        {reportesFiltrados.map(h => (
                                             <option key={h.id} value={h.id}>{h.nombre}</option>
                                         ))}
                                     </select>
@@ -81,6 +210,23 @@ export default function HistorialCargaPage() {
                                         <Search className="w-4 h-4 text-gray-400" />
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Botón Limpiar Filtros */}
+                            <div>
+                                <button
+                                    onClick={() => {
+                                        setAñoSeleccionado('');
+                                        setMesSeleccionado('');
+                                        setSelectedId('');
+                                        setSearch('');
+                                        setFiltroEnviar('TODOS');
+                                    }}
+                                    className="w-full px-4 py-3 bg-white border border-gray-200/70 rounded-xl font-bold text-sm text-gray-600 hover:bg-gray-50 hover:text-[#002D5A] transition-all shadow-sm flex items-center justify-center gap-2"
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                    <span className="hidden sm:inline">Limpiar</span>
+                                </button>
                             </div>
 
                             {selectedHistorial && (
