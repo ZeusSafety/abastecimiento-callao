@@ -160,15 +160,16 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
                 {/* Footer fijo (no scrollea) */}
                 <div className="flex-shrink-0 border-t border-gray-200 bg-white p-3">
-                    <button
-                        onClick={handleVolverLogistica}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-md font-bold transition-all duration-200 shadow-md text-[10px] bg-[#002D5A] hover:bg-[#001F3D] text-white hover:shadow-lg active:scale-95"
-                        style={{ fontFamily: 'var(--font-poppins)' }}
-                    >
-                        <LogOut className="w-4 h-4" />
-                        <span className="uppercase tracking-wider">Volver a Logística</span>
-                    </button>
-                </div>
+    <button
+        onClick={handleVolverLogistica}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-md font-bold transition-all duration-200 shadow-md text-[10px] bg-[#002D5A] hover:bg-[#001F3D] text-white hover:shadow-lg active:scale-95"
+        style={{ fontFamily: 'var(--font-poppins)' }}
+    >
+        <LogOut className="w-4 h-4" />
+        {/* QUITÉ 'uppercase' Y 'tracking-wider' PARA QUE SE VEA NATURAL */}
+        <span className="">Volver a Logística</span>
+    </button>
+</div>
 
 
             </aside>
