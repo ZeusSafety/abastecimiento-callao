@@ -9,7 +9,7 @@ import {
     UnidadMedida,
 } from '../../context/MalvinasContext';
 import * as api from '../../services/api';
-import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download } from 'lucide-react';
+import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download, Loader2 } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import { exportToPDF } from '../../utils/export';
 
@@ -18,15 +18,25 @@ function ModalGuardar({
     isOpen,
     onClose,
     rows,
+    descargarPDFDespues,
+    descargarImagenDespues,
+    capturaRef,
+    onGuardado,
 }: {
     isOpen: boolean;
     onClose: () => void;
     rows: AbastecimientoRow[];
+    descargarPDFDespues?: boolean;
+    descargarImagenDespues?: boolean;
+    capturaRef?: React.RefObject<HTMLDivElement | null>;
+    onGuardado?: () => void;
 }) {
     const { guardarAbastecimiento, showToast } = useMalvinas();
     const [nombre, setNombre] = useState('');
     const [registradoPor, setRegistradoPor] = useState('');
     const [localRows, setLocalRows] = useState<AbastecimientoRow[]>(rows);
+    const [guardando, setGuardando] = useState(false);
+    const [generandoImagen, setGenerandoImagen] = useState(false);
 
     // Actualizar localRows cuando rows cambia o cuando se abre el modal
     useEffect(() => {
@@ -51,27 +61,143 @@ function ModalGuardar({
         showToast('info', 'Valores negativos limpiados a cero');
     };
 
+    const handleDescargarImagen = async () => {
+        if (!capturaRef?.current) {
+            showToast('error', 'No se encontró el contenedor para generar la imagen');
+            return;
+        }
+
+        setGenerandoImagen(true);
+        try {
+            const html2canvas = (await import('html2canvas')).default;
+
+            const original = capturaRef.current;
+            const clone = original.cloneNode(true) as HTMLElement;
+            clone.style.width = '1600px';
+            clone.style.position = 'absolute';
+            clone.style.left = '-9999px';
+            clone.style.top = '0';
+            clone.style.zIndex = '-1';
+            clone.style.backgroundColor = '#ffffff';
+            document.body.appendChild(clone);
+
+            // Esperar un tick para que el DOM aplique estilos
+            await new Promise(resolve => setTimeout(resolve, 120));
+
+            const height = Math.max(clone.scrollHeight, clone.offsetHeight, 600);
+
+            const canvas = await html2canvas(clone, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff',
+                width: 1600,
+                height,
+                windowWidth: 1600,
+                windowHeight: height,
+                imageTimeout: 20000,
+                removeContainer: true,
+                onclone: (clonedDoc) => {
+                    // Forzar antialiasing para texto
+                    const all = clonedDoc.querySelectorAll('*');
+                    all.forEach((el: any) => {
+                        try {
+                            el.style.webkitFontSmoothing = 'antialiased';
+                            el.style.mozOsxFontSmoothing = 'grayscale';
+                            el.style.textRendering = 'optimizeLegibility';
+                        } catch {}
+                    });
+                },
+            });
+
+            // Descargar como JPG
+            const imgData = canvas.toDataURL('image/jpeg', 1.0);
+            const a = document.createElement('a');
+            const fecha = new Date().toISOString().split('T')[0];
+            a.href = imgData;
+            a.download = `abastecimiento_stock_${fecha}.jpg`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => document.body.removeChild(a), 100);
+
+            document.body.removeChild(clone);
+            showToast('success', 'Imagen generada y descargada correctamente');
+        } catch (e: any) {
+            console.error('Error generando imagen stock:', e);
+            showToast('error', e?.message || 'Error al generar la imagen');
+        } finally {
+            setGenerandoImagen(false);
+        }
+    };
+
     const handleGuardar = async () => {
         if (!nombre.trim()) { showToast('error', 'Ingresa un nombre para el abastecimiento'); return; }
         if (!registradoPor.trim()) { showToast('error', 'Ingresa el nombre de quien registra'); return; }
         if (localRows.length === 0) { showToast('error', 'No hay productos para guardar'); return; }
         
+        setGuardando(true);
         try {
             await guardarAbastecimiento(nombre, registradoPor, localRows);
             showToast('success', `Abastecimiento "${nombre}" guardado correctamente`);
+            
+            // Si viene desde "Descargar PDF", descargar el PDF después de guardar
+            if (descargarPDFDespues) {
+                const productosSI = localRows.filter(r => r.enviar === 'SI');
+                if (productosSI.length > 0) {
+                    const { exportToPDF } = await import('../../utils/export');
+                    const datosPDF = productosSI.map(row => ({
+                        codigo: row.codigo,
+                        producto: row.nombre,
+                        cantidad: row.cantidad,
+                        unidadMedida: row.unidadMedida,
+                        tienda3006: row.tiendas['TIENDA 3006'],
+                        tienda3131: row.tiendas['TIENDA 3131'],
+                        tienda412A: row.tiendas['TIENDA 412-A'],
+                        tienda3133: row.tiendas['TIENDA 3133'],
+                        abastecerCajas: row.abastecerCajas,
+                        enviar: row.enviar,
+                    }));
+                    const columns = [
+                        { header: 'CÓDIGO', dataKey: 'codigo' },
+                        { header: 'PRODUCTO', dataKey: 'producto' },
+                        { header: 'CANT.', dataKey: 'cantidad' },
+                        { header: 'U. MEDIDA', dataKey: 'unidadMedida' },
+                        { header: 'TIENDA 3006', dataKey: 'tienda3006' },
+                        { header: 'TIENDA 3131', dataKey: 'tienda3131' },
+                        { header: 'TIENDA 412-A', dataKey: 'tienda412A' },
+                        { header: 'TIENDA 3133', dataKey: 'tienda3133' },
+                        { header: 'ABASTECER CAJAS', dataKey: 'abastecerCajas' },
+                        { header: 'ENVIAR', dataKey: 'enviar' },
+                    ];
+                    const fecha = new Date().toISOString().split('T')[0];
+                    exportToPDF(datosPDF, columns, `Abastecimiento_Stock_SI_${fecha}`, 'ABASTECIMIENTO AUTOMÁTICO - STOCK (ENVIAR = SI)');
+                    showToast('success', `PDF descargado con ${productosSI.length} producto(s)`);
+                }
+            }
+
+            // Si viene desde "Generar Imagen Stock", descargar la imagen después de guardar
+            if (descargarImagenDespues && capturaRef) {
+                await handleDescargarImagen();
+            }
+            
             setNombre('');
             setRegistradoPor('');
             onClose();
+            if (onGuardado) {
+                onGuardado();
+            }
         } catch (error) {
             // El error ya se maneja en guardarAbastecimiento
+        } finally {
+            setGuardando(false);
         }
     };
 
     if (!isOpen) return null;
 
     return (
-        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-            <div className="modal-box" style={{ maxWidth: '90vw', width: 1100 }}>
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()} style={{ zIndex: 10001 }}>
+            <div className="modal-box" style={{ maxWidth: '90vw', width: 1100, zIndex: 10002 }}>
                 <div className="modal-header">
                     <div>
                         <h6 style={{ margin: 0, fontWeight: 700, fontSize: 14, color: '#002D5A' }}>
@@ -184,10 +310,21 @@ function ModalGuardar({
                 </div>
 
                 <div className="modal-footer">
-                    <button onClick={onClose} className="btn btn-secondary">Cancelar</button>
-                    <button onClick={handleGuardar} className="btn btn-success">
-                        <Save className="w-4 h-4" />
-                        Guardar Abastecimiento
+                    <button onClick={onClose} className="btn btn-secondary" disabled={guardando}>
+                        Cancelar
+                    </button>
+                    <button onClick={handleGuardar} className="btn btn-success" disabled={guardando || generandoImagen}>
+                        {guardando || generandoImagen ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {generandoImagen ? 'Generando imagen...' : 'Guardando...'}
+                            </>
+                        ) : (
+                            <>
+                                <Save className="w-4 h-4" />
+                                Guardar Abastecimiento
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
@@ -206,6 +343,9 @@ export default function AbastecimientoPage() {
     const [modalImagenOpen, setModalImagenOpen] = useState(false);
     const [generandoImagen, setGenerandoImagen] = useState(false);
     const [fechaGeneracion, setFechaGeneracion] = useState<string>('');
+    const [reporteGuardado, setReporteGuardado] = useState(false);
+    const [descargarPDFDespues, setDescargarPDFDespues] = useState(false);
+    const [vieneDePrevisualizacion, setVieneDePrevisualizacion] = useState(false);
     const capturaRef = useRef<HTMLDivElement | null>(null);
 
     // Inicializar fecha solo en el cliente para evitar errores de hidratación
@@ -245,6 +385,8 @@ export default function AbastecimientoPage() {
                 });
                 
                 setRows(rowsCalculados);
+                // Resetear estado de reporte guardado cuando se recargan los datos
+                setReporteGuardado(false);
             } catch (error: any) {
                 console.error('Error cargando abastecimiento:', error);
                 showToast('error', 'Error al cargar datos de abastecimiento');
@@ -304,37 +446,44 @@ export default function AbastecimientoPage() {
             return;
         }
 
-        // Preparar datos para el PDF
-        const datosPDF = productosSI.map(row => ({
-            codigo: row.codigo,
-            producto: row.nombre,
-            cantidad: row.cantidad,
-            unidadMedida: row.unidadMedida,
-            tienda3006: row.tiendas['TIENDA 3006'],
-            tienda3131: row.tiendas['TIENDA 3131'],
-            tienda412A: row.tiendas['TIENDA 412-A'],
-            tienda3133: row.tiendas['TIENDA 3133'],
-            abastecerCajas: row.abastecerCajas,
-            enviar: row.enviar,
-        }));
+        // Si ya se guardó el reporte después de generar imagen, solo descargar PDF
+        if (reporteGuardado) {
+            // Preparar datos para el PDF
+            const datosPDF = productosSI.map(row => ({
+                codigo: row.codigo,
+                producto: row.nombre,
+                cantidad: row.cantidad,
+                unidadMedida: row.unidadMedida,
+                tienda3006: row.tiendas['TIENDA 3006'],
+                tienda3131: row.tiendas['TIENDA 3131'],
+                tienda412A: row.tiendas['TIENDA 412-A'],
+                tienda3133: row.tiendas['TIENDA 3133'],
+                abastecerCajas: row.abastecerCajas,
+                enviar: row.enviar,
+            }));
 
-        // Definir columnas para el PDF
-        const columns = [
-            { header: 'CÓDIGO', dataKey: 'codigo' },
-            { header: 'PRODUCTO', dataKey: 'producto' },
-            { header: 'CANT.', dataKey: 'cantidad' },
-            { header: 'U. MEDIDA', dataKey: 'unidadMedida' },
-            { header: 'TIENDA 3006', dataKey: 'tienda3006' },
-            { header: 'TIENDA 3131', dataKey: 'tienda3131' },
-            { header: 'TIENDA 412-A', dataKey: 'tienda412A' },
-            { header: 'TIENDA 3133', dataKey: 'tienda3133' },
-            { header: 'ABASTECER CAJAS', dataKey: 'abastecerCajas' },
-            { header: 'ENVIAR', dataKey: 'enviar' },
-        ];
+            // Definir columnas para el PDF
+            const columns = [
+                { header: 'CÓDIGO', dataKey: 'codigo' },
+                { header: 'PRODUCTO', dataKey: 'producto' },
+                { header: 'CANT.', dataKey: 'cantidad' },
+                { header: 'U. MEDIDA', dataKey: 'unidadMedida' },
+                { header: 'TIENDA 3006', dataKey: 'tienda3006' },
+                { header: 'TIENDA 3131', dataKey: 'tienda3131' },
+                { header: 'TIENDA 412-A', dataKey: 'tienda412A' },
+                { header: 'TIENDA 3133', dataKey: 'tienda3133' },
+                { header: 'ABASTECER CAJAS', dataKey: 'abastecerCajas' },
+                { header: 'ENVIAR', dataKey: 'enviar' },
+            ];
 
-        const fecha = new Date().toISOString().split('T')[0];
-        exportToPDF(datosPDF, columns, `Abastecimiento_Stock_SI_${fecha}`, 'ABASTECIMIENTO AUTOMÁTICO - STOCK (ENVIAR = SI)');
-        showToast('success', `PDF descargado con ${productosSI.length} producto(s)`);
+            const fecha = new Date().toISOString().split('T')[0];
+            exportToPDF(datosPDF, columns, `Abastecimiento_Stock_SI_${fecha}`, 'ABASTECIMIENTO AUTOMÁTICO - STOCK (ENVIAR = SI)');
+            showToast('success', `PDF descargado con ${productosSI.length} producto(s)`);
+        } else {
+            // Si no se ha guardado, abrir modal de guardar reporte con flag para descargar PDF después
+            setDescargarPDFDespues(true);
+            setModalOpen(true);
+        }
     };
 
     const handleDescargarImagen = async () => {
@@ -447,14 +596,6 @@ export default function AbastecimientoPage() {
                             >
                                 <Download className="w-3.5 h-3.5 stroke-[3px]" />
                                 <span>DESCARGAR PDF</span>
-                            </button>
-                            <button
-                                onClick={() => setModalOpen(true)}
-                                disabled={rows.length === 0}
-                                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-[#059669] hover:bg-[#047857] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95 border-b-2 border-black/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
-                            >
-                                <Save className="w-3.5 h-3.5 stroke-[3px]" />
-                                <span>GUARDAR REPORTE</span>
                             </button>
                         </div>
                     </header>
@@ -676,8 +817,21 @@ export default function AbastecimientoPage() {
 
             <ModalGuardar
                 isOpen={modalOpen}
-                onClose={() => setModalOpen(false)}
+                onClose={() => {
+                    setModalOpen(false);
+                    setDescargarPDFDespues(false);
+                    setVieneDePrevisualizacion(false);
+                }}
                 rows={rows}
+                descargarPDFDespues={descargarPDFDespues}
+                descargarImagenDespues={vieneDePrevisualizacion}
+                capturaRef={capturaRef}
+                onGuardado={() => {
+                    setReporteGuardado(true);
+                    setDescargarPDFDespues(false);
+                    setVieneDePrevisualizacion(false);
+                    setModalImagenOpen(false);
+                }}
             />
 
             {/* Modal Previsualización Imagen */}
@@ -799,12 +953,16 @@ export default function AbastecimientoPage() {
                                 Cancelar
                             </button>
                             <button 
-                                onClick={handleDescargarImagen} 
-                                disabled={generandoImagen}
+                                onClick={() => {
+                                    setVieneDePrevisualizacion(true);
+                                    setModalImagenOpen(false);
+                                    setDescargarPDFDespues(false);
+                                    setModalOpen(true);
+                                }}
                                 className="btn btn-success"
                             >
-                                <Download className="w-4 h-4" />
-                                {generandoImagen ? 'Generando...' : 'Descargar Imagen'}
+                                <Save className="w-4 h-4" />
+                                Guardar Reporte
                             </button>
                         </div>
                     </div>

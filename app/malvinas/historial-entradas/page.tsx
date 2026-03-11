@@ -357,6 +357,8 @@ export default function HistorialEntradasPage() {
     const { state, refreshEntradas } = useMalvinas();
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
+    const PER_PAGE = 30;
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroEntrada | null>(null);
@@ -384,6 +386,8 @@ export default function HistorialEntradasPage() {
     }, [state.entradas, search]);
 
     const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
     const openEdit = (e: RegistroEntrada) => {
         setEditData(e);
@@ -477,7 +481,7 @@ export default function HistorialEntradasPage() {
                                         type="text"
                                         placeholder="Buscar..."
                                         value={search}
-                                        onChange={e => { setSearch(e.target.value); }}
+                                        onChange={e => { setSearch(e.target.value); setPage(1); }}
                                         className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                     />
                                 </div>
@@ -520,7 +524,7 @@ export default function HistorialEntradasPage() {
                                                 </td>
                                             </tr>
                                         ) : (
-                                            filtered.map(e => {
+                                            paginated.map(e => {
                                                 const fechaFormateada = formatFechaDosLineas(e.fecha);
                                                 const fechaActualizacion = formatFechaDosLineas(e.updatedAt || '');
                                                 return (
@@ -589,6 +593,53 @@ export default function HistorialEntradasPage() {
                                         ))}
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+
+                        {/* Pagination */}
+                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(1)}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    «
+                                </button>
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    ‹
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col items-center">
+                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
+                                    Página {page} de {pages}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    ›
+                                </button>
+                                <button
+                                    onClick={() => setPage(pages)}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    »
+                                </button>
                             </div>
                         </div>
                     </div>

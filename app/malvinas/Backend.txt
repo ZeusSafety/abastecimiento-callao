@@ -476,20 +476,58 @@ def create_entrada(request, headers):
         if not um_id:
             return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
 
-        # Llamar al SP
+        # Verificar si la tienda de salida es un almacén o una tienda
+        cursor = conn.cursor()
+        cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea WHERE id = %s", (tienda_salida_id,))
+        tienda_salida_info = cursor.fetchone()
+        es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
+
+        # Llamar al SP manualmente para mantener control de la transacción
         params = [
             producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
             data.get('operador'), data.get('cantidad'), um_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
         ]
         sp_call = 'sp_registrar_entrada'
-        success, message, result_set = _ejecutar_sp_con_transaccion(conn, sp_call, params)
-
-        if success:
+        try:
+            logging.info(f"Ejecutando SP: {sp_call} con parámetros: {params}")
+            cursor.callproc(sp_call, params)
+            result_set = cursor.fetchall()
             nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+
+            # Si la tienda de salida NO es un almacén (es una tienda), restar del stock
+            # Esto maneja el caso de traslados entre tiendas
+            if not es_almacen_salida:
+                cantidad = data.get('cantidad', 0)
+                # Verificar si existe registro de existencia para esta tienda y producto
+                cursor.execute(
+                    "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+                    (producto_id, tienda_salida_id)
+                )
+                existencia_row = cursor.fetchone()
+                
+                if existencia_row:
+                    # Actualizar restando la cantidad
+                    nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
+                    cursor.execute(
+                        "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                        (nueva_cantidad, producto_id, tienda_salida_id)
+                    )
+                else:
+                    # Si no existe, crear registro con cantidad 0 (no debería pasar, pero por seguridad)
+                    cursor.execute(
+                        "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                        (producto_id, tienda_salida_id, 0)
+                    )
+            
+            conn.commit()
+            cursor.close()
             return created_response(data={'id': nuevo_id}, message="Entrada registrada exitosamente", headers=headers)
-        else:
-            return server_error(f"Error al registrar entrada: {message}", headers)
+        except Exception as e:
+            conn.rollback()
+            logging.error(f"Error ejecutando SP {sp_call}: {traceback.format_exc()}")
+            cursor.close()
+            return server_error(f"Error al registrar entrada: {str(e)}", headers)
 
     finally:
         conn.close()
@@ -538,6 +576,11 @@ def create_entradas_masivo(request, headers):
                     errores.append(f"Entrada {idx + 1}: Unidad de medida '{entrada_data.get('unidad_medida')}' no válida")
                     continue
 
+                # Verificar si la tienda de salida es un almacén o una tienda
+                cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea WHERE id = %s", (tienda_salida_id,))
+                tienda_salida_info = cursor.fetchone()
+                es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
+
                 # Llamar al SP sin commit automático
                 params = [
                     producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
@@ -549,6 +592,37 @@ def create_entradas_masivo(request, headers):
                 cursor.callproc(sp_call, params)
                 result_set = cursor.fetchall()
                 nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+                
+                # Si la tienda de salida NO es un almacén (es una tienda), restar del stock
+                # Esto maneja el caso de traslados entre tiendas
+                if not es_almacen_salida:
+                    cantidad = entrada_data.get('cantidad', 0)
+                    try:
+                        # Verificar si existe registro de existencia para esta tienda y producto
+                        cursor.execute(
+                            "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+                            (producto_id, tienda_salida_id)
+                        )
+                        existencia_row = cursor.fetchone()
+                        
+                        if existencia_row:
+                            # Actualizar restando la cantidad
+                            nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
+                            cursor.execute(
+                                "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                                (nueva_cantidad, producto_id, tienda_salida_id)
+                            )
+                        else:
+                            # Si no existe, crear registro con cantidad 0 (no debería pasar, pero por seguridad)
+                            cursor.execute(
+                                "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                                (producto_id, tienda_salida_id, 0)
+                            )
+                    except Exception as e:
+                        errores.append(f"Entrada {idx + 1}: Error al restar stock de tienda de salida: {str(e)}")
+                        logging.error(f"Error restando stock en entrada {idx + 1}: {traceback.format_exc()}")
+                        continue
+                
                 ids_generados.append(nuevo_id)
             except Exception as e:
                 errores.append(f"Entrada {idx + 1}: {str(e)}")

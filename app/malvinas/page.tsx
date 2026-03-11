@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { useMalvinas, TIENDAS, Tienda, Producto } from '../context/MalvinasContext';
-import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check } from 'lucide-react';
+import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
 import * as api from '../services/api';
 
@@ -29,6 +29,8 @@ function StockBadge({ value, min }: { value: number; min: number }) {
 const STORAGE_KEY_SELECTED = 'malvinas_inventario_selected';
 const STORAGE_KEY_EDITING = 'malvinas_inventario_editing';
 
+const PASSWORD_REQUIRED = '0427';
+
 export default function StockTotalPage() {
     const { state, refreshProductos, showToast } = useMalvinas();
     const [search, setSearch] = useState('');
@@ -36,6 +38,9 @@ export default function StockTotalPage() {
     const [editingProducts, setEditingProducts] = useState<Map<string, EditingProduct>>(new Map());
     const [isSaving, setIsSaving] = useState(false);
     const [isRestoring, setIsRestoring] = useState(true);
+    const [showPasswordModal, setShowPasswordModal] = useState(false);
+    const [password, setPassword] = useState('');
+    const [passwordError, setPasswordError] = useState(false);
     const isLoading = state.loading;
 
     // Restaurar datos del localStorage al cargar (solo una vez cuando los productos estén listos)
@@ -202,8 +207,26 @@ export default function StockTotalPage() {
         setEditingProducts(newEditing);
     };
 
-    // Confirmar todos los cambios
+    // Abrir modal de contraseña antes de confirmar
+    const handleConfirmAllClick = () => {
+        if (editingProducts.size === 0) return;
+        setShowPasswordModal(true);
+        setPassword('');
+        setPasswordError(false);
+    };
+
+    // Validar contraseña y confirmar cambios
     const handleConfirmAll = async () => {
+        if (password !== PASSWORD_REQUIRED) {
+            setPasswordError(true);
+            showToast('error', 'Contraseña incorrecta');
+            return;
+        }
+
+        setShowPasswordModal(false);
+        setPassword('');
+        setPasswordError(false);
+
         if (editingProducts.size === 0) return;
 
         setIsSaving(true);
@@ -281,7 +304,7 @@ export default function StockTotalPage() {
                                     {editingProducts.size} producto(s) en edición
                                 </span>
                                 <button
-                                    onClick={handleConfirmAll}
+                                    onClick={handleConfirmAllClick}
                                     disabled={isSaving}
                                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[11px] bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
                                 >
@@ -503,6 +526,106 @@ export default function StockTotalPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Modal de Contraseña */}
+            {showPasswordModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 z-[10000]">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                                    <Lock className="w-5 h-5 text-orange-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900">Confirmar Cambios</h2>
+                                    <p className="text-sm text-gray-500 mt-0.5">Ingresa la contraseña para continuar</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowPasswordModal(false);
+                                    setPassword('');
+                                    setPasswordError(false);
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6">
+                            <div className="mb-4">
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                    Contraseña *
+                                </label>
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => {
+                                        setPassword(e.target.value);
+                                        setPasswordError(false);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handleConfirmAll();
+                                        }
+                                    }}
+                                    className={`w-full px-4 py-3 border-2 rounded-xl text-sm font-medium transition-all outline-none ${
+                                        passwordError
+                                            ? 'border-red-500 bg-red-50 focus:border-red-600 focus:ring-4 focus:ring-red-100'
+                                            : 'border-gray-200 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-100'
+                                    }`}
+                                    placeholder="Ingresa la contraseña"
+                                    autoFocus
+                                />
+                                {passwordError && (
+                                    <p className="mt-2 text-sm text-red-600 font-medium">
+                                        Contraseña incorrecta. Intenta nuevamente.
+                                    </p>
+                                )}
+                            </div>
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                <p className="text-xs text-orange-800 font-medium">
+                                    Se actualizarán <strong>{editingProducts.size} producto(s)</strong>. Esta acción no se puede deshacer.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+                            <button
+                                onClick={() => {
+                                    setShowPasswordModal(false);
+                                    setPassword('');
+                                    setPasswordError(false);
+                                }}
+                                className="px-6 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmAll}
+                                disabled={isSaving || !password}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isSaving ? (
+                                    <>
+                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                        Guardando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check className="w-4 h-4" />
+                                        Confirmar
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

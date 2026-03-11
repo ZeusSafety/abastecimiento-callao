@@ -11,6 +11,7 @@ import {
     ClipboardList,
     BarChart2,
     X,
+    LogOut,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -57,6 +58,11 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
     const handleNav = (href: string) => {
         router.push(href);
+    };
+
+    const handleVolverLogistica = () => {
+        // Redirección inmediata sin esperar cierre del sidebar
+        window.location.href = 'https://zeus-safety.vercel.app/logistica';
     };
 
     return (
@@ -151,6 +157,18 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                         </div>
                     ))}
                 </nav>
+
+                {/* Footer fijo (no scrollea) */}
+                <div className="flex-shrink-0 border-t border-gray-200 bg-white p-3">
+                    <button
+                        onClick={handleVolverLogistica}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-md font-bold transition-all duration-200 shadow-md text-[10px] bg-[#002D5A] hover:bg-[#001F3D] text-white hover:shadow-lg active:scale-95"
+                        style={{ fontFamily: 'var(--font-poppins)' }}
+                    >
+                        <LogOut className="w-4 h-4" />
+                        <span className="uppercase tracking-wider">Volver a Logística</span>
+                    </button>
+                </div>
 
 
             </aside>

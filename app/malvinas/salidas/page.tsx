@@ -171,11 +171,12 @@ function ModalSalida({
         
         // Limpiar formulario excepto campos comunes y el código del producto
         // El código se mantiene hasta que el usuario cambie el producto
+        // El comprobante solo se limpia si la operación NO es "VENTA"
         setForm(f => ({
             ...f,
             cantidad: 0,
             observaciones: '',
-            comprobante: '',
+            comprobante: f.operacion === 'VENTA' ? f.comprobante : '', // Mantener comprobante si es VENTA
             asesor: '',
             // NO limpiar productoId, producto ni codigo para mantenerlos visibles
         }));
@@ -391,13 +392,58 @@ function ModalSalida({
                             />
                         </div>
 
+                        {/* Existencia por Tienda */}
+                        {selectedProducto && (
+                            <div className="col-span-2">
+                                <label className="form-label">Existencia Almacén</label>
+                                <div className="grid grid-cols-4 gap-2">
+                                    {TIENDAS.map(tienda => {
+                                        const existencia = selectedProducto.existencia[tienda] || 0;
+                                        const stockMinimo = selectedProducto.stockMinimo[tienda] || 0;
+                                        const bajoStock = existencia < stockMinimo && stockMinimo > 0;
+                                        return (
+                                            <div
+                                                key={tienda}
+                                                className={`p-3 rounded-lg border-2 transition-all ${
+                                                    bajoStock
+                                                        ? 'bg-red-50 border-red-200'
+                                                        : 'bg-blue-50 border-blue-200'
+                                                }`}
+                                            >
+                                                <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
+                                                    {tienda.replace('TIENDA ', '')}
+                                                </div>
+                                                <div className={`text-lg font-black ${bajoStock ? 'text-red-700' : 'text-blue-700'}`}>
+                                                    {existencia}
+                                                </div>
+                                                {stockMinimo > 0 && (
+                                                    <div className="text-[8px] text-gray-500 mt-0.5">
+                                                        Mín: {stockMinimo}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Operación */}
                         <div>
                             <label className="form-label">Operación *</label>
                             <div className="relative">
                                 <select
                                     value={form.operacion}
-                                    onChange={e => setForm(f => ({ ...f, operacion: e.target.value, operacionPersonalizada: e.target.value !== 'OTROS' ? '' : f.operacionPersonalizada }))}
+                                    onChange={e => {
+                                        const nuevaOperacion = e.target.value;
+                                        setForm(f => ({ 
+                                            ...f, 
+                                            operacion: nuevaOperacion, 
+                                            operacionPersonalizada: nuevaOperacion !== 'OTROS' ? '' : f.operacionPersonalizada,
+                                            // Si cambia de VENTA a otra operación, limpiar comprobante
+                                            comprobante: f.operacion === 'VENTA' && nuevaOperacion !== 'VENTA' ? '' : f.comprobante
+                                        }));
+                                    }}
                                     className="form-input"
                                     style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                 >
@@ -426,7 +472,18 @@ function ModalSalida({
                             <input
                                 type="text"
                                 value={form.comprobante}
-                                onChange={e => setForm(f => ({ ...f, comprobante: e.target.value }))}
+                                onChange={e => {
+                                    let valor = e.target.value;
+                                    // Detectar si hay una letra al inicio y formatearla: convertir a mayúscula y agregar espacio
+                                    const match = valor.match(/^([a-zA-Z])(.*)$/);
+                                    if (match) {
+                                        const letra = match[1].toUpperCase();
+                                        const resto = match[2].trim();
+                                        // Si el resto no empieza con espacio, agregarlo
+                                        valor = resto.startsWith(' ') ? `${letra}${resto}` : `${letra} ${resto}`;
+                                    }
+                                    setForm(f => ({ ...f, comprobante: valor }));
+                                }}
                                 className="form-input"
                                 style={{ fontSize: 12 }}
                                 placeholder="Ej: F001-00123"
@@ -638,7 +695,18 @@ function ModalSalida({
                                                                         <input
                                                                             type="text"
                                                                             value={p.comprobante}
-                                                                            onChange={e => handleActualizarProducto(index, 'comprobante', e.target.value)}
+                                                                            onChange={e => {
+                                                                                let valor = e.target.value;
+                                                                                // Detectar si hay una letra al inicio y formatearla: convertir a mayúscula y agregar espacio
+                                                                                const match = valor.match(/^([a-zA-Z])(.*)$/);
+                                                                                if (match) {
+                                                                                    const letra = match[1].toUpperCase();
+                                                                                    const resto = match[2].trim();
+                                                                                    // Si el resto no empieza con espacio, agregarlo
+                                                                                    valor = resto.startsWith(' ') ? `${letra}${resto}` : `${letra} ${resto}`;
+                                                                                }
+                                                                                handleActualizarProducto(index, 'comprobante', valor);
+                                                                            }}
                                                                             className="form-input text-[10px] py-1 px-2"
                                                                             onClick={e => e.stopPropagation()}
                                                                         />

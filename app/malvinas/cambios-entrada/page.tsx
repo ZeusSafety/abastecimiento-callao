@@ -10,6 +10,8 @@ export default function CambiosEntradaPage() {
     const { state, refreshHistorialEntradas } = useMalvinas();
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
+    const PER_PAGE = 20;
     const [modalObservaciones, setModalObservaciones] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
     const [modalMotivo, setModalMotivo] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
 
@@ -31,6 +33,8 @@ export default function CambiosEntradaPage() {
     }, [state.cambiosEntrada, search]);
 
     const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
     const handleExportExcel = () => {
         const columns = [
@@ -124,7 +128,7 @@ export default function CambiosEntradaPage() {
                                     type="text"
                                     placeholder="Buscar..."
                                     value={search}
-                                    onChange={e => { setSearch(e.target.value); }}
+                                    onChange={e => { setSearch(e.target.value); setPage(1); }}
                                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
@@ -165,7 +169,7 @@ export default function CambiosEntradaPage() {
                                             </td>
                                         </tr>
                                     ) : (
-                                        filtered.map((c, i) => (
+                                        paginated.map((c, i) => (
                                             <tr key={`${c.id}-${i}`} className="hover:bg-blue-50/30 transition-colors">
                                                 <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{c.fecha}</td>
                                                 <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{c.producto}</td>
@@ -214,6 +218,53 @@ export default function CambiosEntradaPage() {
                                     )}
                                 </tbody>
                             </table>
+                        </div>
+
+                        {/* Pagination */}
+                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(1)}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    «
+                                </button>
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    ‹
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col items-center">
+                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
+                                    Página {page} de {pages}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    ›
+                                </button>
+                                <button
+                                    onClick={() => setPage(pages)}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                                    style={{ fontFamily: 'var(--font-poppins)' }}
+                                >
+                                    »
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

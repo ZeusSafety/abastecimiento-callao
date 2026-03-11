@@ -393,6 +393,42 @@ function ModalEntrada({
                             />
                         </div>
 
+                        {/* Existencia por Tienda */}
+                        {selectedProducto && (
+                            <div className="col-span-2">
+                                <label className="form-label">Existencia Almacén</label>
+                                <div className="grid grid-cols-4 gap-2">
+                                    {TIENDAS.map(tienda => {
+                                        const existencia = selectedProducto.existencia[tienda] || 0;
+                                        const stockMinimo = selectedProducto.stockMinimo[tienda] || 0;
+                                        const bajoStock = existencia < stockMinimo && stockMinimo > 0;
+                                        return (
+                                            <div
+                                                key={tienda}
+                                                className={`p-3 rounded-lg border-2 transition-all ${
+                                                    bajoStock
+                                                        ? 'bg-red-50 border-red-200'
+                                                        : 'bg-blue-50 border-blue-200'
+                                                }`}
+                                            >
+                                                <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
+                                                    {tienda.replace('TIENDA ', '')}
+                                                </div>
+                                                <div className={`text-lg font-black ${bajoStock ? 'text-red-700' : 'text-blue-700'}`}>
+                                                    {existencia}
+                                                </div>
+                                                {stockMinimo > 0 && (
+                                                    <div className="text-[8px] text-gray-500 mt-0.5">
+                                                        Mín: {stockMinimo}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Operación */}
                         <div>
                             <label className="form-label">Operación *</label>
