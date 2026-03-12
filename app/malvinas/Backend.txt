@@ -1117,41 +1117,83 @@ def calcular_abastecimiento(request, headers):
         cursor.close()
         conn.close()
 
+## Función de Subida a Cloud Storage
+# Variables globales para el cliente y el bucket de GCS
+storage_client = storage.Client()
+BUCKET_NAME = "archivos_sistema"
+GCS_FOLDER = "incidencias_areas_zeus"
+
+def upload_to_gcs(file):
+    """
+    Sube un archivo a Google Cloud Storage y devuelve la URL pública.
+    Args: file: El objeto de archivo multipart/form-data.
+    Returns: La URL del archivo subido o None si hay un error.
+    """
+    try:
+        bucket = storage_client.bucket(BUCKET_NAME)
+        # La ruta del archivo en el bucket
+        object_name = f"{GCS_FOLDER}/{file.filename}"
+        blob = bucket.blob(object_name)
+
+        # Sube el archivo directamente
+        blob.upload_from_file(file, content_type=file.content_type)
+        
+        # Genera la URL pública
+        gcs_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{object_name}"
+        return gcs_url
+    except Exception as e:
+        print(f"Error al subir a Cloud Storage: {e}")
+        return None
+
 def guardar_abastecimiento(request, headers):
     """
-    Guarda un abastecimiento. Primero crea la cabecera y luego los detalles.
+    Guarda un abastecimiento con validación de contraseña para actas faltantes
+    y subida de múltiples imágenes a GCS.
     """
-    data = request.get_json()
-    if not data:
-        return bad_request_error("Datos JSON inválidos", headers)
-
+    # 1. Obtener datos del formulario (multipart/form-data)
+    # El JSON de datos suele venir en un campo llamado 'data' o similar
+    form_data = request.form.get('data')
+    if not form_data:
+        return bad_request_error("No se recibieron datos de abastecimiento", headers)
+    
+    data = json.loads(form_data)
     nombre_abastecimiento = data.get('nombre_abastecimiento')
     registrado_por = data.get('registrado_por')
-    detalles = data.get('detalles')  # Lista de productos a guardar
+    detalles = data.get('detalles')
+    password_cliente = data.get('password_autorizacion') # Contraseña enviada desde el front
+    
+    # 2. Obtener archivos (Actas)
+    files = request.files.getlist('actas') # 'actas' es el nombre del campo en el input file múltiple
 
     if not nombre_abastecimiento or not registrado_por or detalles is None:
-        return bad_request_error("Faltan campos: nombre_abastecimiento, registrado_por, detalles", headers)
+        return bad_request_error("Faltan campos obligatorios", headers)
 
     conn = get_connection()
     cursor = conn.cursor()
+    
     try:
-        # 1. Insertar cabecera y obtener el ID
+        # --- VALIDACIÓN DE CONTRASEÑA DINÁMICA ---
+        if not files or len(files) == 0:
+            cursor.execute("SELECT valor FROM configuracion_sistema WHERE clave = 'pass_abastecimiento_sin_acta'")
+            res_config = cursor.fetchone()
+            pass_sistema = res_config['valor'] if res_config else None
+            
+            if not password_cliente or password_cliente != pass_sistema:
+                return (json.dumps({"message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
+
+        # 3. Insertar cabecera (Usando tu SP existente)
         cursor.callproc('sp_guardar_abastecimiento', (nombre_abastecimiento, registrado_por, 0))
         conn.commit()
-        # Obtener el OUT parameter. Dependiendo de la librería, puede estar en cursor._last_insert_id o en fetchall()
         cursor.execute("SELECT LAST_INSERT_ID() as id")
         id_cabecera = cursor.fetchone()['id']
 
         if not id_cabecera:
-            raise Exception("No se pudo obtener el ID de la cabecera de abastecimiento")
+            raise Exception("No se pudo obtener el ID de la cabecera")
 
-        # 2. Insertar detalles usando el SP de detalle
+        # 4. Insertar detalles
         for detalle in detalles:
-            # Obtener IDs de producto
             producto_id = _get_id_producto_por_codigo_o_nombre(detalle.get('codigo'), conn)
             if not producto_id:
-                # Si no encuentra el producto, podrías saltarlo o devolver error
-                logging.warning(f"Producto con código '{detalle.get('codigo')}' no encontrado. Se omite.")
                 continue
 
             cursor.callproc('sp_guardar_abastecimiento_detalle', (
@@ -1164,14 +1206,23 @@ def guardar_abastecimiento(request, headers):
                 detalle.get('abastecer_cajas', 0),
                 detalle.get('enviar', 'NO')
             ))
-        conn.commit()
 
-        return created_response(data={'id_abastecimiento': id_cabecera}, message="Abastecimiento guardado exitosamente", headers=headers)
+        # 5. Subir Actas a GCS e insertar en la nueva tabla
+        if files:
+            for file in files:
+                if file.filename != '':
+                    url_publica = upload_to_gcs(file) # Tu función existente
+                    if url_publica:
+                        sql_acta = "INSERT INTO abastecimiento_actas (id_abastecimiento, nombre_imagen, url_imagen) VALUES (%s, %s, %s)"
+                        cursor.execute(sql_acta, (id_cabecera, file.filename, url_publica))
+
+        conn.commit()
+        return created_response(data={'id_abastecimiento': id_cabecera}, message="Abastecimiento y actas guardados exitosamente", headers=headers)
 
     except Exception as e:
         conn.rollback()
-        logging.error(f"Error guardando abastecimiento: {traceback.format_exc()}")
-        return server_error(f"Error guardando abastecimiento: {str(e)}", headers)
+        logging.error(f"Error: {traceback.format_exc()}")
+        return server_error(str(e), headers)
     finally:
         cursor.close()
         conn.close()
@@ -1255,6 +1306,86 @@ def get_historial_abastecimiento_general(request, headers):
         cursor.execute(sql)
         historial = cursor.fetchall()
         return success_response(data=historial, message="Historial general de abastecimientos obtenido", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_actas_abastecimiento(request, headers, id_abastecimiento):
+    """
+    Obtiene las actas (imágenes) asociadas a un abastecimiento específico.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT 
+                aa.id,
+                aa.id_abastecimiento,
+                aa.nombre_imagen,
+                aa.url_imagen,
+                aa.fecha_subida,
+                ac.registrado_por,
+                ac.fecha_registro
+            FROM abastecimiento_actas aa
+            JOIN abastecimiento_cabecera ac ON aa.id_abastecimiento = ac.id
+            WHERE aa.id_abastecimiento = %s
+            ORDER BY aa.fecha_subida DESC
+        """
+        cursor.execute(sql, (id_abastecimiento,))
+        actas = cursor.fetchall()
+        return success_response(data=actas, message="Actas obtenidas correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def cambiar_password_abastecimiento(request, headers):
+    """
+    Cambia la contraseña para guardar abastecimiento sin actas.
+    Requiere la contraseña anterior y la nueva contraseña.
+    """
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+    
+    password_anterior = data.get('password_anterior')
+    password_nueva = data.get('password_nueva')
+    
+    if not password_anterior or not password_nueva:
+        return bad_request_error("Se requieren password_anterior y password_nueva", headers)
+    
+    if len(password_nueva) < 4:
+        return bad_request_error("La nueva contraseña debe tener al menos 4 caracteres", headers)
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Verificar contraseña anterior
+        cursor.execute("SELECT valor FROM configuracion_sistema WHERE clave = 'pass_abastecimiento_sin_acta'")
+        res_config = cursor.fetchone()
+        pass_actual = res_config['valor'] if res_config else None
+        
+        if not pass_actual or password_anterior != pass_actual:
+            return bad_request_error("La contraseña anterior es incorrecta", headers)
+        
+        # Actualizar contraseña
+        cursor.execute(
+            "UPDATE configuracion_sistema SET valor = %s, ultima_actualizacion = NOW() WHERE clave = 'pass_abastecimiento_sin_acta'",
+            (password_nueva,)
+        )
+        
+        if cursor.rowcount == 0:
+            # Si no existe, crear el registro
+            cursor.execute(
+                "INSERT INTO configuracion_sistema (clave, valor) VALUES ('pass_abastecimiento_sin_acta', %s)",
+                (password_nueva,)
+            )
+        
+        conn.commit()
+        return success_response(message="Contraseña actualizada exitosamente", headers=headers)
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error cambiando contraseña: {traceback.format_exc()}")
+        return server_error(f"Error al cambiar la contraseña: {str(e)}", headers)
     finally:
         cursor.close()
         conn.close()
@@ -1362,8 +1493,18 @@ def abastecimiento_entra_salida_malvinas(request):
             nombre_abastecimiento = path.split('/')[-1]
             # Podrías necesitar decodificar el nombre si tiene caracteres especiales
             return get_detalle_abastecimiento(request, headers, nombre_abastecimiento)
+        elif path.startswith('/api/abastecimiento/actas/') and method == 'GET':
+            id_abastecimiento = path.split('/')[-1]
+            if id_abastecimiento.isdigit():
+                return get_actas_abastecimiento(request, headers, int(id_abastecimiento))
+            else:
+                return not_found_error("ID de abastecimiento inválido", headers)
         elif path == '/api/abastecimiento/historial-general' and method == 'GET':
             return get_historial_abastecimiento_general(request, headers)
+
+        # ==================== MÓDULO: CONFIGURACIÓN / CREDENCIALES ==================
+        elif path == '/api/configuracion/cambiar-password-abastecimiento' and method == 'POST':
+            return cambiar_password_abastecimiento(request, headers)
 
         # ==================== 404 - RUTA NO ENCONTRADA ====================
         else:

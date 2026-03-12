@@ -12,6 +12,7 @@ import {
     BarChart2,
     X,
     LogOut,
+    Key,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -50,6 +51,12 @@ const navItems = [
             { id: 'historial-general', label: 'Historial General', href: '/malvinas/historial-general', icon: ClipboardList },
         ],
     },
+    {
+        group: 'CREDENCIAL',
+        items: [
+            { id: 'gestion-credencial', label: 'Gestión de Credencial', href: '/malvinas/gestion-credencial', icon: Key },
+        ],
+    },
 ];
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
@@ -57,6 +64,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
 
     const handleNav = (href: string) => {
+        // Si se navega a otra ruta y estaba en gestión de credenciales, limpiar sesión
+        if (pathname === '/malvinas/gestion-credencial' && href !== '/malvinas/gestion-credencial') {
+            sessionStorage.removeItem('credencial_autenticado');
+        }
         router.push(href);
     };
 

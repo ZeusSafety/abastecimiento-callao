@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas, TIENDAS } from '../../context/MalvinasContext';
-import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown, Calendar } from 'lucide-react';
+import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown, Calendar, Image as ImageIcon, X, Loader2 } from 'lucide-react';
 
 export default function HistorialCargaPage() {
     const { state, cargarDetalleAbastecimiento, refreshAbastecimiento } = useMalvinas();
@@ -12,6 +12,10 @@ export default function HistorialCargaPage() {
     const [loading, setLoading] = useState(false);
     const [mesSeleccionado, setMesSeleccionado] = useState<string>('');
     const [añoSeleccionado, setAñoSeleccionado] = useState<string>('');
+    const [modalActasOpen, setModalActasOpen] = useState(false);
+    const [actas, setActas] = useState<any[]>([]);
+    const [loadingActas, setLoadingActas] = useState(false);
+    const [imagenSeleccionada, setImagenSeleccionada] = useState<string | null>(null);
 
     // Función helper para extraer mes y año de una fecha formateada
     // fmtDate devuelve formato: "07/03/2026 11:22" (día/mes/año hora:minuto)
@@ -269,7 +273,38 @@ export default function HistorialCargaPage() {
                                         </span>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-3 w-full sm:w-auto">
+                                <div className="flex items-center gap-3">
+                                <button
+    onClick={async () => {
+        const idAbastecimiento = parseInt(selectedHistorial.id);
+        if (!isNaN(idAbastecimiento)) {
+            setLoadingActas(true);
+            setModalActasOpen(true);
+            try {
+                const { getActasAbastecimiento } = await import('../../services/api');
+                const actasData = await getActasAbastecimiento(idAbastecimiento);
+                setActas(actasData);
+            } catch (error: any) {
+                console.error('Error cargando actas:', error);
+            } finally {
+                setLoadingActas(false);
+            }
+        }
+    }}
+    // He actualizado el bg a un color sólido con el valor exacto y un hover ligeramente más oscuro
+    className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl font-bold text-xs transition-all shadow-md hover:shadow-lg"
+    style={{ backgroundColor: '#002D5A' }} 
+    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#001d3d'} // Efecto hover manual para el color personalizado
+    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
+>
+    <ImageIcon className="w-4 h-4" />
+    Ver Actas
+</button>
+                                </div>
+                            </div>
+
+                            {/* Toolbar de filtros */}
+                            <div className="flex items-center gap-3 w-full sm:w-auto mb-4">
                                     <div className="relative flex-1 sm:w-64">
                                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                         <input
@@ -296,7 +331,6 @@ export default function HistorialCargaPage() {
                                     <button onClick={() => { setSearch(''); setFiltroEnviar('TODOS'); }} className="p-2.5 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 transition-all active:scale-95 shadow-sm text-gray-500">
                                         <RefreshCw className="w-4 h-4" />
                                     </button>
-                                </div>
                             </div>
 
                             {/* Table card */}
@@ -393,6 +427,127 @@ export default function HistorialCargaPage() {
                     )}
                 </div>
             </div>
+
+            {/* Modal Visualizar Actas */}
+            {modalActasOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalActasOpen(false)} style={{ zIndex: 10001 }}>
+                    <div className="modal-box" style={{ maxWidth: '95vw', width: 1200, maxHeight: '95vh', overflow: 'auto', zIndex: 10002 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                    Actas de Abastecimiento
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    {selectedHistorial?.nombre}
+                                </p>
+                            </div>
+                            <button onClick={() => setModalActasOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            {loadingActas ? (
+                                <div className="flex flex-col items-center justify-center py-20">
+                                    <Loader2 className="w-8 h-8 animate-spin text-[#002D5A] mb-4" />
+                                    <p className="text-sm text-gray-500">Cargando actas...</p>
+                                </div>
+                            ) : actas.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-20">
+                                    <ImageIcon className="w-16 h-16 text-gray-300 mb-4" />
+                                    <p className="text-sm font-semibold text-gray-600 mb-1">No hay actas registradas</p>
+                                    <p className="text-xs text-gray-400">Este abastecimiento no tiene actas adjuntas</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {actas.map((acta, index) => (
+                                        <div
+                                            key={acta.id}
+                                            className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                                            onClick={() => setImagenSeleccionada(acta.url_imagen)}
+                                        >
+                                            {/* Imagen */}
+                                            <div className="relative aspect-video bg-gray-100">
+                                                <img
+                                                    src={acta.url_imagen}
+                                                    alt={acta.nombre_imagen}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e) => {
+                                                        (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
+                                                    }}
+                                                />
+                                            </div>
+                                            {/* Información */}
+                                            <div className="p-4">
+                                                <h6 className="font-bold text-sm text-gray-900 mb-2 line-clamp-2">
+                                                    {acta.nombre_imagen}
+                                                </h6>
+                                                <div className="space-y-2 text-xs">
+                                                    <div className="flex items-center gap-2 text-gray-600">
+                                                        <Calendar className="w-3.5 h-3.5" />
+                                                        <span>
+                                                            {new Date(acta.fecha_subida).toLocaleString('es-PE', {
+                                                                day: '2-digit',
+                                                                month: '2-digit',
+                                                                year: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                    {acta.registrado_por && (
+                                                        <div className="flex items-center gap-2 text-gray-600">
+                                                            <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-[8px] font-bold text-blue-700">
+                                                                {acta.registrado_por.charAt(0).toUpperCase()}
+                                                            </div>
+                                                            <span>{acta.registrado_por}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            <button onClick={() => setModalActasOpen(false)} className="btn btn-secondary">
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Lightbox para imagen completa */}
+            {imagenSeleccionada && (
+                <div 
+                    className="modal-backdrop animate-in fade-in duration-300" 
+                    onClick={() => setImagenSeleccionada(null)} 
+                    style={{ zIndex: 10007 }}
+                >
+                    <div 
+                        className="relative w-full h-full flex items-center justify-center p-4 animate-in zoom-in-95 duration-300"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button 
+                            onClick={() => setImagenSeleccionada(null)} 
+                            className="absolute top-4 right-4 p-2 bg-white hover:bg-gray-100 rounded-full transition-colors z-10 shadow-lg"
+                        >
+                            <X className="w-6 h-6 text-gray-600" />
+                        </button>
+                        <img
+                            src={imagenSeleccionada}
+                            alt="Imagen completa"
+                            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

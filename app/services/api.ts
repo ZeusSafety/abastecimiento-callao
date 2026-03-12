@@ -131,6 +131,14 @@ export interface DetalleAbastecimientoDB {
   enviar: string;
 }
 
+export interface ActaAbastecimientoDB {
+  id: number;
+  id_abastecimiento: number;
+  nombre_imagen: string;
+  url_imagen: string;
+  fecha_subida: string;
+}
+
 // ─── Funciones auxiliares ────────────────────────────────────────────────────
 async function fetchAPI<T>(
   endpoint: string,
@@ -400,25 +408,77 @@ export async function calcularAbastecimiento(): Promise<AbastecimientoDB[]> {
   return response.data || [];
 }
 
-export async function guardarAbastecimiento(data: {
-  nombre_abastecimiento: string;
-  registrado_por: string;
-  detalles: Array<{
-    codigo: string;
-    cant_tienda_3006: number;
-    cant_tienda_3131: number;
-    cant_tienda_412a: number;
-    cant_tienda_3133: number;
-    abastecer_cajas: number;
-    enviar: 'SI' | 'NO';
-  }>;
-}): Promise<{ id_abastecimiento: number }> {
-  const response = await fetchAPI<{ id_abastecimiento: number }>('/api/abastecimiento/guardar', {
+export async function guardarAbastecimiento(
+  data: {
+    nombre_abastecimiento: string;
+    registrado_por: string;
+    detalles: Array<{
+      codigo: string;
+      cant_tienda_3006: number;
+      cant_tienda_3131: number;
+      cant_tienda_412a: number;
+      cant_tienda_3133: number;
+      abastecer_cajas: number;
+      enviar: 'SI' | 'NO';
+    }>;
+    password_autorizacion?: string;
+  },
+  archivos?: Array<{ file: File; nombre: string }>
+): Promise<{ id_abastecimiento: number }> {
+  const formData = new FormData();
+  
+  // Agregar datos JSON como string
+  formData.append('data', JSON.stringify(data));
+  
+  // Agregar archivos si existen
+  if (archivos && archivos.length > 0) {
+    archivos.forEach(({ file, nombre }) => {
+      // Renombrar el archivo antes de agregarlo
+      const blob = file.slice(0, file.size, file.type);
+      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
+      formData.append('actas', renamedFile);
+    });
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/abastecimiento/guardar`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+      throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || result.message || 'Error al guardar abastecimiento');
+    }
+    return result.data || { id_abastecimiento: 0 };
+  } catch (error) {
+    console.error('Error en guardarAbastecimiento:', error);
+    throw error;
+  }
+}
+
+export async function getActasAbastecimiento(idAbastecimiento: number): Promise<ActaAbastecimientoDB[]> {
+  const response = await fetchAPI<ActaAbastecimientoDB[]>(`/api/abastecimiento/actas/${idAbastecimiento}`);
+  return response.data || [];
+}
+
+export async function cambiarPasswordAbastecimiento(
+  passwordAnterior: string,
+  passwordNueva: string
+): Promise<void> {
+  const response = await fetchAPI('/api/configuracion/cambiar-password-abastecimiento', {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      password_anterior: passwordAnterior,
+      password_nueva: passwordNueva,
+    }),
   });
-  if (!response.data) throw new Error(response.error || 'Error al guardar abastecimiento');
-  return response.data;
+  if (!response.success) throw new Error(response.error || 'Error al cambiar la contraseña');
 }
 
 export async function getHistorialAbastecimientos(): Promise<HistorialAbastecimientoDB[]> {

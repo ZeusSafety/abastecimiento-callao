@@ -9,7 +9,7 @@ import {
     UnidadMedida,
 } from '../../context/MalvinasContext';
 import * as api from '../../services/api';
-import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download, Loader2 } from 'lucide-react';
+import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download, Loader2, Upload, Trash2, FileImage, Lock } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import { exportToPDF } from '../../utils/export';
 
@@ -31,12 +31,16 @@ function ModalGuardar({
     capturaRef?: React.RefObject<HTMLDivElement | null>;
     onGuardado?: () => void;
 }) {
-    const { guardarAbastecimiento, showToast } = useMalvinas();
+    const { state, showToast, refreshAbastecimiento } = useMalvinas();
     const [nombre, setNombre] = useState('');
     const [registradoPor, setRegistradoPor] = useState('');
     const [localRows, setLocalRows] = useState<AbastecimientoRow[]>(rows);
     const [guardando, setGuardando] = useState(false);
     const [generandoImagen, setGenerandoImagen] = useState(false);
+    const [actas, setActas] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [modalActasOpen, setModalActasOpen] = useState(false);
+    const [modalPasswordOpen, setModalPasswordOpen] = useState(false);
+    const [passwordAutorizacion, setPasswordAutorizacion] = useState('');
 
     // Actualizar localRows cuando rows cambia o cuando se abre el modal
     useEffect(() => {
@@ -46,8 +50,40 @@ function ModalGuardar({
             } else {
                 setLocalRows([]);
             }
+        } else {
+            // Limpiar actas cuando se cierra el modal
+            setActas([]);
+            setPasswordAutorizacion('');
         }
     }, [isOpen, rows]);
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const nuevasActas = files.map(file => ({
+            file,
+            nombre: file.name.replace(/\.[^/.]+$/, ''), // Nombre sin extensión por defecto
+            preview: URL.createObjectURL(file)
+        }));
+        setActas(prev => [...prev, ...nuevasActas]);
+        e.target.value = ''; // Reset input
+    };
+
+    const handleRemoveActa = (index: number) => {
+        setActas(prev => {
+            const nueva = [...prev];
+            URL.revokeObjectURL(nueva[index].preview);
+            nueva.splice(index, 1);
+            return nueva;
+        });
+    };
+
+    const handleUpdateNombreActa = (index: number, nuevoNombre: string) => {
+        setActas(prev => {
+            const nueva = [...prev];
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            return nueva;
+        });
+    };
 
     const limpiarNegativos = () => {
         setLocalRows(prev =>
@@ -135,10 +171,48 @@ function ModalGuardar({
         if (!registradoPor.trim()) { showToast('error', 'Ingresa el nombre de quien registra'); return; }
         if (localRows.length === 0) { showToast('error', 'No hay productos para guardar'); return; }
         
+        // Si no hay actas, mostrar modal de contraseña
+        if (actas.length === 0) {
+            setModalPasswordOpen(true);
+            return;
+        }
+        
+        // Si hay actas, proceder directamente con el guardado
+        await ejecutarGuardado();
+    };
+
+    const ejecutarGuardado = async () => {
         setGuardando(true);
         try {
-            await guardarAbastecimiento(nombre, registradoPor, localRows);
+            const detalles = localRows.map(item => {
+                const producto = state.productos.find(p => p.id === item.productoId);
+                if (!producto) throw new Error(`Producto ${item.codigo} no encontrado`);
+
+                return {
+                    codigo: item.codigo,
+                    cant_tienda_3006: Math.max(0, item.tiendas['TIENDA 3006']),
+                    cant_tienda_3131: Math.max(0, item.tiendas['TIENDA 3131']),
+                    cant_tienda_412a: Math.max(0, item.tiendas['TIENDA 412-A']),
+                    cant_tienda_3133: Math.max(0, item.tiendas['TIENDA 3133']),
+                    abastecer_cajas: item.abastecerCajas,
+                    enviar: item.enviar,
+                };
+            });
+
+            await api.guardarAbastecimiento(
+                {
+                    nombre_abastecimiento: nombre,
+                    registrado_por: registradoPor,
+                    detalles,
+                    password_autorizacion: actas.length === 0 ? passwordAutorizacion : undefined,
+                },
+                actas.length > 0 ? actas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined
+            );
+
             showToast('success', `Abastecimiento "${nombre}" guardado correctamente`);
+            
+            // Refrescar el historial de abastecimientos
+            await refreshAbastecimiento();
             
             // Si viene desde "Descargar PDF", descargar el PDF después de guardar
             if (descargarPDFDespues) {
@@ -182,15 +256,28 @@ function ModalGuardar({
             
             setNombre('');
             setRegistradoPor('');
+            setActas([]);
+            setPasswordAutorizacion('');
+            setModalPasswordOpen(false);
             onClose();
             if (onGuardado) {
                 onGuardado();
             }
-        } catch (error) {
-            // El error ya se maneja en guardarAbastecimiento
+        } catch (error: any) {
+            console.error('Error guardando abastecimiento:', error);
+            showToast('error', error.message || 'Error al guardar abastecimiento');
         } finally {
             setGuardando(false);
         }
+    };
+
+    const handleConfirmarPassword = async () => {
+        if (!passwordAutorizacion.trim()) {
+            showToast('error', 'Ingresa la contraseña de autorización');
+            return;
+        }
+        setModalPasswordOpen(false);
+        await ejecutarGuardado();
     };
 
     if (!isOpen) return null;
@@ -237,6 +324,23 @@ function ModalGuardar({
                                 placeholder="Nombre de quien registra"
                             />
                         </div>
+                    </div>
+
+                    {/* Botón Subir Actas */}
+                    <div className="mb-4">
+                        <button
+                            type="button"
+                            onClick={() => setModalActasOpen(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-lg font-semibold text-sm transition-all shadow-md hover:shadow-lg"
+                        >
+                            <Upload className="w-4 h-4" />
+                            Subir Acta
+                            {actas.length > 0 && (
+                                <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold">
+                                    {actas.length}
+                                </span>
+                            )}
+                        </button>
                     </div>
 
                     {/* Botón limpiar negativos */}
@@ -328,6 +432,204 @@ function ModalGuardar({
                     </button>
                 </div>
             </div>
+
+            {/* Modal Subir Actas */}
+            {modalActasOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalActasOpen(false)} style={{ zIndex: 10003 }}>
+                    <div className="modal-box" style={{ maxWidth: '90vw', width: 900, maxHeight: '90vh', overflow: 'auto', zIndex: 10004 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                    Subir Actas de Abastecimiento
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    Selecciona las imágenes de las actas y asigna un nombre a cada una
+                                </p>
+                            </div>
+                            <button onClick={() => setModalActasOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            {/* Input de archivos */}
+                            <div className="mb-6">
+                                <label className="block mb-2 text-sm font-semibold text-gray-700">
+                                    Seleccionar Imágenes
+                                </label>
+                                <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={handleFileSelect}
+                                        className="hidden"
+                                        id="file-input-actas"
+                                    />
+                                    <label
+                                        htmlFor="file-input-actas"
+                                        className="cursor-pointer flex flex-col items-center gap-2"
+                                    >
+                                        <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
+                                            <Upload className="w-6 h-6 text-white" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Lista de actas seleccionadas */}
+                            {actas.length > 0 && (
+                                <div className="space-y-4">
+                                    <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                        Actas Seleccionadas ({actas.length})
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {actas.map((acta, index) => (
+                                            <div
+                                                key={index}
+                                                className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
+                                            >
+                                                <div className="flex gap-3">
+                                                    {/* Preview de imagen */}
+                                                    <div className="flex-shrink-0">
+                                                        <img
+                                                            src={acta.preview}
+                                                            alt={`Preview ${index + 1}`}
+                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                        />
+                                                    </div>
+                                                    {/* Nombre y controles */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                Nombre de la Acta *
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={acta.nombre}
+                                                                onChange={e => handleUpdateNombreActa(index, e.target.value)}
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                                placeholder="Ej: Acta Semana 10"
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleRemoveActa(index)}
+                                                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            Eliminar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            <button onClick={() => setModalActasOpen(false)} className="btn btn-secondary">
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={() => setModalActasOpen(false)} 
+                                className="btn btn-success"
+                            >
+                                Aceptar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Confirmación Contraseña */}
+            {modalPasswordOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalPasswordOpen(false)} style={{ zIndex: 10005 }}>
+                    <div className="modal-box" style={{ maxWidth: '500px', width: '90vw', zIndex: 10006 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                    Confirmación Requerida
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    No se han adjuntado actas
+                                </p>
+                            </div>
+                            <button onClick={() => setModalPasswordOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                                <div className="flex items-start gap-3">
+                                    <Lock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-amber-900 mb-1">
+                                            Contraseña de Autorización Requerida
+                                        </p>
+                                        <p className="text-xs text-amber-700">
+                                            Para proceder con el guardado sin actas, ingrese la contraseña de autorización.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="form-label">Contraseña de Autorización *</label>
+                                <input
+                                    type="password"
+                                    value={passwordAutorizacion}
+                                    onChange={e => setPasswordAutorizacion(e.target.value)}
+                                    className="form-input"
+                                    placeholder="Ingrese la contraseña"
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            handleConfirmarPassword();
+                                        }
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="modal-footer">
+                            <button
+                                onClick={() => {
+                                    setModalPasswordOpen(false);
+                                    setPasswordAutorizacion('');
+                                }}
+                                className="btn btn-secondary"
+                                disabled={guardando}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmarPassword}
+                                className="btn btn-success"
+                                disabled={guardando || !passwordAutorizacion.trim()}
+                            >
+                                {guardando ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Guardando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Save className="w-4 h-4" />
+                                        Confirmar y Guardar
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
