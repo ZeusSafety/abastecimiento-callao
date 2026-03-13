@@ -1338,6 +1338,72 @@ def get_actas_abastecimiento(request, headers, id_abastecimiento):
         cursor.close()
         conn.close()
 
+def subir_actas_abastecimiento(request, headers, id_abastecimiento):
+    """
+    Sube actas (imágenes) a un abastecimiento existente.
+    Requiere validación de contraseña si no hay archivos.
+    """
+    # 1. Obtener datos del formulario (multipart/form-data)
+    form_data = request.form.get('data')
+    if not form_data:
+        return bad_request_error("No se recibieron datos", headers)
+    
+    data = json.loads(form_data)
+    password_cliente = data.get('password_autorizacion')
+    
+    # 2. Obtener archivos (Actas)
+    files = request.files.getlist('actas')
+    
+    # 3. Verificar que el abastecimiento existe
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("SELECT id FROM abastecimiento_cabecera WHERE id = %s", (id_abastecimiento,))
+        abastecimiento = cursor.fetchone()
+        if not abastecimiento:
+            return not_found_error(f"Abastecimiento con ID {id_abastecimiento} no encontrado", headers)
+        
+        # 4. VALIDACIÓN DE CONTRASEÑA (siempre requerida para subir actas a un abastecimiento existente)
+        if not files or len(files) == 0:
+            return bad_request_error("Se requiere al menos un archivo para subir", headers)
+        
+        # Validar contraseña
+        cursor.execute("SELECT valor FROM configuracion_sistema WHERE clave = 'pass_abastecimiento_sin_acta'")
+        res_config = cursor.fetchone()
+        pass_sistema = res_config['valor'] if res_config else None
+        
+        if not password_cliente or password_cliente != pass_sistema:
+            return (json.dumps({"message": "Se requiere una contraseña válida para subir actas"}), 403, headers)
+        
+        # 5. Subir Actas a GCS e insertar en la tabla
+        actas_subidas = []
+        for file in files:
+            if file.filename != '':
+                url_publica = upload_to_gcs(file)
+                if url_publica:
+                    sql_acta = "INSERT INTO abastecimiento_actas (id_abastecimiento, nombre_imagen, url_imagen) VALUES (%s, %s, %s)"
+                    cursor.execute(sql_acta, (id_abastecimiento, file.filename, url_publica))
+                    actas_subidas.append({
+                        'nombre_imagen': file.filename,
+                        'url_imagen': url_publica
+                    })
+        
+        conn.commit()
+        return created_response(
+            data={'id_abastecimiento': id_abastecimiento, 'actas_subidas': actas_subidas},
+            message=f"{len(actas_subidas)} acta(s) subida(s) exitosamente",
+            headers=headers
+        )
+        
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error subiendo actas: {traceback.format_exc()}")
+        return server_error(str(e), headers)
+    finally:
+        cursor.close()
+        conn.close()
+
 def cambiar_password_abastecimiento(request, headers):
     """
     Cambia la contraseña para guardar abastecimiento sin actas.
@@ -1497,6 +1563,12 @@ def abastecimiento_entra_salida_malvinas(request):
             id_abastecimiento = path.split('/')[-1]
             if id_abastecimiento.isdigit():
                 return get_actas_abastecimiento(request, headers, int(id_abastecimiento))
+            else:
+                return not_found_error("ID de abastecimiento inválido", headers)
+        elif path.startswith('/api/abastecimiento/actas/') and method == 'POST':
+            id_abastecimiento = path.split('/')[-1]
+            if id_abastecimiento.isdigit():
+                return subir_actas_abastecimiento(request, headers, int(id_abastecimiento))
             else:
                 return not_found_error("ID de abastecimiento inválido", headers)
         elif path == '/api/abastecimiento/historial-general' and method == 'GET':

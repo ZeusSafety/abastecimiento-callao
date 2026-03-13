@@ -2,10 +2,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas, TIENDAS } from '../../context/MalvinasContext';
-import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown, Calendar, Image as ImageIcon, X, Loader2 } from 'lucide-react';
+import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown, Calendar, Image as ImageIcon, X, Loader2, Upload, Trash2, Lock, Eye, EyeOff, Save, AlertCircle } from 'lucide-react';
+import * as api from '../../services/api';
 
 export default function HistorialCargaPage() {
-    const { state, cargarDetalleAbastecimiento, refreshAbastecimiento } = useMalvinas();
+    const { state, cargarDetalleAbastecimiento, refreshAbastecimiento, showToast } = useMalvinas();
     const [selectedId, setSelectedId] = useState<string>('');
     const [search, setSearch] = useState('');
     const [filtroEnviar, setFiltroEnviar] = useState<'SI' | 'NO' | 'TODOS'>('TODOS');
@@ -13,9 +14,20 @@ export default function HistorialCargaPage() {
     const [mesSeleccionado, setMesSeleccionado] = useState<string>('');
     const [añoSeleccionado, setAñoSeleccionado] = useState<string>('');
     const [modalActasOpen, setModalActasOpen] = useState(false);
+    const [modalSubirActasOpen, setModalSubirActasOpen] = useState(false);
+    const [modalPasswordOpen, setModalPasswordOpen] = useState(false);
     const [actas, setActas] = useState<any[]>([]);
+    const [actasParaSubir, setActasParaSubir] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
     const [loadingActas, setLoadingActas] = useState(false);
+    const [subiendoActas, setSubiendoActas] = useState(false);
     const [imagenSeleccionada, setImagenSeleccionada] = useState<string | null>(null);
+    const [passwordAutorizacion, setPasswordAutorizacion] = useState('');
+    const [mostrarPassword, setMostrarPassword] = useState(false);
+    const [tieneActas, setTieneActas] = useState<boolean | null>(null);
+    const [modalSubirEmergenciaOpen, setModalSubirEmergenciaOpen] = useState(false);
+    const [actasEmergencia, setActasEmergencia] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [subiendoEmergencia, setSubiendoEmergencia] = useState(false);
+    const [modoSubida, setModoSubida] = useState<'inicial' | 'emergencia'>('inicial');
 
     // Función helper para extraer mes y año de una fecha formateada
     // fmtDate devuelve formato: "07/03/2026 11:22" (día/mes/año hora:minuto)
@@ -107,6 +119,183 @@ export default function HistorialCargaPage() {
                 .finally(() => setLoading(false));
         }
     }, [selectedHistorial, cargarDetalleAbastecimiento]);
+
+    // Verificar si el abastecimiento tiene actas
+    useEffect(() => {
+        const verificarActas = async () => {
+            if (selectedHistorial) {
+                const idAbastecimiento = parseInt(selectedHistorial.id);
+                if (!isNaN(idAbastecimiento)) {
+                    try {
+                        const actasData = await api.getActasAbastecimiento(idAbastecimiento);
+                        setTieneActas(actasData.length > 0);
+                    } catch (error) {
+                        console.error('Error verificando actas:', error);
+                        setTieneActas(false);
+                    }
+                } else {
+                    setTieneActas(false);
+                }
+            } else {
+                setTieneActas(null);
+            }
+        };
+        verificarActas();
+    }, [selectedHistorial]);
+
+    // Funciones para manejar subida de actas
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const nuevasActas = files.map(file => ({
+            file,
+            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            preview: URL.createObjectURL(file)
+        }));
+        setActasParaSubir(prev => [...prev, ...nuevasActas]);
+        e.target.value = '';
+    };
+
+    const handleRemoveActa = (index: number) => {
+        setActasParaSubir(prev => {
+            const nueva = [...prev];
+            URL.revokeObjectURL(nueva[index].preview);
+            nueva.splice(index, 1);
+            return nueva;
+        });
+    };
+
+    const handleUpdateNombreActa = (index: number, nuevoNombre: string) => {
+        setActasParaSubir(prev => {
+            const nueva = [...prev];
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            return nueva;
+        });
+    };
+
+    const handleSubirActas = () => {
+        if (actasParaSubir.length === 0) {
+            showToast('error', 'Por favor, selecciona al menos una imagen');
+            return;
+        }
+        // Validar que todas tengan nombre
+        const sinNombre = actasParaSubir.some(a => !a.nombre.trim());
+        if (sinNombre) {
+            showToast('error', 'Por favor, asigna un nombre a todas las actas');
+            return;
+        }
+        setModoSubida('inicial');
+        setModalSubirActasOpen(false);
+        setModalPasswordOpen(true);
+    };
+
+    const handleSubirEmergencia = () => {
+        if (actasEmergencia.length === 0) {
+            showToast('error', 'Por favor, selecciona al menos una imagen');
+            return;
+        }
+        const sinNombre = actasEmergencia.some(a => !a.nombre.trim());
+        if (sinNombre) {
+            showToast('error', 'Por favor, asigna un nombre a todas las actas');
+            return;
+        }
+        setModoSubida('emergencia');
+        setModalSubirEmergenciaOpen(false);
+        setModalPasswordOpen(true);
+    };
+
+    const handleConfirmarPassword = async () => {
+        if (!passwordAutorizacion.trim()) {
+            showToast('error', 'Por favor, ingresa la contraseña');
+            return;
+        }
+
+        if (!selectedHistorial) return;
+
+        const idAbastecimiento = parseInt(selectedHistorial.id);
+        if (isNaN(idAbastecimiento)) return;
+
+        if (modoSubida === 'inicial') {
+            setSubiendoActas(true);
+            try {
+                const archivos = actasParaSubir.map(a => ({ file: a.file, nombre: a.nombre }));
+                await api.subirActasAbastecimiento(idAbastecimiento, archivos, passwordAutorizacion);
+                
+                // Limpiar estados
+                actasParaSubir.forEach(a => URL.revokeObjectURL(a.preview));
+                setActasParaSubir([]);
+                setPasswordAutorizacion('');
+                setModalPasswordOpen(false);
+                
+                // Actualizar estado de actas
+                setTieneActas(true);
+                
+                // Recargar actas si el modal está abierto
+                if (modalActasOpen) {
+                    const actasData = await api.getActasAbastecimiento(idAbastecimiento);
+                    setActas(actasData);
+                }
+                
+                showToast('success', 'Actas subidas exitosamente');
+            } catch (error: any) {
+                console.error('Error subiendo actas:', error);
+                showToast('error', error.message || 'Error al subir las actas');
+            } finally {
+                setSubiendoActas(false);
+            }
+        } else {
+            setSubiendoEmergencia(true);
+            try {
+                const archivos = actasEmergencia.map(a => ({ file: a.file, nombre: a.nombre }));
+                await api.subirActasAbastecimiento(idAbastecimiento, archivos, passwordAutorizacion);
+                
+                // Limpiar estados
+                actasEmergencia.forEach(a => URL.revokeObjectURL(a.preview));
+                setActasEmergencia([]);
+                setPasswordAutorizacion('');
+                setModalPasswordOpen(false);
+                
+                // Recargar actas en el modal
+                const actasData = await api.getActasAbastecimiento(idAbastecimiento);
+                setActas(actasData);
+                
+                showToast('success', 'Actas de emergencia subidas exitosamente');
+            } catch (error: any) {
+                console.error('Error subiendo actas de emergencia:', error);
+                showToast('error', error.message || 'Error al subir las actas');
+            } finally {
+                setSubiendoEmergencia(false);
+            }
+        }
+    };
+
+    // Funciones para subida de emergencia
+    const handleFileSelectEmergencia = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const nuevasActas = files.map(file => ({
+            file,
+            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            preview: URL.createObjectURL(file)
+        }));
+        setActasEmergencia(prev => [...prev, ...nuevasActas]);
+        e.target.value = '';
+    };
+
+    const handleRemoveActaEmergencia = (index: number) => {
+        setActasEmergencia(prev => {
+            const nueva = [...prev];
+            URL.revokeObjectURL(nueva[index].preview);
+            nueva.splice(index, 1);
+            return nueva;
+        });
+    };
+
+    const handleUpdateNombreActaEmergencia = (index: number, nuevoNombre: string) => {
+        setActasEmergencia(prev => {
+            const nueva = [...prev];
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            return nueva;
+        });
+    };
 
     const filtered = useMemo(() => {
         if (!selectedHistorial) return [];
@@ -274,32 +463,56 @@ export default function HistorialCargaPage() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                <button
-    onClick={async () => {
-        const idAbastecimiento = parseInt(selectedHistorial.id);
-        if (!isNaN(idAbastecimiento)) {
-            setLoadingActas(true);
-            setModalActasOpen(true);
-            try {
-                const { getActasAbastecimiento } = await import('../../services/api');
-                const actasData = await getActasAbastecimiento(idAbastecimiento);
-                setActas(actasData);
-            } catch (error: any) {
-                console.error('Error cargando actas:', error);
-            } finally {
-                setLoadingActas(false);
-            }
-        }
-    }}
-    // He actualizado el bg a un color sólido con el valor exacto y un hover ligeramente más oscuro
-    className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl font-bold text-xs transition-all shadow-md hover:shadow-lg"
-    style={{ backgroundColor: '#002D5A' }} 
-    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#001d3d'} // Efecto hover manual para el color personalizado
-    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
->
-    <ImageIcon className="w-4 h-4" />
-    Ver Actas
-</button>
+                                    {tieneActas ? (
+                                        <button
+                                            onClick={async () => {
+                                                const idAbastecimiento = parseInt(selectedHistorial.id);
+                                                if (!isNaN(idAbastecimiento)) {
+                                                    setLoadingActas(true);
+                                                    setModalActasOpen(true);
+                                                    try {
+                                                        const actasData = await api.getActasAbastecimiento(idAbastecimiento);
+                                                        setActas(actasData);
+                                                    } catch (error: any) {
+                                                        console.error('Error cargando actas:', error);
+                                                    } finally {
+                                                        setLoadingActas(false);
+                                                    }
+                                                }
+                                            }}
+                                            className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl font-bold text-xs transition-all shadow-md hover:shadow-lg"
+                                            style={{ backgroundColor: '#002D5A' }} 
+                                            onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#001d3d'}
+                                            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
+                                        >
+                                            <ImageIcon className="w-4 h-4" />
+                                            Ver Actas
+                                        </button>
+                                    ) : (
+                                        <>
+                                            <button
+                                                disabled
+                                                className="flex items-center gap-2 px-4 py-2.5 text-gray-400 rounded-xl font-bold text-xs transition-all shadow-md cursor-not-allowed opacity-50"
+                                                style={{ backgroundColor: '#e5e7eb' }}
+                                            >
+                                                <ImageIcon className="w-4 h-4" />
+                                                Ver Actas
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setActasParaSubir([]);
+                                                    setModalSubirActasOpen(true);
+                                                }}
+                                                className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl font-bold text-xs transition-all shadow-md hover:shadow-lg"
+                                                style={{ backgroundColor: '#059669' }}
+                                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#047857'}
+                                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#059669'}
+                                            >
+                                                <Upload className="w-4 h-4" />
+                                                Subir Actas
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
@@ -511,10 +724,29 @@ export default function HistorialCargaPage() {
                             )}
                         </div>
 
-                        <div className="modal-footer">
-                            <button onClick={() => setModalActasOpen(false)} className="btn btn-secondary">
-                                Cerrar
+                        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <button 
+                                onClick={() => {
+                                    setActasEmergencia([]);
+                                    setModalSubirEmergenciaOpen(true);
+                                }}
+                                className="btn btn-warning"
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                            >
+                                <AlertCircle className="w-4 h-4" />
+                                Subida de Emergencia
                             </button>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button onClick={() => setModalActasOpen(false)} className="btn btn-secondary">
+                                    Cerrar
+                                </button>
+                                <button 
+                                    onClick={() => setModalActasOpen(false)} 
+                                    className="btn btn-success"
+                                >
+                                    Aceptar
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -545,6 +777,362 @@ export default function HistorialCargaPage() {
                                 (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
                             }}
                         />
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Subir Actas */}
+            {modalSubirActasOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalSubirActasOpen(false)} style={{ zIndex: 10008 }}>
+                    <div className="modal-box" style={{ maxWidth: '90vw', width: 900, maxHeight: '90vh', overflow: 'auto', zIndex: 10009 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                    Subir Actas de Abastecimiento
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    Selecciona las imágenes de las actas y asigna un nombre a cada una
+                                </p>
+                            </div>
+                            <button onClick={() => {
+                                actasParaSubir.forEach(a => URL.revokeObjectURL(a.preview));
+                                setActasParaSubir([]);
+                                setModalSubirActasOpen(false);
+                            }} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            {/* Input de archivos */}
+                            <div className="mb-6">
+                                <label className="block mb-2 text-sm font-semibold text-gray-700">
+                                    Seleccionar Imágenes
+                                </label>
+                                <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={handleFileSelect}
+                                        className="hidden"
+                                        id="file-input-actas-subir"
+                                    />
+                                    <label
+                                        htmlFor="file-input-actas-subir"
+                                        className="cursor-pointer flex flex-col items-center gap-2"
+                                    >
+                                        <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
+                                            <Upload className="w-6 h-6 text-white" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Lista de actas seleccionadas */}
+                            {actasParaSubir.length > 0 && (
+                                <div className="space-y-4">
+                                    <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                        Actas Seleccionadas ({actasParaSubir.length})
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {actasParaSubir.map((acta, index) => (
+                                            <div
+                                                key={index}
+                                                className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
+                                            >
+                                                <div className="flex gap-3">
+                                                    {/* Preview de imagen */}
+                                                    <div className="flex-shrink-0">
+                                                        <img
+                                                            src={acta.preview}
+                                                            alt={`Preview ${index + 1}`}
+                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                        />
+                                                    </div>
+                                                    {/* Nombre y controles */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                Nombre de la Acta *
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={acta.nombre}
+                                                                onChange={e => handleUpdateNombreActa(index, e.target.value)}
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                                placeholder="Ej: Acta Semana 10"
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleRemoveActa(index)}
+                                                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            Eliminar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            <button 
+                                onClick={() => {
+                                    actasParaSubir.forEach(a => URL.revokeObjectURL(a.preview));
+                                    setActasParaSubir([]);
+                                    setModalSubirActasOpen(false);
+                                }} 
+                                className="btn btn-secondary"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={handleSubirActas}
+                                disabled={actasParaSubir.length === 0}
+                                className="btn btn-success"
+                            >
+                                Guardar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Confirmación Contraseña */}
+            {modalPasswordOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalPasswordOpen(false)} style={{ zIndex: 10010 }}>
+                    <div className="modal-box" style={{ maxWidth: '500px', width: '90vw', zIndex: 10011 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                    {modoSubida === 'emergencia' ? 'Subida de Emergencia' : 'Confirmación Requerida'}
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    {modoSubida === 'emergencia' ? 'Se requiere contraseña para subir actas de emergencia' : 'Se requiere contraseña para subir actas'}
+                                </p>
+                            </div>
+                            <button onClick={() => {
+                                setModalPasswordOpen(false);
+                                setPasswordAutorizacion('');
+                            }} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                                <div className="flex items-start gap-3">
+                                    <Lock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-amber-900 mb-1">
+                                            Contraseña de Autorización Requerida
+                                        </p>
+                                        <p className="text-xs text-amber-700">
+                                            {modoSubida === 'emergencia' 
+                                                ? 'Para proceder con la subida de actas de emergencia, ingrese la contraseña de autorización.'
+                                                : 'Para proceder con la subida de actas, ingrese la contraseña de autorización.'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="form-label">Contraseña de Autorización *</label>
+                                <div className="relative">
+                                    <input
+                                        type={mostrarPassword ? 'text' : 'password'}
+                                        value={passwordAutorizacion}
+                                        onChange={e => setPasswordAutorizacion(e.target.value)}
+                                        className="form-input pr-10"
+                                        placeholder="Ingrese la contraseña"
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                handleConfirmarPassword();
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setMostrarPassword(!mostrarPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        {mostrarPassword ? (
+                                            <EyeOff className="w-4 h-4" />
+                                        ) : (
+                                            <Eye className="w-4 h-4" />
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="modal-footer">
+                            <button
+                                onClick={() => {
+                                    setModalPasswordOpen(false);
+                                    setPasswordAutorizacion('');
+                                }}
+                                className="btn btn-secondary"
+                                disabled={subiendoActas}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmarPassword}
+                                className="btn btn-success"
+                                disabled={(subiendoActas || subiendoEmergencia) || !passwordAutorizacion.trim()}
+                            >
+                                {(subiendoActas || subiendoEmergencia) ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Subiendo...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Save className="w-4 h-4" />
+                                        Confirmar y Subir
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Subir Actas de Emergencia */}
+            {modalSubirEmergenciaOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalSubirEmergenciaOpen(false)} style={{ zIndex: 10012 }}>
+                    <div className="modal-box" style={{ maxWidth: '90vw', width: 900, maxHeight: '90vh', overflow: 'auto', zIndex: 10013 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                    <AlertCircle className="w-4 h-4 inline-block mr-2" />
+                                    Subida de Emergencia - Actas
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    Sube imágenes que se olvidaron subir anteriormente
+                                </p>
+                            </div>
+                            <button onClick={() => {
+                                actasEmergencia.forEach(a => URL.revokeObjectURL(a.preview));
+                                setActasEmergencia([]);
+                                setModalSubirEmergenciaOpen(false);
+                            }} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            {/* Input de archivos */}
+                            <div className="mb-6">
+                                <label className="block mb-2 text-sm font-semibold text-gray-700">
+                                    Seleccionar Imágenes
+                                </label>
+                                <div className="border-2 border-dashed border-amber-400/50 rounded-xl p-4 text-center hover:border-amber-500/70 transition-colors bg-amber-50/30">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={handleFileSelectEmergencia}
+                                        className="hidden"
+                                        id="file-input-actas-emergencia"
+                                    />
+                                    <label
+                                        htmlFor="file-input-actas-emergencia"
+                                        className="cursor-pointer flex flex-col items-center gap-2"
+                                    >
+                                        <div className="w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center">
+                                            <Upload className="w-6 h-6 text-white" />
+                                        </div>
+                                        <div>
+                                            <span className="text-amber-700 font-bold text-xs">Haz clic para seleccionar</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Lista de actas seleccionadas */}
+                            {actasEmergencia.length > 0 && (
+                                <div className="space-y-4">
+                                    <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                        Actas Seleccionadas ({actasEmergencia.length})
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {actasEmergencia.map((acta, index) => (
+                                            <div
+                                                key={index}
+                                                className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
+                                            >
+                                                <div className="flex gap-3">
+                                                    {/* Preview de imagen */}
+                                                    <div className="flex-shrink-0">
+                                                        <img
+                                                            src={acta.preview}
+                                                            alt={`Preview ${index + 1}`}
+                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                        />
+                                                    </div>
+                                                    {/* Nombre y controles */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                Nombre de la Acta *
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={acta.nombre}
+                                                                onChange={e => handleUpdateNombreActaEmergencia(index, e.target.value)}
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
+                                                                placeholder="Ej: Acta Semana 10"
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleRemoveActaEmergencia(index)}
+                                                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            Eliminar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            <button 
+                                onClick={() => {
+                                    actasEmergencia.forEach(a => URL.revokeObjectURL(a.preview));
+                                    setActasEmergencia([]);
+                                    setModalSubirEmergenciaOpen(false);
+                                }} 
+                                className="btn btn-secondary"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={handleSubirEmergencia}
+                                disabled={actasEmergencia.length === 0}
+                                className="btn btn-warning"
+                            >
+                                Guardar
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

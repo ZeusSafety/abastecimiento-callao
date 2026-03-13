@@ -467,6 +467,47 @@ export async function getActasAbastecimiento(idAbastecimiento: number): Promise<
   return response.data || [];
 }
 
+export async function subirActasAbastecimiento(
+  idAbastecimiento: number,
+  archivos: Array<{ file: File; nombre: string }>,
+  passwordAutorizacion: string
+): Promise<{ id_abastecimiento: number; actas_subidas: Array<{ nombre_imagen: string; url_imagen: string }> }> {
+  const formData = new FormData();
+  
+  // Agregar datos JSON como string
+  formData.append('data', JSON.stringify({ password_autorizacion: passwordAutorizacion }));
+  
+  // Agregar archivos
+  if (archivos && archivos.length > 0) {
+    archivos.forEach(({ file, nombre }) => {
+      const blob = file.slice(0, file.size, file.type);
+      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
+      formData.append('actas', renamedFile);
+    });
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/abastecimiento/actas/${idAbastecimiento}`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+      throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || result.message || 'Error al subir actas');
+    }
+    return result.data || { id_abastecimiento: idAbastecimiento, actas_subidas: [] };
+  } catch (error) {
+    console.error('Error en subirActasAbastecimiento:', error);
+    throw error;
+  }
+}
+
 export async function cambiarPasswordAbastecimiento(
   passwordAnterior: string,
   passwordNueva: string
