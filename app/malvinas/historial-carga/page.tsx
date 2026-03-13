@@ -504,9 +504,9 @@ export default function HistorialCargaPage() {
                                                     setModalSubirActasOpen(true);
                                                 }}
                                                 className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl font-bold text-xs transition-all shadow-md hover:shadow-lg"
-                                                style={{ backgroundColor: '#059669' }}
-                                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#047857'}
-                                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#059669'}
+                                                style={{ backgroundColor: '#002D5A' }}
+                                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#001f3d'}
+                                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
                                             >
                                                 <Upload className="w-4 h-4" />
                                                 Subir Actas
@@ -730,8 +730,10 @@ export default function HistorialCargaPage() {
                                     setActasEmergencia([]);
                                     setModalSubirEmergenciaOpen(true);
                                 }}
-                                className="btn btn-warning"
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                                className="btn"
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#002D5A', color: 'white' }}
+                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#001f3d'}
+                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
                             >
                                 <AlertCircle className="w-4 h-4" />
                                 Subida de Emergencia
@@ -742,7 +744,10 @@ export default function HistorialCargaPage() {
                                 </button>
                                 <button 
                                     onClick={() => setModalActasOpen(false)} 
-                                    className="btn btn-success"
+                                    className="btn"
+                                    style={{ backgroundColor: '#002D5A', color: 'white' }}
+                                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#001f3d'}
+                                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
                                 >
                                     Aceptar
                                 </button>
@@ -899,7 +904,10 @@ export default function HistorialCargaPage() {
                             <button 
                                 onClick={handleSubirActas}
                                 disabled={actasParaSubir.length === 0}
-                                className="btn btn-success"
+                                className="btn"
+                                style={{ backgroundColor: '#002D5A', color: 'white' }}
+                                onMouseOver={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
                             >
                                 Guardar
                             </button>
@@ -989,7 +997,10 @@ export default function HistorialCargaPage() {
                             </button>
                             <button
                                 onClick={handleConfirmarPassword}
-                                className="btn btn-success"
+                                className="btn"
+                                style={{ backgroundColor: '#002D5A', color: 'white' }}
+                                onMouseOver={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
                                 disabled={(subiendoActas || subiendoEmergencia) || !passwordAutorizacion.trim()}
                             >
                                 {(subiendoActas || subiendoEmergencia) ? (
@@ -1038,7 +1049,7 @@ export default function HistorialCargaPage() {
                                 <label className="block mb-2 text-sm font-semibold text-gray-700">
                                     Seleccionar Imágenes
                                 </label>
-                                <div className="border-2 border-dashed border-amber-400/50 rounded-xl p-4 text-center hover:border-amber-500/70 transition-colors bg-amber-50/30">
+                                <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
                                     <input
                                         type="file"
                                         accept="image/*"
@@ -1051,11 +1062,11 @@ export default function HistorialCargaPage() {
                                         htmlFor="file-input-actas-emergencia"
                                         className="cursor-pointer flex flex-col items-center gap-2"
                                     >
-                                        <div className="w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center">
+                                        <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
                                             <Upload className="w-6 h-6 text-white" />
                                         </div>
                                         <div>
-                                            <span className="text-amber-700 font-bold text-xs">Haz clic para seleccionar</span>
+                                            <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
                                             <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
                                         </div>
                                         <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
@@ -1094,7 +1105,7 @@ export default function HistorialCargaPage() {
                                                                 type="text"
                                                                 value={acta.nombre}
                                                                 onChange={e => handleUpdateNombreActaEmergencia(index, e.target.value)}
-                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                                                                 placeholder="Ej: Acta Semana 10"
                                                             />
                                                         </div>
@@ -1128,7 +1139,10 @@ export default function HistorialCargaPage() {
                             <button 
                                 onClick={handleSubirEmergencia}
                                 disabled={actasEmergencia.length === 0}
-                                className="btn btn-warning"
+                                className="btn"
+                                style={{ backgroundColor: '#002D5A', color: 'white' }}
+                                onMouseOver={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
                             >
                                 Guardar
                             </button>
