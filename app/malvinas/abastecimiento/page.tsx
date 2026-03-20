@@ -170,14 +170,6 @@ function ModalGuardar({
         if (!nombre.trim()) { showToast('error', 'Ingresa un nombre para el abastecimiento'); return; }
         if (!registradoPor.trim()) { showToast('error', 'Ingresa el nombre de quien registra'); return; }
         if (localRows.length === 0) { showToast('error', 'No hay productos para guardar'); return; }
-        
-        // Si no hay actas, mostrar modal de contraseña
-        if (actas.length === 0) {
-            setModalPasswordOpen(true);
-            return;
-        }
-        
-        // Si hay actas, proceder directamente con el guardado
         await ejecutarGuardado();
     };
 
@@ -204,7 +196,7 @@ function ModalGuardar({
                     nombre_abastecimiento: nombre,
                     registrado_por: registradoPor,
                     detalles,
-                    password_autorizacion: actas.length === 0 ? passwordAutorizacion : undefined,
+                    password_autorizacion: undefined,
                 },
                 actas.length > 0 ? actas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined
             );
@@ -327,21 +319,10 @@ function ModalGuardar({
                     </div>
 
                     {/* Botón Subir Actas */}
-                    <div className="mb-4">
-                        <button
-                            type="button"
-                            onClick={() => setModalActasOpen(true)}
-                            className="flex items-center gap-2 px-4 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-lg font-semibold text-sm transition-all shadow-md hover:shadow-lg"
-                        >
-                            <Upload className="w-4 h-4" />
-                            Subir Acta
-                            {actas.length > 0 && (
-                                <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold">
-                                    {actas.length}
-                                </span>
-                            )}
-                        </button>
-                    </div>
+                    {/*
+                      ACTAS opcionales en este flujo.
+                      Se eliminó el botón de carga desde "Guardar Abastecimiento" y la validación de contraseña.
+                    */}
 
                     {/* Botón limpiar negativos */}
                     <div className="mb-3 flex items-center justify-between">

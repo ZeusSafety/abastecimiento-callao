@@ -16,11 +16,114 @@ import {
     getOperacionColor,
 } from '../../context/MalvinasContext';
 import {
-    Plus, Search, Edit3, X, Save, PackagePlus, ChevronDown, Loader2, Trash2
+    Plus,
+    Search,
+    Edit3,
+    X,
+    Save,
+    PackagePlus,
+    ChevronDown,
+    ChevronRight,
+    Loader2,
+    Trash2,
+    Upload,
+    Lock,
+    FileImage,
+    Eye,
+    Check,
+    XCircle,
+    Image as ImageIcon
 } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import * as api from '../../services/api';
+
+// ─── Función para formatear fecha en dos líneas ──────────────────────────────
+function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
+    if (!fechaStr) return { fecha: '-', hora: '' };
+
+    try {
+        // Intentar parsear diferentes formatos de fecha
+        let fecha: Date;
+
+        // Si viene en formato "DD/MM/YYYY HH:MM A. M." o similar
+        if (fechaStr.includes('/')) {
+            const parts = fechaStr.split(' ');
+            const fechaPart = parts[0]; // "DD/MM/YYYY"
+            const horaPart = parts.slice(1).join(' '); // "HH:MM A. M."
+
+            const [dia, mes, anio] = fechaPart.split('/');
+            fecha = new Date(`${anio}-${mes}-${dia} ${horaPart}`);
+        } else {
+            fecha = new Date(fechaStr);
+        }
+
+        if (isNaN(fecha.getTime())) {
+            return { fecha: fechaStr, hora: '' };
+        }
+
+        // Formatear fecha: DD/MM/YYYY
+        const dia = fecha.getDate().toString().padStart(2, '0');
+        const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
+        const anio = fecha.getFullYear();
+        const fechaFormateada = `${dia}/${mes}/${anio}`;
+
+        // Formatear hora: HH:MM a. m. / p. m.
+        let horas = fecha.getHours();
+        const minutos = fecha.getMinutes().toString().padStart(2, '0');
+        const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
+        horas = horas % 12 || 12;
+        const horaFormateada = `${horas}:${minutos} ${periodo}`;
+
+        return { fecha: fechaFormateada, hora: horaFormateada };
+    } catch (error) {
+        return { fecha: fechaStr, hora: '' };
+    }
+}
+
+// ─── Modal Observaciones (por fila) ────────────────────────────────────────
+function ModalObservaciones({
+    isOpen,
+    onClose,
+    observaciones,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    observaciones: string;
+}) {
+    if (!isOpen) return null;
+
+    return (
+        <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            onClick={e => e.target === e.currentTarget && onClose()}
+        >
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[10000]">
+                <div className="bg-gradient-to-r from-[#002D5A] to-[#003d7a] px-6 py-4 flex items-center justify-between">
+                    <h2 className="text-white font-black text-lg uppercase tracking-wider">Observaciones</h2>
+                    <button onClick={onClose} className="text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="p-6 overflow-y-auto flex-1">
+                    <div className="text-gray-700 text-sm whitespace-pre-wrap" style={{ fontFamily: 'var(--font-poppins)' }}>
+                        {observaciones || 'Sin observaciones'}
+                    </div>
+                </div>
+
+                <div className="border-t border-gray-200 px-6 py-4 flex justify-end">
+                    <button
+                        onClick={onClose}
+                        className="px-6 py-2 bg-[#002D5A] text-white rounded-lg font-semibold hover:bg-[#003d7a] transition-colors"
+                    >
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 // ─── Modal Registro Entrada ───────────────────────────────────────────────────
 function ModalEntrada({
@@ -69,6 +172,12 @@ function ModalEntrada({
     }>>([]);
     const [isSaving, setIsSaving] = useState(false);
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+    // ─── Actas (globales por carga) + seguridad ───────────────────────────────
+    const [modalActasOpen, setModalActasOpen] = useState(false);
+    const [actas, setActas] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [modalPasswordOpen, setModalPasswordOpen] = useState(false);
+    const [passwordAutorizacion, setPasswordAutorizacion] = useState('');
 
     // Limpiar productos agregados cuando se abre el modal (solo para nuevo registro)
     useEffect(() => {
@@ -244,6 +353,106 @@ function ModalEntrada({
         }));
     };
 
+    const handleFileSelectActas = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const nuevasActas = files.map(file => ({
+            file,
+            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            preview: URL.createObjectURL(file),
+        }));
+        setActas(prev => [...prev, ...nuevasActas]);
+        e.target.value = '';
+    };
+
+    const handleRemoveActa = (index: number) => {
+        setActas(prev => {
+            const nueva = [...prev];
+            URL.revokeObjectURL(nueva[index].preview);
+            nueva.splice(index, 1);
+            return nueva;
+        });
+    };
+
+    const handleUpdateNombreActa = (index: number, nuevoNombre: string) => {
+        setActas(prev => {
+            const nueva = [...prev];
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            return nueva;
+        });
+    };
+
+    const prepararEntradasData = () => {
+        return productosAgregados.map(p => {
+            const prod = state.productos.find(pr => pr.id === p.productoId);
+            if (!prod) throw new Error(`Producto ${p.productoId} no encontrado`);
+
+            const almacenSalidaStr =
+                p.almacenSalida === 'ALMACEN CALLAO' ? 'CALLAO' :
+                p.almacenSalida === 'ALMACEN MALVINAS' ? 'MALVINAS' :
+                p.almacenSalida.replace('TIENDA ', '');
+
+            const almacenIngresoStr = p.almacenIngreso.replace('TIENDA ', '');
+
+            return {
+                producto: prod.codigo,
+                operacion: p.operacion,
+                almacen_salida: almacenSalidaStr,
+                almacen_ingreso: almacenIngresoStr,
+                operador: p.operador,
+                cantidad: p.cantidad,
+                unidad_medida: p.unidadMedida,
+                entregado_por: p.entregado,
+                registrado_por: p.registradoPor,
+                observaciones: p.observaciones,
+            };
+        });
+    };
+
+    const ejecutarGuardadoEntradas = async (password?: string) => {
+        setIsSaving(true);
+        try {
+            if (productosAgregados.length === 0) {
+                showToast('error', 'Agrega al menos un producto antes de guardar');
+                return;
+            }
+
+            const entradasData = prepararEntradasData();
+
+            const archivosActas =
+                actas.length > 0 ? actas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined;
+
+            await api.createEntradasMasivo(entradasData, {
+                actas: archivosActas,
+                passwordAutorizacion: archivosActas ? undefined : password,
+            });
+
+            await Promise.all([refreshEntradas(), refreshProductos()]);
+
+            // Liberar previews
+            actas.forEach(a => URL.revokeObjectURL(a.preview));
+            setActas([]);
+            setPasswordAutorizacion('');
+            setModalActasOpen(false);
+            setModalPasswordOpen(false);
+
+            onClose();
+            showToast('success', `${productosAgregados.length} producto(s) registrado(s) exitosamente`);
+        } catch (error: any) {
+            showToast('error', error.message || 'Error al registrar entradas');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleConfirmarPassword = async () => {
+        if (!passwordAutorizacion.trim()) {
+            showToast('error', 'Ingresa la contraseña de autorización');
+            return;
+        }
+        setModalPasswordOpen(false);
+        await ejecutarGuardadoEntradas(passwordAutorizacion);
+    };
+
     const handleSubmit = async () => {
         if (isEdit) {
             // Modo edición: comportamiento original
@@ -286,51 +495,20 @@ function ModalEntrada({
                 return;
             }
 
-            setIsSaving(true);
-            try {
-                // Preparar datos para el endpoint masivo
-                const entradasData = productosAgregados.map(p => {
-                    const prod = state.productos.find(pr => pr.id === p.productoId);
-                    if (!prod) throw new Error(`Producto ${p.productoId} no encontrado`);
-
-                    const almacenSalidaStr = p.almacenSalida === 'ALMACEN CALLAO' ? 'CALLAO' :
-                                           p.almacenSalida === 'ALMACEN MALVINAS' ? 'MALVINAS' :
-                                           p.almacenSalida.replace('TIENDA ', '');
-                    
-                    const almacenIngresoStr = p.almacenIngreso.replace('TIENDA ', '');
-
-                    return {
-                        producto: prod.codigo,
-                        operacion: p.operacion,
-                        almacen_salida: almacenSalidaStr,
-                        almacen_ingreso: almacenIngresoStr,
-                        operador: p.operador,
-                        cantidad: p.cantidad,
-                        unidad_medida: p.unidadMedida,
-                        entregado_por: p.entregado,
-                        registrado_por: p.registradoPor,
-                        observaciones: p.observaciones,
-                    };
-                });
-
-                // Llamar al endpoint masivo
-                await api.createEntradasMasivo(entradasData);
-                
-                // Actualizar entradas y productos (stock) en paralelo
-                await Promise.all([refreshEntradas(), refreshProductos()]);
-                setIsSaving(false);
-                onClose();
-                showToast('success', `${productosAgregados.length} producto(s) registrado(s) exitosamente`);
-            } catch (error: any) {
-                setIsSaving(false);
-                showToast('error', error.message || 'Error al registrar entradas');
+            // Seguridad: si NO hay actas, solicitar contraseña; si SÍ hay actas, guardar directo.
+            if (actas.length === 0) {
+                setModalPasswordOpen(true);
+                return;
             }
+
+            await ejecutarGuardadoEntradas();
         }
     };
 
     if (!isOpen) return null;
 
     return (
+        <>
         <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
             <div className="modal-box" style={{ maxWidth: isEdit ? 680 : 1200 }}>
                 <div className="modal-header">
@@ -560,16 +738,32 @@ function ModalEntrada({
                         {/* Registrado por */}
                         <div>
                             <label className="form-label">Registrado Por</label>
-                            <div className="relative">
-                                <select
-                                    value={form.registradoPor}
-                                    onChange={e => setForm(f => ({ ...f, registradoPor: e.target.value }))}
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
+                            <div className="flex items-end gap-2">
+                                <div className="relative flex-1">
+                                    <select
+                                        value={form.registradoPor}
+                                        onChange={e => setForm(f => ({ ...f, registradoPor: e.target.value }))}
+                                        className="form-input"
+                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
+                                    >
+                                        {REGISTRADORES.map(r => <option key={r}>{r}</option>)}
+                                    </select>
+                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setModalActasOpen(true)}
+                                    className="flex items-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm"
+                                    style={{ whiteSpace: 'nowrap' }}
                                 >
-                                    {REGISTRADORES.map(r => <option key={r}>{r}</option>)}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                    <Upload className="w-4 h-4" />
+                                    <span>Subir Acta</span>
+                                    {actas.length > 0 && (
+                                        <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                            {actas.length}
+                                        </span>
+                                    )}
+                                </button>
                             </div>
                         </div>
 
@@ -818,18 +1012,236 @@ function ModalEntrada({
                 </div>
             </div>
         </div>
+
+        {/* Modal Subir Actas (solo para modo nuevo) */}
+        {modalActasOpen && !isEdit && (
+            <div
+                className="modal-backdrop"
+                style={{ zIndex: 20000 }}
+                onClick={e => e.target === e.currentTarget && setModalActasOpen(false)}
+            >
+                <div className="modal-box" style={{ maxWidth: '90vw', width: 900, zIndex: 20001 }}>
+                    <div className="modal-header">
+                        <div>
+                            <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                Subir Actas (Globales)
+                            </h6>
+                            <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                Sube una o más actas y asigna un nombre a cada una
+                            </p>
+                        </div>
+                        <button onClick={() => setModalActasOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                            <X className="w-5 h-5 text-gray-500" />
+                        </button>
+                    </div>
+
+                    <div className="modal-body">
+                        <div className="mb-6">
+                            <label className="block mb-2 text-sm font-semibold text-gray-700">
+                                Seleccionar Imágenes
+                            </label>
+                            <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={handleFileSelectActas}
+                                    className="hidden"
+                                    id="file-input-actas-mov-entradas"
+                                />
+                                <label
+                                    htmlFor="file-input-actas-mov-entradas"
+                                    className="cursor-pointer flex flex-col items-center gap-2"
+                                >
+                                    <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
+                                        <Upload className="w-6 h-6 text-white" />
+                                    </div>
+                                    <div>
+                                        <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
+                                        <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {actas.length > 0 && (
+                            <div className="space-y-4">
+                                <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                    Actas Seleccionadas ({actas.length})
+                                </h6>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {actas.map((acta, index) => (
+                                        <div
+                                            key={index}
+                                            className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
+                                        >
+                                            <div className="flex gap-3">
+                                                <div className="flex-shrink-0">
+                                                    <img
+                                                        src={acta.preview}
+                                                        alt={`Preview ${index + 1}`}
+                                                        className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                    />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="mb-2">
+                                                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                            Nombre de la Acta *
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={acta.nombre}
+                                                            onChange={e => handleUpdateNombreActa(index, e.target.value)}
+                                                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                            placeholder="Ej: Acta revisión 01"
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleRemoveActa(index)}
+                                                        className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        Eliminar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="modal-footer">
+                        <button
+                            onClick={() => setModalActasOpen(false)}
+                            className="btn btn-secondary"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={() => setModalActasOpen(false)}
+                            className="btn"
+                            style={{ backgroundColor: '#002D5A', color: 'white' }}
+                            onMouseOver={(e) => e.currentTarget && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                            onMouseOut={(e) => e.currentTarget && (e.currentTarget.style.backgroundColor = '#002D5A')}
+                        >
+                            Aceptar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Modal Contraseña (solo si NO hay actas al guardar) */}
+        {modalPasswordOpen && !isEdit && (
+            <div
+                className="modal-backdrop"
+                style={{ zIndex: 20010 }}
+                onClick={e => e.target === e.currentTarget && setModalPasswordOpen(false)}
+            >
+                <div className="modal-box" style={{ maxWidth: 520, width: '90vw', zIndex: 20011 }}>
+                    <div className="modal-header">
+                        <div>
+                            <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                Confirmación Requerida
+                            </h6>
+                            <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                No se han adjuntado actas. Para proceder con el guardado, ingrese la contraseña de autorización
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setModalPasswordOpen(false);
+                                setPasswordAutorizacion('');
+                            }}
+                            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            <X className="w-5 h-5 text-gray-500" />
+                        </button>
+                    </div>
+
+                    <div className="modal-body">
+                        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                            <Lock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                            <div>
+                                <p className="text-sm font-semibold text-amber-900 mb-1">Contraseña de autorización requerida</p>
+                                <p className="text-xs text-amber-700">
+                                    Se valida contra la contraseña dinámica del sistema.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="form-label">Contraseña de autorización *</label>
+                            <input
+                                type="password"
+                                value={passwordAutorizacion}
+                                onChange={e => setPasswordAutorizacion(e.target.value)}
+                                className="form-input"
+                                style={{ fontSize: 12 }}
+                                placeholder="Ingrese contraseña"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="modal-footer">
+                        <button
+                            onClick={() => {
+                                setModalPasswordOpen(false);
+                                setPasswordAutorizacion('');
+                            }}
+                            className="btn btn-secondary"
+                            disabled={isSaving}
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={handleConfirmarPassword}
+                            className="btn"
+                            style={{ backgroundColor: '#002D5A', color: 'white' }}
+                            onMouseOver={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#002D5A')}
+                            disabled={isSaving || !passwordAutorizacion.trim()}
+                        >
+                            Aceptar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function EntradasPage() {
-    const { state, refreshEntradas } = useMalvinas();
+    const { state, refreshEntradas, showToast } = useMalvinas();
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroEntrada | null>(null);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
     const [loading, setLoading] = useState(true);
     const PER_PAGE = 15;
+
+    // ─── Vista Cascada (Listado de Entradas) ─────────────────────────────
+    const [loadingCargas, setLoadingCargas] = useState(true);
+    const [cargas, setCargas] = useState<api.EntradaCascadaDB[]>([]);
+    const [expandedCodigo, setExpandedCodigo] = useState<string | null>(null);
+
+    // ─── Actas (Ver / Subir) ─────────────────────────────────────────────
+    const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
+    const [actasSeleccionadas, setActasSeleccionadas] = useState<api.ActaMovimientoDB[]>([]);
+    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+    // ─── Observaciones (Modal por fila) ──────────────────────────────────
+    const [modalObsOpen, setModalObsOpen] = useState(false);
+    const [observacionesSeleccionadas, setObservacionesSeleccionadas] = useState<string>('');
+
+    const [modalSubirActasOpen, setModalSubirActasOpen] = useState(false);
+    const [repIdActasEntrada, setRepIdActasEntrada] = useState<number | null>(null);
+    const [actasParaSubir, setActasParaSubir] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
 
     // Cargar entradas al montar el componente
     useEffect(() => {
@@ -841,22 +1253,129 @@ export default function EntradasPage() {
         loadData();
     }, [refreshEntradas]);
 
-    const filtered = useMemo(() => {
-        const q = search.toLowerCase();
-        return state.entradas.filter(
-            e => e.producto.toLowerCase().includes(q) ||
-                e.operacion.toLowerCase().includes(q) ||
-                e.almacenIngreso.toLowerCase().includes(q) ||
-                e.operador.toLowerCase().includes(q)
-        );
-    }, [state.entradas, search]);
+    // Cargar vista cascada por codigo_carga
+    const refreshCargas = async () => {
+        setLoadingCargas(true);
+        try {
+            const data = await api.getEntradasCascada();
+            setCargas(data);
+        } catch (error: any) {
+            console.error('Error cargando entradas en cascada:', error);
+            showToast('error', error.message || 'Error al cargar la vista en cascada');
+        } finally {
+            setLoadingCargas(false);
+        }
+    };
 
-    const total = filtered.length;
-    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+    useEffect(() => {
+        refreshCargas();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const filteredCargas = useMemo(() => {
+        const q = search.toLowerCase();
+        if (!q.trim()) return cargas;
+
+        return cargas.filter(c => {
+            const baseMatch =
+                (c.codigo_carga || '').toLowerCase().includes(q) ||
+                (c.operador || '').toLowerCase().includes(q) ||
+                (c.fecha_primera || '').toLowerCase().includes(q);
+
+            const detailMatch = c.detalles.some(d => {
+                return (
+                    (d.producto_nombre || '').toLowerCase().includes(q) ||
+                    (d.operacion || '').toLowerCase().includes(q) ||
+                    (d.tienda_salida_codigo || '').toLowerCase().includes(q) ||
+                    (d.tienda_ingreso_codigo || '').toLowerCase().includes(q) ||
+                    (d.operador || '').toLowerCase().includes(q)
+                );
+            });
+
+            return baseMatch || detailMatch;
+        });
+    }, [cargas, search]);
+
+    const totalCargas = filteredCargas.length;
+    const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
+    const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
     const openNew = () => { setEditData(null); setModalOpen(true); };
     const openEdit = (e: RegistroEntrada) => { setEditData(e); setModalOpen(true); };
+    const handleCloseModalEntrada = () => {
+        setModalOpen(false);
+        setEditData(null);
+        void refreshCargas();
+    };
+
+    const refreshActasSelectionReset = () => {
+        setActasParaSubir(prev => {
+            prev.forEach(a => URL.revokeObjectURL(a.preview));
+            return [];
+        });
+    };
+
+    const handleFileSelectSubirActas = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const nuevas = files.map(file => ({
+            file,
+            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            preview: URL.createObjectURL(file),
+        }));
+        setActasParaSubir(prev => [...prev, ...nuevas]);
+        e.target.value = '';
+    };
+
+    const handleRemoveActaParaSubir = (index: number) => {
+        setActasParaSubir(prev => {
+            const nueva = [...prev];
+            URL.revokeObjectURL(nueva[index].preview);
+            nueva.splice(index, 1);
+            return nueva;
+        });
+    };
+
+    const handleUpdateNombreActaParaSubir = (index: number, nuevoNombre: string) => {
+        setActasParaSubir(prev => {
+            const nueva = [...prev];
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            return nueva;
+        });
+    };
+
+    const guardarActasEntrada = async () => {
+        if (!repIdActasEntrada) {
+            showToast('error', 'No se encontró el registro de referencia para subir actas');
+            return;
+        }
+        if (actasParaSubir.length === 0) {
+            showToast('error', 'Selecciona al menos una imagen');
+            return;
+        }
+
+        const sinNombre = actasParaSubir.some(a => !a.nombre.trim());
+        if (sinNombre) {
+            showToast('error', 'Por favor asigna un nombre a todas las actas');
+            return;
+        }
+
+        try {
+            await api.agregarActaEntrada(
+                repIdActasEntrada,
+                actasParaSubir.map(a => ({ file: a.file, nombre: a.nombre }))
+            );
+
+            actasParaSubir.forEach(a => URL.revokeObjectURL(a.preview));
+            setActasParaSubir([]);
+            setModalSubirActasOpen(false);
+            setRepIdActasEntrada(null);
+            await refreshCargas();
+            showToast('success', 'Actas subidas exitosamente');
+        } catch (error: any) {
+            console.error('Error subiendo actas entrada:', error);
+            showToast('error', error.message || 'Error al subir las actas');
+        }
+    };
 
     return (
         <div id="view-entradas" className="animate-in fade-in duration-500 font-poppins">
@@ -910,80 +1429,187 @@ export default function EntradasPage() {
                         </div>
                     </div>
 
-                    {/* Table card */}
+                    {/* Cascada Accordion */}
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
+                        <div className="divide-y divide-gray-100">
+                            {loadingCargas ? (
+                                <div className="p-10 text-center text-gray-400">Cargando datos en cascada...</div>
+                            ) : totalCargas === 0 ? (
+                                <div className="p-10 text-center text-gray-400">
+                                    {search ? 'No se encontraron cargas con ese criterio' : 'No hay movimientos en cascada aún.'}
+                                </div>
+                            ) : (
+                                paginatedCargas.map(carga => {
+                                    const detalleRep = carga.detalles[0];
+                                    const repEntrada = detalleRep
+                                        ? state.entradas.find(en => en.id === String(detalleRep.id)) || null
+                                        : null;
 
-                        {/* Table */}
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="text-[9px] uppercase font-bold tracking-wider">
-                                    <tr className="bg-[#002D5A] text-white">
-                                        <th className="px-4 py-4">Fecha</th>
-                                        <th className="px-4 py-4">Producto</th>
-                                        <th className="px-4 py-4">Operación</th>
-                                        <th className="px-4 py-4">Salió de</th>
-                                        <th className="px-4 py-4">Ingresó a</th>
-                                        <th className="px-4 py-4">Operador</th>
-                                        <th className="px-4 py-4 text-center">Cant.</th>
-                                        <th className="px-4 py-4">U. Medida</th>
-                                        <th className="px-4 py-4 text-center hidden">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {loading ? (
-                                        <TableSkeleton rows={PER_PAGE} cols={9} />
-                                    ) : paginated.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={9} className="px-4 py-12 text-center">
-                                                <div className="flex flex-col items-center gap-3">
-                                                    <PackagePlus className="w-12 h-12 text-gray-300" />
-                                                    <p className="text-gray-400 text-sm font-medium">
-                                                        {search ? 'No se encontraron registros con ese criterio' : 'No hay registros de entrada'}
-                                                    </p>
+                                    const isOpen = expandedCodigo === carga.codigo_carga;
+                                    const { fecha, hora } = formatFechaDosLineas(carga.fecha_primera);
+                                    const operacion = detalleRep?.operacion || '';
+                                    const itemsTotales = carga.cantidad_items;
+
+                                    return (
+                                        <div key={carga.codigo_carga} className="px-4">
+                                            <div
+                                                className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                                                onClick={() => setExpandedCodigo(isOpen ? null : carga.codigo_carga)}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
+                                                        {isOpen ? (
+                                                            <ChevronDown className="w-4 h-4 text-white" />
+                                                        ) : (
+                                                            <ChevronRight className="w-4 h-4 text-white" />
+                                                        )}
+                                                    </div>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-3 flex-wrap">
+                                                        <div className="flex items-center gap-3 whitespace-nowrap">
+                                                            <div className="text-[10px] text-gray-500 uppercase tracking-widest">FECHA</div>
+                                                            <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
+                                                                {fecha}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-3 whitespace-nowrap">
+                                                            <div className="text-[10px] text-gray-500 uppercase tracking-widest">HORA</div>
+                                                            <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
+                                                                {hora}
+                                                            </div>
+                                                        </div>
+                                                        {/* Operación ya se muestra en la tabla interna */}
+                                                    </div>
                                                 </div>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        paginated.map(e => (
-                                            <tr key={e.id} className="hover:bg-blue-50/30 transition-colors">
-                                                <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{e.fecha}</td>
-                                                <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{e.producto}</td>
-                                                <td className="px-4 py-3">
-                                                    {(() => {
-                                                        const colors = getOperacionColor(e.operacion);
-                                                        return (
-                                                            <span className={`px-2 py-0.5 rounded-full ${colors.bg} ${colors.text} text-[9px] font-bold uppercase tracking-wider`}>
-                                                                {e.operacion}
-                                                            </span>
-                                                        );
-                                                    })()}
-                                                </td>
-                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.almacenSalida}</td>
-                                                <td className="px-4 py-3 text-[11px] font-medium text-[#002D5A] uppercase">{e.almacenIngreso}</td>
-                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{e.operador}</td>
-                                                <td className="px-4 py-3 text-center font-bold text-gray-900 text-[11px]">{e.cantidad}</td>
-                                                <td className="px-4 py-3">
-                                                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[9px] font-bold uppercase">
-                                                        {e.unidadMedida}
+                                                </div>
+
+                                                <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
+                                                    <span className="inline-flex items-center gap-2">
+                                                        <PackagePlus className="w-4 h-4 text-[#002D5A]" />
+                                                        <span>
+                                                            <span className="font-bold text-gray-900">{itemsTotales}</span> productos
+                                                        </span>
                                                     </span>
-                                                </td>
-                                                <td className="px-4 py-3 text-center hidden">
-                                                    <button
-                                                        onClick={() => openEdit(e)}
-                                                        className="p-1.5 rounded-lg bg-blue-50 text-[#002D5A] hover:bg-[#002D5A] hover:text-white transition-all shadow-sm"
-                                                        title="Editar"
-                                                    >
-                                                        <Edit3 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                                                    <span className="inline-flex items-center gap-2">
+                                                        <FileImage className="w-4 h-4 text-[#002D5A]" />
+                                                        <span>
+                                                            <span className="font-bold text-gray-900">{carga.actas.length}</span> actas
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {isOpen && (
+                                                <div className="pb-5">
+                                                    <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                                                        <div className="flex items-start justify-between gap-4 mb-4">
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                                                                <div className="w-full sm:w-[180px]">
+                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
+                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
+                                                                        {detalleRep?.registrado_por || '-'}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="w-full sm:w-[180px]">
+                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">OPERADOR</div>
+                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
+                                                                        {detalleRep?.operador || '-'}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="text-[10px] text-gray-500">
+                                                                    Actas:{' '}
+                                                                    <span className="text-gray-900 font-bold">{carga.actas.length}</span>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setActasSeleccionadas(carga.actas);
+                                                                        setModalVerActasOpen(true);
+                                                                    }}
+                                                                    disabled={carga.actas.length === 0}
+                                                                    className="shrink-0 px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-start"
+                                                                >
+                                                                    <span>Ver Actas</span>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Tabla interna */}
+                                                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                                            <div className="overflow-x-auto">
+                                                                <table className="w-full text-sm">
+                                                                    <thead className="bg-[#002D5A] text-white">
+                                                                        <tr className="text-[9px] uppercase">
+                                                                            <th className="px-4 py-3 text-left font-bold">PRODUCTO</th>
+                                                                            <th className="px-4 py-3 text-left font-bold w-[160px]">OPERACIÓN</th>
+                                                                            <th className="px-4 py-3 text-left font-bold w-[90px]">CANT.</th>
+                                                                            <th className="px-4 py-3 text-left font-bold w-[120px]">U. MEDIDA</th>
+                                                                            <th className="px-4 py-3 text-left font-bold w-[110px]">SALIÓ DE</th>
+                                                                            <th className="px-4 py-3 text-left font-bold w-[120px]">INGRESÓ A</th>
+                                                                            <th className="px-4 py-3 text-left font-bold w-[100px]">OBS.</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {carga.detalles.map(d => (
+                                                                            <tr key={d.id} className="border-t border-gray-100 text-[11px] hover:bg-blue-50/30 transition-colors">
+                                                                                <td className="px-4 py-3 text-gray-800 font-medium">{d.producto_nombre}</td>
+                                                                                <td className="px-4 py-3">
+                                                                                    {(() => {
+                                                                                        const op = d.operacion || operacion || '-';
+                                                                                        const color = getOperacionColor(op);
+                                                                                        return (
+                                                                                            <span
+                                                                                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${color.bg} ${color.text}`}
+                                                                                            >
+                                                                                                {op}
+                                                                                            </span>
+                                                                                        );
+                                                                                    })()}
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-gray-700 font-semibold">{d.cantidad}</td>
+                                                                                <td className="px-4 py-3 text-gray-600">{d.unidad_medida}</td>
+                                                                                <td className="px-4 py-3 text-gray-700">{d.tienda_salida_codigo}</td>
+                                                                                <td className="px-4 py-3 text-gray-700">{d.tienda_ingreso_codigo}</td>
+                                                                                <td className="px-4 py-3">
+                                                                                    {(() => {
+                                                                                        const obs = d.observaciones || '';
+                                                                                        const tieneObs = obs.trim().length > 0;
+                                                                                        return (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => {
+                                                                                                    setObservacionesSeleccionadas(obs || '-');
+                                                                                                    setModalObsOpen(true);
+                                                                                                }}
+                                                                                                className={`inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg transition-colors ${
+                                                                                                    tieneObs
+                                                                                                        ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                                                                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                                                                }`}
+                                                                                                title="Ver observaciones"
+                                                                                            >
+                                                                                                <Eye className="w-4 h-4" />
+                                                                                            </button>
+                                                                                        );
+                                                                                    })()}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
                         </div>
 
-                        {/* Pagination */}
+                        {/* Pagination cascadas */}
                         <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-100">
                             <div className="flex items-center gap-2">
                                 <button
@@ -1006,22 +1632,22 @@ export default function EntradasPage() {
 
                             <div className="flex flex-col items-center">
                                 <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
-                                    Página {page} de {pages}
+                                    Página {page} de {pagesCargas}
                                 </span>
                             </div>
 
                             <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
-                                    disabled={page === pages}
+                                    onClick={() => setPage(p => Math.min(pagesCargas, p + 1))}
+                                    disabled={page === pagesCargas}
                                     className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
                                     style={{ fontFamily: 'var(--font-poppins)' }}
                                 >
                                     ›
                                 </button>
                                 <button
-                                    onClick={() => setPage(pages)}
-                                    disabled={page === pages}
+                                    onClick={() => setPage(pagesCargas)}
+                                    disabled={page === pagesCargas}
                                     className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
                                     style={{ fontFamily: 'var(--font-poppins)' }}
                                 >
@@ -1033,9 +1659,245 @@ export default function EntradasPage() {
                 </div>
             </div>
 
+            {/* Modal Ver Actas (Listado de Entradas) */}
+            {modalVerActasOpen && (
+                <div
+                    className="modal-backdrop animate-in fade-in duration-200"
+                    style={{ zIndex: 30001 }}
+                    onClick={e => e.target === e.currentTarget && setModalVerActasOpen(false)}
+                >
+                    <div className="modal-box" style={{ maxWidth: 1100, width: '95vw', maxHeight: '90vh', overflow: 'auto', zIndex: 30002 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 800, fontSize: 16, color: '#002D5A' }}>
+                                    Actas de Entrada
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    {actasSeleccionadas.length} acta(s) seleccionada(s)
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setModalVerActasOpen(false);
+                                    setLightboxUrl(null);
+                                }}
+                                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            {actasSeleccionadas.length === 0 ? (
+                                <div className="py-12 flex flex-col items-center text-center">
+                                    <FileImage className="w-12 h-12 text-gray-300 mb-4" />
+                                    <p className="text-gray-600 font-semibold">No hay actas para esta carga</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {actasSeleccionadas.map(acta => (
+                                        <div
+                                            key={acta.id}
+                                            className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                                            onClick={() => setLightboxUrl(acta.url_imagen)}
+                                        >
+                                            <div className="relative aspect-video bg-gray-100">
+                                                <img
+                                                    src={acta.url_imagen}
+                                                    alt={acta.nombre_imagen}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e) => {
+                                                        (e.target as HTMLImageElement).src =
+                                                            'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="p-3">
+                                                <div className="text-[11px] font-bold text-gray-900 line-clamp-2">
+                                                    {acta.nombre_imagen}
+                                                </div>
+                                                <div className="text-[9px] text-gray-500 mt-1">
+                                                    Registrado por: <span className="font-semibold">{acta.registrado_por || '-'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Lightbox */}
+            {lightboxUrl && (
+                <div
+                    className="modal-backdrop animate-in fade-in duration-300"
+                    style={{ zIndex: 30003 }}
+                    onClick={() => setLightboxUrl(null)}
+                >
+                    <div className="relative w-full h-full flex items-center justify-center p-4">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setLightboxUrl(null);
+                            }}
+                            className="absolute top-4 right-4 p-2 bg-white/90 hover:bg-white rounded-full transition-colors z-10 shadow"
+                        >
+                            <X className="w-6 h-6 text-gray-700" />
+                        </button>
+                        <img
+                            src={lightboxUrl}
+                            alt="Acta completa"
+                            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).src =
+                                    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Subir Acta (Listado de Entradas) */}
+            {modalSubirActasOpen && (
+                <div
+                    className="modal-backdrop"
+                    style={{ zIndex: 30005 }}
+                    onClick={e => e.target === e.currentTarget && setModalSubirActasOpen(false)}
+                >
+                    <div className="modal-box" style={{ maxWidth: 920, width: '95vw', maxHeight: '90vh', overflow: 'auto', zIndex: 30006 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 800, fontSize: 16, color: '#002D5A' }}>
+                                    Subir Acta (Entrada)
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    Selecciona imágenes y asigna un nombre a cada una
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    refreshActasSelectionReset();
+                                    setModalSubirActasOpen(false);
+                                    setRepIdActasEntrada(null);
+                                }}
+                                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            <div className="mb-6">
+                                <label className="block mb-2 text-sm font-semibold text-gray-700">
+                                    Seleccionar Imágenes
+                                </label>
+                                <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={handleFileSelectSubirActas}
+                                        className="hidden"
+                                        id="file-input-actas-subir-entradas-listado"
+                                    />
+                                    <label
+                                        htmlFor="file-input-actas-subir-entradas-listado"
+                                        className="cursor-pointer flex flex-col items-center gap-2"
+                                    >
+                                        <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
+                                            <Upload className="w-6 h-6 text-white" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {actasParaSubir.length > 0 && (
+                                <div className="space-y-4">
+                                    <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                        Actas Seleccionadas ({actasParaSubir.length})
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {actasParaSubir.map((acta, index) => (
+                                            <div key={index} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
+                                                <div className="flex gap-3">
+                                                    <div className="flex-shrink-0">
+                                                        <img
+                                                            src={acta.preview}
+                                                            alt={`Preview ${index + 1}`}
+                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                        />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                Nombre de la Acta *
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={acta.nombre}
+                                                                onChange={e => handleUpdateNombreActaParaSubir(index, e.target.value)}
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                                placeholder="Ej: Acta revisión 01"
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleRemoveActaParaSubir(index)}
+                                                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            Eliminar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            <button
+                                onClick={() => {
+                                    refreshActasSelectionReset();
+                                    setModalSubirActasOpen(false);
+                                    setRepIdActasEntrada(null);
+                                }}
+                                className="btn btn-secondary"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={guardarActasEntrada}
+                                disabled={actasParaSubir.length === 0}
+                                className="btn"
+                                style={{ backgroundColor: '#002D5A', color: 'white' }}
+                            >
+                                Guardar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {modalObsOpen && (
+                <ModalObservaciones
+                    isOpen={modalObsOpen}
+                    onClose={() => setModalObsOpen(false)}
+                    observaciones={observacionesSeleccionadas}
+                />
+            )}
+
             <ModalEntrada
                 isOpen={modalOpen}
-                onClose={() => { setModalOpen(false); setEditData(null); }}
+                onClose={handleCloseModalEntrada}
                 editData={editData}
             />
         </div>

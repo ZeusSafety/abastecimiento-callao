@@ -100,7 +100,14 @@ export default function GestionCredencialPage() {
 
         setCambiando(true);
         try {
-            await api.cambiarPasswordAbastecimiento(passwordAnterior, passwordNueva);
+            // Validar contraseña anterior contra la contraseña dinámica actual del sistema
+            const actual = await api.obtenerPasswordMovimientos();
+            if (!actual.password || passwordAnterior !== actual.password) {
+                setMensajeError('La contraseña anterior es incorrecta');
+                return;
+            }
+
+            await api.cambiarPasswordMovimientos(passwordNueva, 'Admin');
             setMensajeExito('Contraseña cambiada exitosamente');
             setPasswordAnterior('');
             setPasswordNueva('');
@@ -203,7 +210,7 @@ export default function GestionCredencialPage() {
                                     Gestión de Credenciales
                                 </h1>
                                 <p className="text-[10px] text-gray-400 mt-0.5 font-medium italic opacity-80">
-                                    Cambio de contraseña para guardar abastecimiento sin actas
+                                    Cambio de contraseña para guardar movimientos sin actas
                                 </p>
                             </div>
                         </div>
@@ -218,7 +225,7 @@ export default function GestionCredencialPage() {
                                     Cambiar Contraseña
                                 </h2>
                                 <p className="text-xs text-gray-600">
-                                    Actualice la contraseña utilizada para guardar abastecimientos sin actas adjuntas.
+                                    Actualice la contraseña utilizada para guardar movimientos sin actas adjuntas.
                                 </p>
                             </div>
 

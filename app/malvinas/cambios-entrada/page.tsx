@@ -2,9 +2,37 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas, getOperacionColor } from '../../context/MalvinasContext';
-import { Search, TrendingUp, FileDown, FileSpreadsheet, Eye, Info, X } from 'lucide-react';
+import { Search, TrendingUp, FileDown, FileSpreadsheet, Eye, Info, X, ChevronDown, ChevronRight, PackagePlus, FileImage } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '../../utils/export';
-import TableSkeleton from '../../components/TableSkeleton';
+
+function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
+    if (!fechaStr) return { fecha: '-', hora: '' };
+    const raw = fechaStr.trim().replace(/\s+/g, ' ');
+    const dateMatch = raw.match(/^(\d{2}\/\d{2}\/\d{4})\s+(.+)$/);
+    if (dateMatch) {
+        return { fecha: dateMatch[1], hora: dateMatch[2] || '-' };
+    }
+
+    let d: Date;
+    if (fechaStr.includes('/')) {
+        const parts = fechaStr.split(' ');
+        const fechaPart = parts[0];
+        const horaPart = parts.slice(1).join(' ');
+        const [dia, mes, anio] = fechaPart.split('/');
+        d = new Date(`${anio}-${mes}-${dia} ${horaPart}`);
+    } else {
+        d = new Date(fechaStr);
+    }
+    if (isNaN(d.getTime())) return { fecha: fechaStr, hora: '-' };
+    const dia = d.getDate().toString().padStart(2, '0');
+    const mes = (d.getMonth() + 1).toString().padStart(2, '0');
+    const anio = d.getFullYear();
+    let horas = d.getHours();
+    const minutos = d.getMinutes().toString().padStart(2, '0');
+    const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
+    horas = horas % 12 || 12;
+    return { fecha: `${dia}/${mes}/${anio}`, hora: `${horas}:${minutos} ${periodo}` };
+}
 
 export default function CambiosEntradaPage() {
     const { state, refreshHistorialEntradas } = useMalvinas();
@@ -14,6 +42,7 @@ export default function CambiosEntradaPage() {
     const PER_PAGE = 20;
     const [modalObservaciones, setModalObservaciones] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
     const [modalMotivo, setModalMotivo] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
+    const [expandedCodigo, setExpandedCodigo] = useState<string | null>(null);
 
     // Cargar datos al montar el componente
     useEffect(() => {
@@ -25,16 +54,36 @@ export default function CambiosEntradaPage() {
         loadData();
     }, [refreshHistorialEntradas]);
 
-    const filtered = useMemo(() => {
-        const q = search.toLowerCase();
-        return state.cambiosEntrada.filter(
-            c => c.producto.toLowerCase().includes(q) || c.operacion.toLowerCase().includes(q)
-        );
-    }, [state.cambiosEntrada, search]);
+    const cargas = useMemo(() => {
+        const map = new Map<string, typeof state.cambiosEntrada>();
+        state.cambiosEntrada.forEach(c => {
+            const key = `${c.updatedAt || c.fecha || `sin-fecha-${c.id}`}|${c.motivoCambio || ''}`;
+            const prev = map.get(key) || [];
+            prev.push(c);
+            map.set(key, prev);
+        });
+        return Array.from(map.entries())
+            .map(([key, items]) => ({ codigo_carga: key, fecha_primera: items[0]?.updatedAt || items[0]?.fecha || '', detalles: items }))
+            .sort((a, b) => new Date(b.fecha_primera).getTime() - new Date(a.fecha_primera).getTime());
+    }, [state.cambiosEntrada]);
 
-    const total = filtered.length;
-    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+    const filteredCargas = useMemo(() => {
+        const q = search.toLowerCase().trim();
+        if (!q) return cargas;
+        return cargas.filter(c =>
+            c.detalles.some(d =>
+                d.producto.toLowerCase().includes(q) ||
+                d.operacion.toLowerCase().includes(q) ||
+                (d.almacenSalida || '').toLowerCase().includes(q) ||
+                (d.almacenIngreso || '').toLowerCase().includes(q) ||
+                (d.operador || '').toLowerCase().includes(q)
+            )
+        );
+    }, [cargas, search]);
+
+    const totalCargas = filteredCargas.length;
+    const pages = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
+    const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
     const handleExportExcel = () => {
         const columns = [
@@ -118,7 +167,7 @@ export default function CambiosEntradaPage() {
                                 <Search className="w-4 h-4 text-[#002D5A]" />
                             </div>
                             <span className="font-bold text-gray-800" style={{ fontSize: 13 }}>
-                                Total: {total} registros
+                                Total: {totalCargas} cargas
                             </span>
                         </div>
                         <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -135,89 +184,115 @@ export default function CambiosEntradaPage() {
                         </div>
                     </div>
 
-                    {/* Table card */}
+                    {/* Cascada Accordion */}
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
-                        <div className="overflow-x-auto" style={{ width: '100%' }}>
-                            <table className="w-full text-sm text-left" style={{ minWidth: 1600 }}>
-                                <thead className="text-[9px] uppercase font-bold tracking-wider">
-                                    <tr className="bg-[#002D5A] text-white">
-                                        <th className="px-4 py-4 whitespace-nowrap">Fecha Original</th>
-                                        <th className="px-4 py-4">Producto</th>
-                                        <th className="px-4 py-4">Operación</th>
-                                        <th className="px-4 py-4">Almacén Salida</th>
-                                        <th className="px-4 py-4">Almacén Ingreso</th>
-                                        <th className="px-4 py-4">Operador</th>
-                                        <th className="px-4 py-4 text-center">Cant.</th>
-                                        <th className="px-4 py-4">U. Medida</th>
-                                        <th className="px-4 py-4">Entregado Por</th>
-                                        <th className="px-4 py-4">Registrado Por</th>
-                                        <th className="px-4 py-4">Observaciones</th>
-                                        <th className="px-4 py-4">Motivo</th>
-                                        <th className="px-4 py-4 whitespace-nowrap">Fecha Cambio</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {loading ? (
-                                        <TableSkeleton rows={10} cols={13} />
-                                    ) : filtered.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={13} className="px-4 py-20 text-center">
-                                                <div className="flex flex-col items-center justify-center opacity-40">
-                                                    <Search className="w-12 h-12 mb-4" />
-                                                    <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">No hay cambios registrados aún.</p>
+                        <div className="divide-y divide-gray-100">
+                            {loading ? (
+                                <div className="p-10 text-center text-gray-500">Cargando cambios...</div>
+                            ) : totalCargas === 0 ? (
+                                <div className="p-10 text-center text-gray-500">No hay cambios registrados aún.</div>
+                            ) : (
+                                paginatedCargas.map(carga => {
+                                    const detalleRep = carga.detalles[0];
+                                    const isOpen = expandedCodigo === carga.codigo_carga;
+                                    const { fecha, hora } = formatFechaDosLineas(carga.fecha_primera);
+                                    return (
+                                        <div key={carga.codigo_carga} className="px-4">
+                                            <div
+                                                className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                                                onClick={() => setExpandedCodigo(isOpen ? null : carga.codigo_carga)}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
+                                                        {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                    </div>
+                                                    <div className="flex items-center gap-3 flex-wrap">
+                                                        <div className="flex items-center gap-3 whitespace-nowrap">
+                                                            <div className="text-[10px] text-gray-500 uppercase tracking-widest">FECHA</div>
+                                                            <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">{fecha}</div>
+                                                        </div>
+                                                        <div className="flex items-center gap-3 whitespace-nowrap">
+                                                            <div className="text-[10px] text-gray-500 uppercase tracking-widest">HORA</div>
+                                                            <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">{hora || '-'}</div>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        paginated.map((c, i) => (
-                                            <tr key={`${c.id}-${i}`} className="hover:bg-blue-50/30 transition-colors">
-                                                <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{c.fecha}</td>
-                                                <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{c.producto}</td>
-                                                <td className="px-4 py-3">
-                                                    {(() => {
-                                                        const colors = getOperacionColor(c.operacion);
-                                                        return (
-                                                            <span className={`px-2 py-0.5 rounded-full ${colors.bg} ${colors.text} text-[9px] font-bold uppercase tracking-wider`}>
-                                                                {c.operacion}
-                                                            </span>
-                                                        );
-                                                    })()}
-                                                </td>
-                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase italic">{c.almacenSalida}</td>
-                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase italic">{c.almacenIngreso}</td>
-                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{c.operador}</td>
-                                                <td className="px-4 py-3 text-center font-bold text-gray-900 text-[11px]">{c.cantidad}</td>
-                                                <td className="px-4 py-3">
-                                                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[9px] font-bold uppercase">
-                                                        {c.unidadMedida}
+                                                <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
+                                                    <span className="inline-flex items-center gap-2">
+                                                        <PackagePlus className="w-4 h-4 text-[#002D5A]" />
+                                                        <span className="font-bold text-gray-900">{carga.detalles.length}</span> cambios
                                                     </span>
-                                                </td>
-                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{c.entregado}</td>
-                                                <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{c.registradoPor}</td>
-                                                <td className="px-4 py-3">
-                                                    <button
-                                                        onClick={() => setModalObservaciones({ isOpen: true, content: c.observaciones || '-' })}
-                                                        className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors"
-                                                        title="Ver Observaciones"
-                                                    >
-                                                        <Eye className="w-4 h-4" />
-                                                    </button>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <button
-                                                        onClick={() => setModalMotivo({ isOpen: true, content: c.motivoCambio })}
-                                                        className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-600 transition-colors"
-                                                        title="Ver Motivo"
-                                                    >
-                                                        <Info className="w-4 h-4" />
-                                                    </button>
-                                                </td>
-                                                <td className="px-4 py-3 text-[10px] text-gray-300 whitespace-nowrap">{c.updatedAt}</td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                                                    <span className="inline-flex items-center gap-2">
+                                                        <FileImage className="w-4 h-4 text-[#002D5A]" />
+                                                        <span className="font-bold text-gray-900">{carga.detalles.filter(d => (d.motivoCambio || '').trim().length > 0).length}</span> motivos
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {isOpen && (
+                                                <div className="pb-5">
+                                                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                                        <div className="overflow-x-auto">
+                                                            <table className="w-full text-sm">
+                                                                <thead className="bg-[#002D5A] text-white">
+                                                                    <tr className="text-[9px] uppercase">
+                                                                        <th className="px-4 py-3 text-left font-bold">PRODUCTO</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">OPERACIÓN</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">ALMACÉN SALIDA</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">ALMACÉN INGRESO</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">OPERADOR</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">CANT.</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">U. MEDIDA</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">OBS.</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">MOTIVO</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">FECHA CAMBIO</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {carga.detalles.map((c, i) => (
+                                                                        <tr key={`${c.id}-${i}`} className="border-t border-gray-100 text-[11px] hover:bg-blue-50/30 transition-colors">
+                                                                            <td className="px-4 py-3 text-gray-800 font-medium">{c.producto}</td>
+                                                                            <td className="px-4 py-3">
+                                                                                <span className={`px-2 py-0.5 rounded-full ${getOperacionColor(c.operacion).bg} ${getOperacionColor(c.operacion).text} text-[9px] font-bold uppercase`}>
+                                                                                    {c.operacion}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-gray-700">{c.almacenSalida}</td>
+                                                                            <td className="px-4 py-3 text-gray-700">{c.almacenIngreso}</td>
+                                                                            <td className="px-4 py-3 text-gray-700">{c.operador}</td>
+                                                                            <td className="px-4 py-3 text-gray-700 font-semibold">{c.cantidad}</td>
+                                                                            <td className="px-4 py-3 text-gray-600">{c.unidadMedida}</td>
+                                                                            <td className="px-4 py-3">
+                                                                                <button
+                                                                                    onClick={() => setModalObservaciones({ isOpen: true, content: c.observaciones || '-' })}
+                                                                                    className="inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors"
+                                                                                    title="Ver observaciones"
+                                                                                >
+                                                                                    <Eye className="w-4 h-4" />
+                                                                                </button>
+                                                                            </td>
+                                                                            <td className="px-4 py-3">
+                                                                                <button
+                                                                                    onClick={() => setModalMotivo({ isOpen: true, content: c.motivoCambio || '-' })}
+                                                                                    className="inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-600 transition-colors"
+                                                                                    title="Ver motivo"
+                                                                                >
+                                                                                    <Info className="w-4 h-4" />
+                                                                                </button>
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-[10px] text-gray-600 whitespace-nowrap">{c.updatedAt || '-'}</td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
                         </div>
 
                         {/* Pagination */}

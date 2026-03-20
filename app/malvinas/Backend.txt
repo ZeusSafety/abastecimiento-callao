@@ -10,6 +10,8 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 from google.cloud import storage
 from datetime import datetime
+import uuid
+import hashlib
 
 # 🔧 Conexión a MySQL
 def get_connection():
@@ -26,6 +28,33 @@ def get_connection():
     cursor.close()
     return conn
 
+## Función de Subida a Cloud Storage
+# Variables globales para el cliente y el bucket de GCS
+storage_client = storage.Client()
+BUCKET_NAME = "archivos_sistema"
+GCS_FOLDER = "incidencias_areas_zeus"
+
+def upload_to_gcs(file):
+    """
+    Sube un archivo a Google Cloud Storage y devuelve la URL pública.
+    Args: file: El objeto de archivo multipart/form-data.
+    Returns: La URL del archivo subido o None si hay un error.
+    """
+    try:
+        bucket = storage_client.bucket(BUCKET_NAME)
+        # La ruta del archivo en el bucket
+        object_name = f"{GCS_FOLDER}/{file.filename}"
+        blob = bucket.blob(object_name)
+
+        # Sube el archivo directamente
+        blob.upload_from_file(file, content_type=file.content_type)
+        
+        # Genera la URL pública
+        gcs_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{object_name}"
+        return gcs_url
+    except Exception as e:
+        print(f"Error al subir a Cloud Storage: {e}")
+        return None
 
 # ============================================================
 # FUNCIONES DE RESPUESTA ESTÁNDAR (Helpers)
@@ -86,6 +115,36 @@ def _get_id_tipo_operacion_por_nombre_y_tipo(nombre_operacion, tipo, conn):
     result = cursor.fetchone()
     cursor.close()
     return result['id'] if result else None
+
+def _generar_codigo_carga():
+    """Genera un código único para agrupar cargas masivas."""
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    random_suffix = str(uuid.uuid4())[:8].upper()
+    return f"CG{timestamp}{random_suffix}"
+
+def _obtener_contrasena_sistema(conn):
+    """Obtiene la contraseña actual del sistema de configuración."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT valor FROM configuracion_sistema WHERE clave = 'pass_movimiento_sin_acta'")
+        result = cursor.fetchone()
+        return result['valor'] if result else None
+    finally:
+        cursor.close()
+
+def _actualizar_contrasena_sistema(conn, nueva_contrasena, actualizado_por):
+    """Actualiza la contraseña del sistema."""
+    cursor = conn.cursor()
+    try:
+        sql = "UPDATE configuracion_sistema SET valor = %s, actualizado_por = %s WHERE clave = 'pass_movimiento_sin_acta'"
+        cursor.execute(sql, (nueva_contrasena, actualizado_por))
+        conn.commit()
+        return True
+    except Exception as e:
+        logging.error(f"Error actualizando contraseña: {str(e)}")
+        return False
+    finally:
+        cursor.close()
 
 def _get_id_producto_por_codigo_o_nombre(codigo_o_nombre, conn):
     """Obtiene el ID de un producto por su código o nombre exacto."""
@@ -431,13 +490,17 @@ def get_entradas(request, headers):
                 ti.codigo as tienda_ingreso_codigo, ti.nombre as tienda_ingreso_nombre,
                 me.operador, me.cantidad, um.nombre as unidad_medida,
                 me.entregado_por, me.registrado_por, me.observaciones,
-                me.fecha_actualizacion, me.motivo_cambio
+                me.fecha_actualizacion, me.motivo_cambio,
+                COUNT(mea.id) as total_actas,
+                GROUP_CONCAT(mea.url_imagen SEPARATOR ',') as actas_urls
             FROM movimientos_entrada me
+            LEFT JOIN movimientos_actas mea ON me.id = mea.id_movimiento_entrada
             JOIN productos_abastecimiento p ON me.id_producto = p.id
             JOIN tipos_operacion_sea tos ON me.id_tipo_operacion = tos.id
             JOIN tiendas_gestion_sea ts ON me.id_tienda_salida = ts.id
             JOIN tiendas_gestion_sea ti ON me.id_tienda_ingreso = ti.id
             JOIN unidades_medida_sea um ON me.id_unidad_medida = um.id
+            GROUP BY me.id
             ORDER BY me.fecha_registro DESC
         """
         cursor.execute(sql)
@@ -448,13 +511,28 @@ def get_entradas(request, headers):
         conn.close()
 
 def create_entrada(request, headers):
-    """Registra una nueva entrada usando el SP sp_registrar_entrada."""
-    data = request.get_json()
-    if not data:
-        return bad_request_error("Datos JSON inválidos", headers)
+    """Registra entrada con soporte de actas e imágenes."""
+    # 1. Obtener datos del FormData
+    form_data = request.form.get('data')
+    if not form_data:
+        return bad_request_error("Faltan datos en la petición", headers)
+    
+    data = json.loads(form_data)
+    files = request.files.getlist('actas')
+    password_cliente = data.get('password_autorizacion')
 
     conn = get_connection()
+    cursor = conn.cursor()
+
     try:
+        # --- VALIDACIÓN DE CONTRASEÑA DINÁMICA ---
+        if not files or len(files) == 0:
+            # Para movimientos (entradas/salidas) usamos la clave dinámica del sistema.
+            pass_sistema = _obtener_contrasena_sistema(conn)
+            if not password_cliente or password_cliente != pass_sistema:
+                return (json.dumps({"message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
+
+
         # Convertir nombres/códigos a IDs
         producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
         if not producto_id:
@@ -476,6 +554,9 @@ def create_entrada(request, headers):
         if not um_id:
             return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
 
+        if not all([producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id, um_id]):
+            return bad_request_error("Uno o más parámetros (producto, tienda, etc.) son inválidos", headers)
+
         # Verificar si la tienda de salida es un almacén o una tienda
         cursor = conn.cursor()
         cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea WHERE id = %s", (tienda_salida_id,))
@@ -488,6 +569,13 @@ def create_entrada(request, headers):
             data.get('operador'), data.get('cantidad'), um_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
         ]
+
+        cursor.callproc('sp_registrar_entrada', params)
+        result_set = cursor.fetchall()
+        nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+
+        
+
         sp_call = 'sp_registrar_entrada'
         try:
             logging.info(f"Ejecutando SP: {sp_call} con parámetros: {params}")
@@ -519,33 +607,69 @@ def create_entrada(request, headers):
                         "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
                         (producto_id, tienda_salida_id, 0)
                     )
-            
+            # --- GUARDAR ACTAS EN GCS Y BD ---
+            if files and nuevo_id:
+                for file in files:
+                    url_publica = upload_to_gcs(file) # Asegúrate de tener esta función
+                    cursor.execute("""
+                        INSERT INTO movimientos_actas (id_movimiento_entrada, nombre_imagen, url_imagen) 
+                        VALUES (%s, %s, %s)
+                    """, (nuevo_id, file.filename, url_publica))
+
             conn.commit()
-            cursor.close()
-            return created_response(data={'id': nuevo_id}, message="Entrada registrada exitosamente", headers=headers)
+            return created_response(data={'id': nuevo_id}, message="Entrada registrada con actas", headers=headers)
+            
         except Exception as e:
             conn.rollback()
-            logging.error(f"Error ejecutando SP {sp_call}: {traceback.format_exc()}")
-            cursor.close()
+            logging.error(f"Error ejecutando entrada: {traceback.format_exc()}")
             return server_error(f"Error al registrar entrada: {str(e)}", headers)
-
     finally:
+        cursor.close()
         conn.close()
 
 def create_entradas_masivo(request, headers):
-    """Registra múltiples entradas en una sola transacción."""
-    data = request.get_json()
-    if not data or 'entradas' not in data:
-        return bad_request_error("Datos JSON inválidos. Se espera un array 'entradas'", headers)
-    
-    entradas = data.get('entradas', [])
-    if not isinstance(entradas, list) or len(entradas) == 0:
-        return bad_request_error("El array 'entradas' no puede estar vacío", headers)
+    """
+    Registra múltiples entradas en una sola transacción.
+    Ahora soporta actas globales por carga (todo un conjunto de actas para todos los ítems).
+    Estructura esperada:
+    {
+        "entradas": [...],
+        "actas": [{"nombre": "acta1.pdf", "archivo": file}],
+        "password_autorizacion": "xxxx" (opcional, solo si no hay actas)
+    }
+    """
+    # 1. Obtener datos JSON
+    form_data = request.form.get('data') if request.form.get('data') else None
+    if form_data:
+        data = json.loads(form_data)
+        entradas = data.get('entradas', [])
+        password_cliente = data.get('password_autorizacion')
+    else:
+        # Si viene por JSON puro (sin multipart)
+        data = request.get_json()
+        entradas = data.get('entradas', [])
+        password_cliente = data.get('password_autorizacion')
 
+    if not isinstance(entradas, list) or len(entradas) == 0:
+        return bad_request_error("El array 'entradas' es requerido y no puede estar vacío", headers)
+
+    # 2. Obtener archivos (actas globales)
+    files = request.files.getlist('actas') if request.files else []
+
+    # 3. Validar contraseña si no hay actas
     conn = get_connection()
     cursor = conn.cursor()
+    
+    if not files or len(files) == 0:
+        pass_sistema = _obtener_contrasena_sistema(conn)
+        if not password_cliente or password_cliente != pass_sistema:
+            cursor.close()
+            conn.close()
+            return (json.dumps({"success": False, "message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
+    
     ids_generados = []
     errores = []
+    codigo_carga = _generar_codigo_carga()
 
     try:
         for idx, entrada_data in enumerate(entradas):
@@ -558,93 +682,109 @@ def create_entradas_masivo(request, headers):
 
                 tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(entrada_data.get('operacion'), 'ENTRADA', conn)
                 if not tipo_op_id:
-                    errores.append(f"Entrada {idx + 1}: Tipo de operación '{entrada_data.get('operacion')}' no válido")
+                    errores.append(f"Entrada {idx + 1}: Tipo de operación inválido")
                     continue
 
                 tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(entrada_data.get('almacen_salida'), conn)
                 if not tienda_salida_id:
-                    errores.append(f"Entrada {idx + 1}: Almacén/Tienda de salida '{entrada_data.get('almacen_salida')}' no encontrado")
+                    errores.append(f"Entrada {idx + 1}: Almacén de salida no encontrado")
                     continue
 
                 tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(entrada_data.get('almacen_ingreso'), conn)
                 if not tienda_ingreso_id:
-                    errores.append(f"Entrada {idx + 1}: Tienda de ingreso '{entrada_data.get('almacen_ingreso')}' no encontrada")
+                    errores.append(f"Entrada {idx + 1}: Tienda de ingreso no encontrada")
                     continue
 
                 um_id = _get_id_unidad_medida_por_nombre(entrada_data.get('unidad_medida'), conn)
                 if not um_id:
-                    errores.append(f"Entrada {idx + 1}: Unidad de medida '{entrada_data.get('unidad_medida')}' no válida")
+                    errores.append(f"Entrada {idx + 1}: Unidad de medida no válida")
                     continue
 
-                # Verificar si la tienda de salida es un almacén o una tienda
+                # Verificar si la tienda de salida es un almacén
                 cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea WHERE id = %s", (tienda_salida_id,))
                 tienda_salida_info = cursor.fetchone()
                 es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
 
-                # Llamar al SP sin commit automático
+                # Llamar al SP
                 params = [
                     producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
                     entrada_data.get('operador'), entrada_data.get('cantidad'), um_id,
-                    entrada_data.get('entregado_por'), entrada_data.get('registrado_por'), entrada_data.get('observaciones')
+                    entrada_data.get('entregado_por'), entrada_data.get('registrado_por'), 
+                    entrada_data.get('observaciones')
                 ]
-                sp_call = 'sp_registrar_entrada'
-                logging.info(f"Ejecutando SP: {sp_call} con parámetros: {params}")
-                cursor.callproc(sp_call, params)
+                cursor.callproc('sp_registrar_entrada', params)
                 result_set = cursor.fetchall()
                 nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
-                
-                # Si la tienda de salida NO es un almacén (es una tienda), restar del stock
-                # Esto maneja el caso de traslados entre tiendas
-                if not es_almacen_salida:
+
+                # Actualizar código_carga en la entrada
+                if nuevo_id:
+                    cursor.execute(
+                        "UPDATE movimientos_entrada SET codigo_carga = %s WHERE id = %s",
+                        (codigo_carga, nuevo_id)
+                    )
+
+                # Restar stock si la tienda de salida no es almacén
+                if not es_almacen_salida and nuevo_id:
                     cantidad = entrada_data.get('cantidad', 0)
-                    try:
-                        # Verificar si existe registro de existencia para esta tienda y producto
+                    cursor.execute(
+                        "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+                        (producto_id, tienda_salida_id)
+                    )
+                    existencia_row = cursor.fetchone()
+                    if existencia_row:
+                        nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
                         cursor.execute(
-                            "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
-                            (producto_id, tienda_salida_id)
+                            "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                            (nueva_cantidad, producto_id, tienda_salida_id)
                         )
-                        existencia_row = cursor.fetchone()
-                        
-                        if existencia_row:
-                            # Actualizar restando la cantidad
-                            nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
-                            cursor.execute(
-                                "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
-                                (nueva_cantidad, producto_id, tienda_salida_id)
-                            )
-                        else:
-                            # Si no existe, crear registro con cantidad 0 (no debería pasar, pero por seguridad)
-                            cursor.execute(
-                                "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
-                                (producto_id, tienda_salida_id, 0)
-                            )
-                    except Exception as e:
-                        errores.append(f"Entrada {idx + 1}: Error al restar stock de tienda de salida: {str(e)}")
-                        logging.error(f"Error restando stock en entrada {idx + 1}: {traceback.format_exc()}")
-                        continue
+                    else:
+                        cursor.execute(
+                            "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                            (producto_id, tienda_salida_id, 0)
+                        )
                 
                 ids_generados.append(nuevo_id)
+                
             except Exception as e:
                 errores.append(f"Entrada {idx + 1}: {str(e)}")
                 logging.error(f"Error en entrada {idx + 1}: {traceback.format_exc()}")
 
+        # 4. Guardar ACTAS GLOBALES (asociadas a este código_carga)
+        # IMPORTANTE: para que en la vista "cascada" las actas NO se dupliquen por cada fila,
+        # insertamos cada acta UNA sola vez por carga usando un id_movimiento representativo.
+        if files and codigo_carga:
+            id_representativo = next((i for i in ids_generados if i), None)
+            if id_representativo:
+                for file in files:
+                    if file.filename != '':
+                        url_publica = upload_to_gcs(file)
+                        if url_publica:
+                            cursor.execute(
+                                """INSERT INTO movimientos_actas 
+                                   (id_movimiento_entrada, nombre_imagen, url_imagen, codigo_carga) 
+                                   VALUES (%s, %s, %s, %s)""",
+                                (id_representativo, file.filename, url_publica, codigo_carga)
+                            )
+
         if errores:
             conn.rollback()
-            return bad_request_error(f"Errores al procesar entradas: {'; '.join(errores)}", headers)
+            return bad_request_error(f"Errores: {'; '.join(errores)}", headers)
         
         conn.commit()
         return created_response(
-            data={'ids': ids_generados, 'total': len(ids_generados)},
+            data={'ids': ids_generados, 'total': len(ids_generados), 'codigo_carga': codigo_carga},
             message=f"{len(ids_generados)} entrada(s) registrada(s) exitosamente",
             headers=headers
         )
     except Exception as e:
         conn.rollback()
         logging.error(f"Error en create_entradas_masivo: {traceback.format_exc()}")
-        return server_error(f"Error al registrar entradas: {str(e)}", headers)
+        return server_error(f"Error: {str(e)}", headers)
     finally:
         cursor.close()
         conn.close()
+
+
 
 def update_entrada(request, headers, id_entrada):
     """Edita una entrada existente usando el SP sp_editar_entrada."""
@@ -711,12 +851,16 @@ def get_salidas(request, headers):
                 ms.cantidad, um.nombre as unidad_medida,
                 t.codigo as tienda_codigo, t.nombre as tienda_nombre,
                 ms.entregado_por, ms.registrado_por, ms.observaciones,
-                ms.fecha_actualizacion, ms.motivo_cambio
+                ms.fecha_actualizacion, ms.motivo_cambio,
+                COUNT(msa.id) as total_actas,
+                GROUP_CONCAT(msa.url_imagen SEPARATOR ',') as actas_urls
             FROM movimientos_salida ms
+            LEFT JOIN movimientos_actas msa ON ms.id = msa.id_movimiento_salida
             JOIN productos_abastecimiento p ON ms.id_producto = p.id
             JOIN tipos_operacion_sea tos ON ms.id_tipo_operacion = tos.id
             JOIN tiendas_gestion_sea t ON ms.id_tienda = t.id
             JOIN unidades_medida_sea um ON ms.id_unidad_medida = um.id
+            GROUP BY ms.id
             ORDER BY ms.fecha_registro DESC
         """
         cursor.execute(sql)
@@ -727,13 +871,23 @@ def get_salidas(request, headers):
         conn.close()
 
 def create_salida(request, headers):
-    """Registra una nueva salida usando el SP sp_registrar_salida."""
-    data = request.get_json()
-    if not data:
-        return bad_request_error("Datos JSON inválidos", headers)
+    """Registra salida con soporte de actas e imágenes."""
+    form_data = request.form.get('data')
+    data = json.loads(form_data)
+    files = request.files.getlist('actas')
+    password_cliente = data.get('password_autorizacion')
 
     conn = get_connection()
+    cursor = conn.cursor()
+
     try:
+        # --- VALIDACIÓN DE CONTRASEÑA DINÁMICA ---
+        if not files or len(files) == 0:
+            # Para movimientos (entradas/salidas) usamos la clave dinámica del sistema.
+            pass_sistema = _obtener_contrasena_sistema(conn)
+            if not password_cliente or password_cliente != pass_sistema:
+                return (json.dumps({"message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
+
         producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
         if not producto_id:
             return bad_request_error("Producto no encontrado", headers)
@@ -757,31 +911,64 @@ def create_salida(request, headers):
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
         ]
         sp_call = 'sp_registrar_salida'
-        success, message, result_set = _ejecutar_sp_con_transaccion(conn, sp_call, params)
+        result_set = cursor.fetchall()
+        nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
 
-        if success:
-            nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
-            return created_response(data={'id': nuevo_id}, message="Salida registrada exitosamente", headers=headers)
-        else:
-            return server_error(f"Error al registrar salida: {message}", headers)
+        # Guardar actas vinculadas a SALIDA
+        if files and nuevo_id:
+            for file in files:
+                url_publica = upload_to_gcs(file)
+                cursor.execute("""
+                    INSERT INTO movimientos_actas (id_movimiento_salida, nombre_imagen, url_imagen) 
+                    VALUES (%s, %s, %s)
+                """, (nuevo_id, file.filename, url_publica))
 
+        conn.commit()
+        return created_response(data={'id': nuevo_id}, message="Salida registrada con éxito", headers=headers)
+
+    except Exception as e:
+        conn.rollback()
+        return server_error(str(e), headers)
     finally:
+        cursor.close()
         conn.close()
 
 def create_salidas_masivo(request, headers):
-    """Registra múltiples salidas en una sola transacción."""
-    data = request.get_json()
-    if not data or 'salidas' not in data:
-        return bad_request_error("Datos JSON inválidos. Se espera un array 'salidas'", headers)
-    
-    salidas = data.get('salidas', [])
-    if not isinstance(salidas, list) or len(salidas) == 0:
-        return bad_request_error("El array 'salidas' no puede estar vacío", headers)
+    """
+    Registra múltiples salidas en una sola transacción.
+    Ahora soporta actas globales por carga similares a entradas.
+    """
+    # 1. Obtener datos JSON
+    form_data = request.form.get('data') if request.form.get('data') else None
+    if form_data:
+        data = json.loads(form_data)
+        salidas = data.get('salidas', [])
+        password_cliente = data.get('password_autorizacion')
+    else:
+        data = request.get_json()
+        salidas = data.get('salidas', [])
+        password_cliente = data.get('password_autorizacion')
 
+    if not isinstance(salidas, list) or len(salidas) == 0:
+        return bad_request_error("El array 'salidas' es requerido y no puede estar vacío", headers)
+
+    # 2. Obtener archivos (actas globales)
+    files = request.files.getlist('actas') if request.files else []
+
+    # 3. Validar contraseña si no hay actas
     conn = get_connection()
     cursor = conn.cursor()
+    
+    if not files or len(files) == 0:
+        pass_sistema = _obtener_contrasena_sistema(conn)
+        if not password_cliente or password_cliente != pass_sistema:
+            cursor.close()
+            conn.close()
+            return (json.dumps({"success": False, "message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
+
     ids_generados = []
     errores = []
+    codigo_carga = _generar_codigo_carga()
 
     try:
         for idx, salida_data in enumerate(salidas):
@@ -793,49 +980,74 @@ def create_salidas_masivo(request, headers):
 
                 tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(salida_data.get('operacion'), 'SALIDA', conn)
                 if not tipo_op_id:
-                    errores.append(f"Salida {idx + 1}: Tipo de operación '{salida_data.get('operacion')}' no válido")
+                    errores.append(f"Salida {idx + 1}: Tipo de operación no válido")
                     continue
 
                 tienda_id = _get_id_tienda_por_nombre_o_codigo(salida_data.get('almacen'), conn)
                 if not tienda_id:
-                    errores.append(f"Salida {idx + 1}: Almacén/Tienda '{salida_data.get('almacen')}' no encontrado")
+                    errores.append(f"Salida {idx + 1}: Almacén/Tienda no encontrado")
                     continue
 
                 um_id = _get_id_unidad_medida_por_nombre(salida_data.get('unidad_medida'), conn)
                 if not um_id:
-                    errores.append(f"Salida {idx + 1}: Unidad de medida '{salida_data.get('unidad_medida')}' no válida")
+                    errores.append(f"Salida {idx + 1}: Unidad de medida no válida")
                     continue
 
-                # Llamar al SP sin commit automático
+                # Llamar al SP
                 params = [
                     producto_id, tipo_op_id, salida_data.get('nro_comprobante'), salida_data.get('asesor'),
                     salida_data.get('cantidad'), um_id, tienda_id,
-                    salida_data.get('entregado_por'), salida_data.get('registrado_por'), salida_data.get('observaciones')
+                    salida_data.get('entregado_por'), salida_data.get('registrado_por'), 
+                    salida_data.get('observaciones')
                 ]
-                sp_call = 'sp_registrar_salida'
-                logging.info(f"Ejecutando SP: {sp_call} con parámetros: {params}")
-                cursor.callproc(sp_call, params)
+                cursor.callproc('sp_registrar_salida', params)
                 result_set = cursor.fetchall()
                 nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+
+                # Actualizar código_carga en la salida
+                if nuevo_id:
+                    cursor.execute(
+                        "UPDATE movimientos_salida SET codigo_carga = %s WHERE id = %s",
+                        (codigo_carga, nuevo_id)
+                    )
+                
                 ids_generados.append(nuevo_id)
+                
             except Exception as e:
                 errores.append(f"Salida {idx + 1}: {str(e)}")
                 logging.error(f"Error en salida {idx + 1}: {traceback.format_exc()}")
 
+        # 4. Guardar ACTAS GLOBALES (asociadas a este código_carga)
+        # Insertamos cada acta UNA sola vez por carga usando un id_movimiento representativo
+        # para evitar duplicados en la vista cascada.
+        if files and codigo_carga:
+            id_representativo = next((i for i in ids_generados if i), None)
+            if id_representativo:
+                for file in files:
+                    if file.filename != '':
+                        url_publica = upload_to_gcs(file)
+                        if url_publica:
+                            cursor.execute(
+                                """INSERT INTO movimientos_actas 
+                                   (id_movimiento_salida, nombre_imagen, url_imagen, codigo_carga) 
+                                   VALUES (%s, %s, %s, %s)""",
+                                (id_representativo, file.filename, url_publica, codigo_carga)
+                            )
+
         if errores:
             conn.rollback()
-            return bad_request_error(f"Errores al procesar salidas: {'; '.join(errores)}", headers)
+            return bad_request_error(f"Errores: {'; '.join(errores)}", headers)
         
         conn.commit()
         return created_response(
-            data={'ids': ids_generados, 'total': len(ids_generados)},
+            data={'ids': ids_generados, 'total': len(ids_generados), 'codigo_carga': codigo_carga},
             message=f"{len(ids_generados)} salida(s) registrada(s) exitosamente",
             headers=headers
         )
     except Exception as e:
         conn.rollback()
         logging.error(f"Error en create_salidas_masivo: {traceback.format_exc()}")
-        return server_error(f"Error al registrar salidas: {str(e)}", headers)
+        return server_error(f"Error: {str(e)}", headers)
     finally:
         cursor.close()
         conn.close()
@@ -1117,34 +1329,6 @@ def calcular_abastecimiento(request, headers):
         cursor.close()
         conn.close()
 
-## Función de Subida a Cloud Storage
-# Variables globales para el cliente y el bucket de GCS
-storage_client = storage.Client()
-BUCKET_NAME = "archivos_sistema"
-GCS_FOLDER = "incidencias_areas_zeus"
-
-def upload_to_gcs(file):
-    """
-    Sube un archivo a Google Cloud Storage y devuelve la URL pública.
-    Args: file: El objeto de archivo multipart/form-data.
-    Returns: La URL del archivo subido o None si hay un error.
-    """
-    try:
-        bucket = storage_client.bucket(BUCKET_NAME)
-        # La ruta del archivo en el bucket
-        object_name = f"{GCS_FOLDER}/{file.filename}"
-        blob = bucket.blob(object_name)
-
-        # Sube el archivo directamente
-        blob.upload_from_file(file, content_type=file.content_type)
-        
-        # Genera la URL pública
-        gcs_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{object_name}"
-        return gcs_url
-    except Exception as e:
-        print(f"Error al subir a Cloud Storage: {e}")
-        return None
-
 def guardar_abastecimiento(request, headers):
     """
     Guarda un abastecimiento con validación de contraseña para actas faltantes
@@ -1160,7 +1344,7 @@ def guardar_abastecimiento(request, headers):
     nombre_abastecimiento = data.get('nombre_abastecimiento')
     registrado_por = data.get('registrado_por')
     detalles = data.get('detalles')
-    password_cliente = data.get('password_autorizacion') # Contraseña enviada desde el front
+    password_cliente = data.get('password_autorizacion') # Contraseña enviada desde el front (ya no es requerida aquí)
     
     # 2. Obtener archivos (Actas)
     files = request.files.getlist('actas') # 'actas' es el nombre del campo en el input file múltiple
@@ -1172,14 +1356,7 @@ def guardar_abastecimiento(request, headers):
     cursor = conn.cursor()
     
     try:
-        # --- VALIDACIÓN DE CONTRASEÑA DINÁMICA ---
-        if not files or len(files) == 0:
-            cursor.execute("SELECT valor FROM configuracion_sistema WHERE clave = 'pass_abastecimiento_sin_acta'")
-            res_config = cursor.fetchone()
-            pass_sistema = res_config['valor'] if res_config else None
-            
-            if not password_cliente or password_cliente != pass_sistema:
-                return (json.dumps({"message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
+        # Actas opcionales: el abastecimiento puede guardarse sin imágenes.
 
         # 3. Insertar cabecera (Usando tu SP existente)
         cursor.callproc('sp_guardar_abastecimiento', (nombre_abastecimiento, registrado_por, 0))
@@ -1457,6 +1634,409 @@ def cambiar_password_abastecimiento(request, headers):
         conn.close()
 
 # ============================================================
+# NUEVOS ENDPOINTS DE CASCADA Y GESTIÓN DE ACTAS
+# ============================================================
+
+def get_entradas_cascada(request, headers):
+    """
+    Obtiene las entradas agrupadas por código_carga (vista cascada).
+    Estructura: codigo_carga -> array de detalles de cada entrada
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Obtener todas las entradas agrupadas por código_carga
+        sql = """
+            SELECT 
+                me.codigo_carga,
+                me.id,
+                me.fecha_registro,
+                p.codigo as producto_codigo,
+                p.nombre as producto_nombre,
+                tos.nombre as operacion,
+                ts.codigo as tienda_salida_codigo,
+                ts.nombre as tienda_salida_nombre,
+                ti.codigo as tienda_ingreso_codigo,
+                ti.nombre as tienda_ingreso_nombre,
+                me.operador,
+                me.cantidad,
+                um.nombre as unidad_medida,
+                me.entregado_por,
+                me.registrado_por,
+                me.observaciones,
+                me.fecha_actualizacion,
+                me.motivo_cambio
+            FROM movimientos_entrada me
+            JOIN productos_abastecimiento p ON me.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON me.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea ts ON me.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea ti ON me.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea um ON me.id_unidad_medida = um.id
+            ORDER BY me.codigo_carga DESC, me.fecha_registro DESC
+        """
+        cursor.execute(sql)
+        todas_entradas = cursor.fetchall()
+
+        # Obtener actas SOLO de entradas (para este endpoint) y enriquecer con fecha/hora y registrador
+        sql_actas = """
+            SELECT 
+                ma.id,
+                ma.id_movimiento_entrada,
+                ma.id_movimiento_salida,
+                ma.nombre_imagen,
+                ma.url_imagen,
+                ma.codigo_carga,
+                ma.fecha_subida,
+                me.registrado_por AS registrado_por
+            FROM movimientos_actas ma
+            LEFT JOIN movimientos_entrada me ON ma.id_movimiento_entrada = me.id
+            WHERE ma.codigo_carga IS NOT NULL
+              AND ma.id_movimiento_entrada IS NOT NULL
+        """
+        cursor.execute(sql_actas)
+        todas_actas = cursor.fetchall()
+
+        # Agrupar actas por código_carga
+        actas_por_carga = {}
+        for acta in todas_actas:
+            codigo_carga = acta['codigo_carga']
+            if codigo_carga not in actas_por_carga:
+                actas_por_carga[codigo_carga] = []
+            actas_por_carga[codigo_carga].append(acta)
+
+        # Agrupar entradas por código_carga
+        cascada = {}
+        for entrada in todas_entradas:
+            codigo_carga = entrada['codigo_carga']
+            if codigo_carga not in cascada:
+                cascada[codigo_carga] = {
+                    'codigo_carga': codigo_carga,
+                    'fecha_primera': entrada['fecha_registro'],
+                    'cantidad_items': 0,
+                    'operador': entrada['operador'],
+                    'detalles': [],
+                    'actas': actas_por_carga.get(codigo_carga, [])
+                }
+            cascada[codigo_carga]['detalles'].append(entrada)
+            cascada[codigo_carga]['cantidad_items'] += 1
+
+        # Convertir a lista ordenada
+        resultado = list(cascada.values())
+        return success_response(data=resultado, message="Entradas cascada obtenidas correctamente", headers=headers)
+
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_salidas_cascada(request, headers):
+    """
+    Obtiene las salidas agrupadas por código_carga (vista cascada).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Obtener todas las salidas agrupadas por código_carga
+        sql = """
+            SELECT 
+                ms.codigo_carga,
+                ms.id,
+                ms.fecha_registro,
+                p.codigo as producto_codigo,
+                p.nombre as producto_nombre,
+                tos.nombre as operacion,
+                ms.nro_comprobante,
+                ms.asesor,
+                ms.cantidad,
+                um.nombre as unidad_medida,
+                t.codigo as tienda_codigo,
+                t.nombre as tienda_nombre,
+                ms.entregado_por,
+                ms.registrado_por,
+                ms.observaciones,
+                ms.fecha_actualizacion,
+                ms.motivo_cambio
+            FROM movimientos_salida ms
+            JOIN productos_abastecimiento p ON ms.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON ms.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea t ON ms.id_tienda = t.id
+            JOIN unidades_medida_sea um ON ms.id_unidad_medida = um.id
+            ORDER BY ms.codigo_carga DESC, ms.fecha_registro DESC
+        """
+        cursor.execute(sql)
+        todas_salidas = cursor.fetchall()
+
+        # Obtener actas SOLO de salidas (para este endpoint) y enriquecer con fecha/hora y registrador
+        sql_actas = """
+            SELECT 
+                ma.id,
+                ma.id_movimiento_entrada,
+                ma.id_movimiento_salida,
+                ma.nombre_imagen,
+                ma.url_imagen,
+                ma.codigo_carga,
+                ma.fecha_subida,
+                ms.registrado_por AS registrado_por
+            FROM movimientos_actas ma
+            LEFT JOIN movimientos_salida ms ON ma.id_movimiento_salida = ms.id
+            WHERE ma.codigo_carga IS NOT NULL
+              AND ma.id_movimiento_salida IS NOT NULL
+        """
+        cursor.execute(sql_actas)
+        todas_actas = cursor.fetchall()
+
+        # Agrupar actas por código_carga
+        actas_por_carga = {}
+        for acta in todas_actas:
+            codigo_carga = acta['codigo_carga']
+            if codigo_carga not in actas_por_carga:
+                actas_por_carga[codigo_carga] = []
+            actas_por_carga[codigo_carga].append(acta)
+
+        # Agrupar salidas por código_carga
+        cascada = {}
+        for salida in todas_salidas:
+            codigo_carga = salida['codigo_carga']
+            if codigo_carga not in cascada:
+                cascada[codigo_carga] = {
+                    'codigo_carga': codigo_carga,
+                    'fecha_primera': salida['fecha_registro'],
+                    'cantidad_items': 0,
+                    'asesor': salida['asesor'],
+                    'detalles': [],
+                    'actas': actas_por_carga.get(codigo_carga, [])
+                }
+            cascada[codigo_carga]['detalles'].append(salida)
+            cascada[codigo_carga]['cantidad_items'] += 1
+
+        resultado = list(cascada.values())
+        return success_response(data=resultado, message="Salidas cascada obtenidas correctamente", headers=headers)
+
+    finally:
+        cursor.close()
+        conn.close()
+
+# ============================================================
+# ENDPOINTS DE GESTIÓN DE ACTAS
+# ============================================================
+
+def agregar_acta_a_entrada(request, headers):
+    """
+    Agrega una acta a un registro de entrada existente.
+    Puede actualizar el nombre de la acta también.
+    """
+    if request.method not in ['POST', 'PUT']:
+        return bad_request_error("Método no permitido", headers)
+
+    data = request.form.get('data')
+    if not data:
+        return bad_request_error("Datos requeridos", headers)
+
+    data = json.loads(data)
+    id_entrada = data.get('id_entrada')
+    nombre_acta = data.get('nombre_acta')
+    files = request.files.getlist('archivo')
+
+    if not id_entrada or not files:
+        return bad_request_error("ID de entrada y archivo requeridos", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar que la entrada existe y obtener el código_carga
+        cursor.execute("SELECT codigo_carga FROM movimientos_entrada WHERE id = %s", (id_entrada,))
+        result = cursor.fetchone()
+        if not result:
+            return not_found_error("Entrada no encontrada", headers)
+
+        codigo_carga = result['codigo_carga']
+
+        # Guardar archivo(s)
+        for file in files:
+            if file.filename != '':
+                url_publica = upload_to_gcs(file)
+                if url_publica:
+                    cursor.execute(
+                        """INSERT INTO movimientos_actas 
+                           (id_movimiento_entrada, nombre_imagen, url_imagen, codigo_carga) 
+                           VALUES (%s, %s, %s, %s)""",
+                        (id_entrada, nombre_acta or file.filename, url_publica, codigo_carga)
+                    )
+
+        conn.commit()
+        return created_response(message="Acta agregada exitosamente", headers=headers)
+
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error: {traceback.format_exc()}")
+        return server_error(str(e), headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def agregar_acta_a_salida(request, headers):
+    """
+    Agrega una acta a un registro de salida existente.
+    """
+    if request.method not in ['POST', 'PUT']:
+        return bad_request_error("Método no permitido", headers)
+
+    data = request.form.get('data')
+    if not data:
+        return bad_request_error("Datos requeridos", headers)
+
+    data = json.loads(data)
+    id_salida = data.get('id_salida')
+    nombre_acta = data.get('nombre_acta')
+    files = request.files.getlist('archivo')
+
+    if not id_salida or not files:
+        return bad_request_error("ID de salida y archivo requeridos", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar que la salida existe y obtener el código_carga
+        cursor.execute("SELECT codigo_carga FROM movimientos_salida WHERE id = %s", (id_salida,))
+        result = cursor.fetchone()
+        if not result:
+            return not_found_error("Salida no encontrada", headers)
+
+        codigo_carga = result['codigo_carga']
+
+        # Guardar archivo(s)
+        for file in files:
+            if file.filename != '':
+                url_publica = upload_to_gcs(file)
+                if url_publica:
+                    cursor.execute(
+                        """INSERT INTO movimientos_actas 
+                           (id_movimiento_salida, nombre_imagen, url_imagen, codigo_carga) 
+                           VALUES (%s, %s, %s, %s)""",
+                        (id_salida, nombre_acta or file.filename, url_publica, codigo_carga)
+                    )
+
+        conn.commit()
+        return created_response(message="Acta agregada exitosamente", headers=headers)
+
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error: {traceback.format_exc()}")
+        return server_error(str(e), headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def eliminar_acta(request, headers, id_acta):
+    """Elimina una acta por su ID."""
+    if request.method != 'DELETE':
+        return bad_request_error("Método no permitido", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar que la acta existe
+        cursor.execute("SELECT id FROM movimientos_actas WHERE id = %s", (id_acta,))
+        if not cursor.fetchone():
+            return not_found_error("Acta no encontrada", headers)
+
+        # Eliminar acta
+        cursor.execute("DELETE FROM movimientos_actas WHERE id = %s", (id_acta,))
+        conn.commit()
+
+        return success_response(message="Acta eliminada exitosamente", headers=headers)
+
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error: {traceback.format_exc()}")
+        return server_error(str(e), headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def actualizar_nombre_acta(request, headers, id_acta):
+    """Actualiza el nombre/descripción de una acta."""
+    if request.method != 'PUT':
+        return bad_request_error("Método no permitido", headers)
+
+    data = request.get_json()
+    if not data or 'nombre_imagen' not in data:
+        return bad_request_error("Nombre de acta requerido", headers)
+
+    nuevo_nombre = data.get('nombre_imagen')
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar que la acta existe
+        cursor.execute("SELECT id FROM movimientos_actas WHERE id = %s", (id_acta,))
+        if not cursor.fetchone():
+            return not_found_error("Acta no encontrada", headers)
+
+        # Actualizar nombre
+        cursor.execute(
+            "UPDATE movimientos_actas SET nombre_imagen = %s WHERE id = %s",
+            (nuevo_nombre, id_acta)
+        )
+        conn.commit()
+
+        return success_response(message="Nombre de acta actualizado exitosamente", headers=headers)
+
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error: {traceback.format_exc()}")
+        return server_error(str(e), headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+# ============================================================
+# ENDPOINTS DE GESTIÓN DE CONTRASEÑA
+# ============================================================
+
+def obtener_contrasena_actual(request, headers):
+    """Obtiene la contraseña actual del sistema (solo para admin)."""
+    conn = get_connection()
+    try:
+        pass_actual = _obtener_contrasena_sistema(conn)
+        return success_response(data={'password': pass_actual}, message="Contraseña obtenida", headers=headers)
+    except Exception as e:
+        logging.error(f"Error: {traceback.format_exc()}")
+        return server_error(str(e), headers)
+    finally:
+        conn.close()
+
+def actualizar_contrasena_sistema(request, headers):
+    """Actualiza la contraseña del sistema."""
+    if request.method != 'PUT':
+        return bad_request_error("Método no permitido", headers)
+
+    data = request.get_json()
+    if not data or 'nueva_contrasena' not in data:
+        return bad_request_error("Nueva contraseña requerida", headers)
+
+    nueva_contrasena = data.get('nueva_contrasena')
+    actualizado_por = data.get('actualizado_por', 'sistema')
+
+    if not nueva_contrasena or len(nueva_contrasena) < 4:
+        return bad_request_error("La contraseña debe tener al menos 4 caracteres", headers)
+
+    conn = get_connection()
+    try:
+        if _actualizar_contrasena_sistema(conn, nueva_contrasena, actualizado_por):
+            return success_response(message="Contraseña actualizada exitosamente", headers=headers)
+        else:
+            return server_error("Error al actualizar contraseña", headers)
+    except Exception as e:
+        logging.error(f"Error: {traceback.format_exc()}")
+        return server_error(str(e), headers)
+    finally:
+        conn.close()
+
+# ============================================================
 # FUNCIÓN PRINCIPAL (FUNCION QUE ENRUTA TODOS LOS PROCESOS)
 # ============================================================
 @functions_framework.http
@@ -1508,6 +2088,8 @@ def abastecimiento_entra_salida_malvinas(request):
             return create_entrada(request, headers)
         elif path == '/api/entradas/masivo' and method == 'POST':
             return create_entradas_masivo(request, headers)
+        elif path == '/api/entradas/cascada' and method == 'GET':
+            return get_entradas_cascada(request, headers)
         elif path.startswith('/api/entradas/') and method == 'PUT':
             # Extraer ID de la ruta: /api/entradas/123
             id_entrada = path.split('/')[-1]
@@ -1526,6 +2108,8 @@ def abastecimiento_entra_salida_malvinas(request):
             return create_salida(request, headers)
         elif path == '/api/salidas/masivo' and method == 'POST':
             return create_salidas_masivo(request, headers)
+        elif path == '/api/salidas/cascada' and method == 'GET':
+            return get_salidas_cascada(request, headers)
         elif path.startswith('/api/salidas/') and method == 'PUT':
             id_salida = path.split('/')[-1]
             if id_salida.isdigit():
@@ -1541,6 +2125,30 @@ def abastecimiento_entra_salida_malvinas(request):
             return get_existencias(request, headers)
         elif path == '/api/stock-total' and method == 'GET':
             return get_stock_total(request, headers)  # Vista similar a la hoja "Stock Total"
+
+        # ==================== MÓDULO: GESTIÓN DE ACTAS ====================
+        elif path == '/api/actas/entrada' and method in ['POST', 'PUT']:
+            return agregar_acta_a_entrada(request, headers)
+        elif path == '/api/actas/salida' and method in ['POST', 'PUT']:
+            return agregar_acta_a_salida(request, headers)
+        elif path.startswith('/api/actas/') and method == 'DELETE':
+            id_acta = path.split('/')[-1]
+            if id_acta.isdigit():
+                return eliminar_acta(request, headers, int(id_acta))
+            else:
+                return not_found_error("ID de acta inválido", headers)
+        elif path.startswith('/api/actas/') and method == 'PUT':
+            id_acta = path.split('/')[-1]
+            if id_acta.isdigit():
+                return actualizar_nombre_acta(request, headers, int(id_acta))
+            else:
+                return not_found_error("ID de acta inválido", headers)
+
+        # ==================== MÓDULO: GESTIÓN DE CONTRASEÑA ====================
+        elif path == '/api/config/password' and method == 'GET':
+            return obtener_contrasena_actual(request, headers)
+        elif path == '/api/config/password' and method == 'PUT':
+            return actualizar_contrasena_sistema(request, headers)
 
         # ==================== MÓDULO: HISTORIAL DE CAMBIOS ====================
         elif path == '/api/historial/entradas' and method == 'GET':

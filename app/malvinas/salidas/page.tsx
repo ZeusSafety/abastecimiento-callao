@@ -13,11 +13,11 @@ import {
     getOperacionColor,
 } from '../../context/MalvinasContext';
 import {
-    Plus, Search, Edit3, X, Save, PackageMinus, ChevronDown, Loader2, Trash2
+    Plus, Search, Edit3, X, Save, PackageMinus, ChevronDown, Loader2, Trash2, Upload, Lock
 } from 'lucide-react';
-import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import * as api from '../../services/api';
+import CascadaMovimientosSalidas from './CascadaMovimientosSalidas';
 
 // ─── Modal Salida ─────────────────────────────────────────────────────────────
 function ModalSalida({
@@ -66,6 +66,12 @@ function ModalSalida({
     }>>([]);
     const [isSaving, setIsSaving] = useState(false);
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+    // ─── Actas (globales por carga) + seguridad ───────────────────────────────
+    const [modalActasOpen, setModalActasOpen] = useState(false);
+    const [actas, setActas] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [modalPasswordOpen, setModalPasswordOpen] = useState(false);
+    const [passwordAutorizacion, setPasswordAutorizacion] = useState('');
 
     // Limpiar productos agregados cuando se abre el modal (solo para nuevo registro)
     useEffect(() => {
@@ -171,13 +177,11 @@ function ModalSalida({
         
         // Limpiar formulario excepto campos comunes y el código del producto
         // El código se mantiene hasta que el usuario cambie el producto
-        // El comprobante solo se limpia si la operación NO es "VENTA"
         setForm(f => ({
             ...f,
             cantidad: 0,
             observaciones: '',
-            comprobante: f.operacion === 'VENTA' ? f.comprobante : '', // Mantener comprobante si es VENTA
-            asesor: '',
+            // No limpiamos comprobante/asesor: deben permanecer hasta que el usuario los borre.
             // NO limpiar productoId, producto ni codigo para mantenerlos visibles
         }));
         
@@ -243,6 +247,100 @@ function ModalSalida({
         }));
     };
 
+    const handleFileSelectActas = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const nuevasActas = files.map(file => ({
+            file,
+            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            preview: URL.createObjectURL(file),
+        }));
+        setActas(prev => [...prev, ...nuevasActas]);
+        e.target.value = '';
+    };
+
+    const handleRemoveActa = (index: number) => {
+        setActas(prev => {
+            const nueva = [...prev];
+            URL.revokeObjectURL(nueva[index].preview);
+            nueva.splice(index, 1);
+            return nueva;
+        });
+    };
+
+    const handleUpdateNombreActa = (index: number, nuevoNombre: string) => {
+        setActas(prev => {
+            const nueva = [...prev];
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            return nueva;
+        });
+    };
+
+    const prepararSalidasData = () => {
+        return productosAgregados.map(p => {
+            const prod = state.productos.find(pr => pr.id === p.productoId);
+            if (!prod) throw new Error(`Producto ${p.productoId} no encontrado`);
+
+            const almacenStr = p.almacen.replace('TIENDA ', '');
+
+            return {
+                producto: prod.codigo,
+                operacion: p.operacion,
+                nro_comprobante: p.comprobante || undefined,
+                asesor: p.asesor || undefined,
+                cantidad: p.cantidad,
+                unidad_medida: p.unidadMedida,
+                almacen: almacenStr,
+                entregado_por: p.entregado || undefined,
+                registrado_por: p.registradoPor,
+                observaciones: p.observaciones || undefined,
+            };
+        });
+    };
+
+    const ejecutarGuardadoSalidas = async (password?: string) => {
+        setIsSaving(true);
+        try {
+            if (productosAgregados.length === 0) {
+                showToast('error', 'Agrega al menos un producto antes de guardar');
+                return;
+            }
+
+            const salidasData = prepararSalidasData();
+
+            const archivosActas =
+                actas.length > 0 ? actas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined;
+
+            await api.createSalidasMasivo(salidasData, {
+                actas: archivosActas,
+                passwordAutorizacion: archivosActas ? undefined : password,
+            });
+
+            await Promise.all([refreshSalidas(), refreshProductos()]);
+
+            actas.forEach(a => URL.revokeObjectURL(a.preview));
+            setActas([]);
+            setPasswordAutorizacion('');
+            setModalActasOpen(false);
+            setModalPasswordOpen(false);
+
+            onClose();
+            showToast('success', `${productosAgregados.length} producto(s) registrado(s) exitosamente`);
+        } catch (error: any) {
+            showToast('error', error.message || 'Error al registrar salidas');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleConfirmarPassword = async () => {
+        if (!passwordAutorizacion.trim()) {
+            showToast('error', 'Ingresa la contraseña de autorización');
+            return;
+        }
+        setModalPasswordOpen(false);
+        await ejecutarGuardadoSalidas(passwordAutorizacion);
+    };
+
     const handleSubmit = async () => {
         if (isEdit) {
             // Modo edición: comportamiento original
@@ -288,48 +386,20 @@ function ModalSalida({
                 showToast('error', 'Agrega al menos un producto antes de guardar');
                 return;
             }
-
-            setIsSaving(true);
-            try {
-                // Preparar datos para el endpoint masivo
-                const salidasData = productosAgregados.map(p => {
-                    const prod = state.productos.find(pr => pr.id === p.productoId);
-                    if (!prod) throw new Error(`Producto ${p.productoId} no encontrado`);
-
-                    const almacenStr = p.almacen.replace('TIENDA ', '');
-
-                    return {
-                        producto: prod.codigo,
-                        operacion: p.operacion,
-                        nro_comprobante: p.comprobante || undefined,
-                        asesor: p.asesor || undefined,
-                        cantidad: p.cantidad,
-                        unidad_medida: p.unidadMedida,
-                        almacen: almacenStr,
-                        entregado_por: p.entregado || undefined,
-                        registrado_por: p.registradoPor,
-                        observaciones: p.observaciones || undefined,
-                    };
-                });
-
-                // Llamar al endpoint masivo
-                await api.createSalidasMasivo(salidasData);
-                
-                // Actualizar salidas y productos (stock) en paralelo
-                await Promise.all([refreshSalidas(), refreshProductos()]);
-                setIsSaving(false);
-                onClose();
-                showToast('success', `${productosAgregados.length} producto(s) registrado(s) exitosamente`);
-            } catch (error: any) {
-                setIsSaving(false);
-                showToast('error', error.message || 'Error al registrar salidas');
+            // Seguridad: si NO hay actas, pedir contraseña; si SÍ hay actas, guardar directo.
+            if (actas.length === 0) {
+                setModalPasswordOpen(true);
+                return;
             }
+
+            await ejecutarGuardadoSalidas();
         }
     };
 
     if (!isOpen) return null;
 
     return (
+        <>
         <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
             <div className="modal-box" style={{ maxWidth: isEdit ? 680 : 1200 }}>
                 <div className="modal-header">
@@ -440,8 +510,7 @@ function ModalSalida({
                                             ...f, 
                                             operacion: nuevaOperacion, 
                                             operacionPersonalizada: nuevaOperacion !== 'OTROS' ? '' : f.operacionPersonalizada,
-                                            // Si cambia de VENTA a otra operación, limpiar comprobante
-                                            comprobante: f.operacion === 'VENTA' && nuevaOperacion !== 'VENTA' ? '' : f.comprobante
+                                    // Mantener comprobante/asesor para no borrar lo que el usuario ingresó
                                         }));
                                     }}
                                     className="form-input"
@@ -570,16 +639,32 @@ function ModalSalida({
                         {/* Registrado por */}
                         <div>
                             <label className="form-label">Registrado Por</label>
-                            <div className="relative">
-                                <select
-                                    value={form.registradoPor}
-                                    onChange={e => setForm(f => ({ ...f, registradoPor: e.target.value }))}
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
+                            <div className="flex items-end gap-2">
+                                <div className="relative flex-1">
+                                    <select
+                                        value={form.registradoPor}
+                                        onChange={e => setForm(f => ({ ...f, registradoPor: e.target.value }))}
+                                        className="form-input"
+                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
+                                    >
+                                        {REGISTRADORES.map(r => <option key={r}>{r}</option>)}
+                                    </select>
+                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setModalActasOpen(true)}
+                                    className="flex items-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm"
+                                    style={{ whiteSpace: 'nowrap' }}
                                 >
-                                    {REGISTRADORES.map(r => <option key={r}>{r}</option>)}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                    <Upload className="w-4 h-4" />
+                                    <span>Subir Acta</span>
+                                    {actas.length > 0 && (
+                                        <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                            {actas.length}
+                                        </span>
+                                    )}
+                                </button>
                             </div>
                         </div>
 
@@ -847,6 +932,206 @@ function ModalSalida({
                 </div>
             </div>
         </div>
+        
+        {/* Modal Subir Actas (solo para modo nuevo) */}
+        {modalActasOpen && !isEdit && (
+            <div
+                className="modal-backdrop"
+                style={{ zIndex: 20000 }}
+                onClick={e => e.target === e.currentTarget && setModalActasOpen(false)}
+            >
+                <div className="modal-box" style={{ maxWidth: '90vw', width: 900, zIndex: 20001 }}>
+                    <div className="modal-header">
+                        <div>
+                            <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                Subir Actas (Globales)
+                            </h6>
+                            <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                Sube una o más actas y asigna un nombre a cada una
+                            </p>
+                        </div>
+                        <button onClick={() => setModalActasOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                            <X className="w-5 h-5 text-gray-500" />
+                        </button>
+                    </div>
+
+                    <div className="modal-body">
+                        <div className="mb-6">
+                            <label className="block mb-2 text-sm font-semibold text-gray-700">
+                                Seleccionar Imágenes
+                            </label>
+                            <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={handleFileSelectActas}
+                                    className="hidden"
+                                    id="file-input-actas-mov-salidas"
+                                />
+                                <label
+                                    htmlFor="file-input-actas-mov-salidas"
+                                    className="cursor-pointer flex flex-col items-center gap-2"
+                                >
+                                    <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
+                                        <Upload className="w-6 h-6 text-white" />
+                                    </div>
+                                    <div>
+                                        <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
+                                        <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {actas.length > 0 && (
+                            <div className="space-y-4">
+                                <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                    Actas Seleccionadas ({actas.length})
+                                </h6>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {actas.map((acta, index) => (
+                                        <div
+                                            key={index}
+                                            className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
+                                        >
+                                            <div className="flex gap-3">
+                                                <div className="flex-shrink-0">
+                                                    <img
+                                                        src={acta.preview}
+                                                        alt={`Preview ${index + 1}`}
+                                                        className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                    />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="mb-2">
+                                                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                            Nombre de la Acta *
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={acta.nombre}
+                                                            onChange={e => handleUpdateNombreActa(index, e.target.value)}
+                                                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                            placeholder="Ej: Acta revisión 01"
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleRemoveActa(index)}
+                                                        className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        Eliminar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="modal-footer">
+                        <button
+                            onClick={() => setModalActasOpen(false)}
+                            className="btn btn-secondary"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={() => setModalActasOpen(false)}
+                            className="btn"
+                            style={{ backgroundColor: '#002D5A', color: 'white' }}
+                            onMouseOver={(e) => e.currentTarget && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                            onMouseOut={(e) => e.currentTarget && (e.currentTarget.style.backgroundColor = '#002D5A')}
+                        >
+                            Aceptar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Modal Contraseña (solo si NO hay actas al guardar) */}
+        {modalPasswordOpen && !isEdit && (
+            <div
+                className="modal-backdrop"
+                style={{ zIndex: 20010 }}
+                onClick={e => e.target === e.currentTarget && setModalPasswordOpen(false)}
+            >
+                <div className="modal-box" style={{ maxWidth: 520, width: '90vw', zIndex: 20011 }}>
+                    <div className="modal-header">
+                        <div>
+                            <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                Confirmación Requerida
+                            </h6>
+                            <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                No se han adjuntado actas. Para proceder con el guardado, ingrese la contraseña de autorización
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setModalPasswordOpen(false);
+                                setPasswordAutorizacion('');
+                            }}
+                            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            <X className="w-5 h-5 text-gray-500" />
+                        </button>
+                    </div>
+
+                    <div className="modal-body">
+                        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                            <Lock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                            <div>
+                                <p className="text-sm font-semibold text-amber-900 mb-1">Contraseña de autorización requerida</p>
+                                <p className="text-xs text-amber-700">
+                                    Se valida contra la contraseña dinámica del sistema.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="form-label">Contraseña de autorización *</label>
+                            <input
+                                type="password"
+                                value={passwordAutorizacion}
+                                onChange={e => setPasswordAutorizacion(e.target.value)}
+                                className="form-input"
+                                style={{ fontSize: 12 }}
+                                placeholder="Ingrese contraseña"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="modal-footer">
+                        <button
+                            onClick={() => {
+                                setModalPasswordOpen(false);
+                                setPasswordAutorizacion('');
+                            }}
+                            className="btn btn-secondary"
+                            disabled={isSaving}
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={handleConfirmarPassword}
+                            className="btn"
+                            style={{ backgroundColor: '#002D5A', color: 'white' }}
+                            onMouseOver={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#002D5A')}
+                            disabled={isSaving || !passwordAutorizacion.trim()}
+                        >
+                            Aceptar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }
 
@@ -857,32 +1142,16 @@ export default function SalidasPage() {
     const [editData, setEditData] = useState<RegistroSalida | null>(null);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
-    const [loading, setLoading] = useState(true);
     const PER_PAGE = 15;
+    const [cascadaRefreshKey, setCascadaRefreshKey] = useState(0);
+    const [wasModalOpen, setWasModalOpen] = useState(false);
 
-    // Cargar salidas al montar el componente
     useEffect(() => {
-        const loadData = async () => {
-            setLoading(true);
-            await refreshSalidas();
-            setLoading(false);
-        };
-        loadData();
-    }, [refreshSalidas]);
-
-    const filtered = useMemo(() => {
-        const q = search.toLowerCase();
-        return state.salidas.filter(
-            s => s.producto.toLowerCase().includes(q) ||
-                s.operacion.toLowerCase().includes(q) ||
-                s.almacen.toLowerCase().includes(q) ||
-                s.asesor?.toLowerCase().includes(q)
-        );
-    }, [state.salidas, search]);
-
-    const total = filtered.length;
-    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+        if (wasModalOpen && !modalOpen) {
+            setCascadaRefreshKey(k => k + 1);
+        }
+        setWasModalOpen(modalOpen);
+    }, [modalOpen, wasModalOpen]);
 
     return (
         <div id="view-salidas" className="animate-in fade-in duration-500 font-poppins">
@@ -936,120 +1205,14 @@ export default function SalidasPage() {
                         </div>
                     </div>
 
-                    {/* Table card */}
-                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
-
-                        {/* Table */}
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="text-[9px] uppercase font-bold tracking-wider">
-                                    <tr className="bg-[#002D5A] text-white">
-                                        <th className="px-4 py-4">Fecha</th>
-                                        <th className="px-4 py-4">Producto</th>
-                                        <th className="px-4 py-4">Operación</th>
-                                        <th className="px-4 py-4">Comprobante</th>
-                                        <th className="px-4 py-4 text-center">Cant.</th>
-                                        <th className="px-4 py-4">U. Medida</th>
-                                        <th className="px-4 py-4">Almacén</th>
-                                        <th className="px-4 py-4">Asesor</th>
-                                        <th className="px-4 py-4 text-center hidden">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {loading ? (
-                                        <TableSkeleton rows={PER_PAGE} cols={10} />
-                                    ) : paginated.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={10} className="px-4 py-12 text-center">
-                                                <div className="flex flex-col items-center gap-3">
-                                                    <PackageMinus className="w-12 h-12 text-gray-300" />
-                                                    <p className="text-gray-400 text-sm font-medium">
-                                                        {search ? 'No se encontraron registros con ese criterio' : 'No hay registros de salida'}
-                                                    </p>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        paginated.map(s => (
-                                            <tr key={s.id} className="hover:bg-pink-50/30 transition-colors">
-                                                <td className="px-4 py-3 text-[11px] text-gray-500 whitespace-nowrap uppercase">{s.fecha}</td>
-                                                <td className="px-4 py-3 font-semibold text-gray-800 text-[11px] uppercase tracking-tight">{s.producto}</td>
-                                            <td className="px-4 py-3">
-                                                <span className="px-2 py-0.5 rounded-full bg-pink-50 text-pink-700 text-[9px] font-bold uppercase tracking-wider">
-                                                    {s.operacion}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-[11px] text-gray-600 font-medium uppercase">{s.comprobante || '-'}</td>
-                                            <td className="px-4 py-3 text-center font-bold text-gray-900 text-[11px]">{s.cantidad}</td>
-                                            <td className="px-4 py-3">
-                                                <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[9px] font-bold uppercase">
-                                                    {s.unidadMedida}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-[11px] text-gray-600 font-medium uppercase">{s.almacen}</td>
-                                            <td className="px-4 py-3 text-[11px] text-gray-600 uppercase">{s.asesor || '-'}</td>
-                                            <td className="px-4 py-3 text-center hidden">
-                                                <button
-                                                    onClick={() => { setEditData(s); setModalOpen(true); }}
-                                                    className="p-1.5 rounded-lg bg-pink-50 text-pink-700 hover:bg-pink-700 hover:text-white transition-all shadow-sm"
-                                                    title="Editar"
-                                                >
-                                                    <Edit3 className="w-3.5 h-3.5" />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    )))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Pagination */}
-                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage(1)}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    «
-                                </button>
-                                <button
-                                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    ‹
-                                </button>
-                            </div>
-
-                            <div className="flex flex-col items-center">
-                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-poppins)' }}>
-                                    Página {page} de {pages}
-                                </span>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
-                                    disabled={page === pages}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    ›
-                                </button>
-                                <button
-                                    onClick={() => setPage(pages)}
-                                    disabled={page === pages}
-                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                                    style={{ fontFamily: 'var(--font-poppins)' }}
-                                >
-                                    »
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                    {/* Cascada Accordion */}
+                    <CascadaMovimientosSalidas
+                        search={search}
+                        page={page}
+                        setPage={setPage}
+                        PER_PAGE={PER_PAGE}
+                        refreshKey={cascadaRefreshKey}
+                    />
                 </div>
             </div>
 

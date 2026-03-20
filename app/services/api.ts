@@ -139,6 +139,75 @@ export interface ActaAbastecimientoDB {
   fecha_subida: string;
 }
 
+// ─── Cascada Movimientos / Actas ─────────────────────────────────────────────
+export interface ActaMovimientoDB {
+  id: number;
+  id_movimiento_entrada: number | null;
+  id_movimiento_salida: number | null;
+  nombre_imagen: string;
+  url_imagen: string;
+  codigo_carga: string | null;
+  fecha_subida: string;
+  registrado_por: string | null;
+}
+
+export interface EntradaDetalleCascadaDB {
+  id: number;
+  fecha_registro: string;
+  producto_codigo: string;
+  producto_nombre: string;
+  operacion: string;
+  tienda_salida_codigo: string;
+  tienda_salida_nombre: string | null;
+  tienda_ingreso_codigo: string;
+  tienda_ingreso_nombre: string | null;
+  operador: string | null;
+  cantidad: number;
+  unidad_medida: string;
+  entregado_por: string | null;
+  registrado_por: string | null;
+  observaciones: string | null;
+  fecha_actualizacion: string | null;
+  motivo_cambio: string | null;
+}
+
+export interface SalidaDetalleCascadaDB {
+  id: number;
+  fecha_registro: string;
+  producto_codigo: string;
+  producto_nombre: string;
+  operacion: string;
+  nro_comprobante: string | null;
+  asesor: string | null;
+  cantidad: number;
+  unidad_medida: string;
+  tienda_codigo: string;
+  tienda_nombre: string | null;
+  entregado_por: string | null;
+  registrado_por: string | null;
+  observaciones: string | null;
+  fecha_actualizacion: string | null;
+  motivo_cambio: string | null;
+}
+
+export interface EntradaCascadaDB {
+  codigo_carga: string | null;
+  fecha_primera: string;
+  cantidad_items: number;
+  operador: string | null;
+  detalles: EntradaDetalleCascadaDB[];
+  actas: ActaMovimientoDB[];
+}
+
+export interface SalidaCascadaDB {
+  codigo_carga: string | null;
+  fecha_primera: string;
+  cantidad_items: number;
+  asesor: string | null;
+  detalles: SalidaDetalleCascadaDB[];
+  actas: ActaMovimientoDB[];
+}
+
 // ─── Funciones auxiliares ────────────────────────────────────────────────────
 async function fetchAPI<T>(
   endpoint: string,
@@ -326,13 +395,45 @@ export async function createEntradasMasivo(entradas: Array<{
   entregado_por?: string;
   registrado_por?: string;
   observaciones?: string;
-}>): Promise<{ ids: number[]; total: number }> {
-  const response = await fetchAPI<{ ids: number[]; total: number }>('/api/entradas/masivo', {
+}>,
+options?: {
+  actas?: Array<{ file: File; nombre: string }>;
+  passwordAutorizacion?: string;
+}): Promise<{ ids: number[]; total: number; codigo_carga: string }> {
+  const formData = new FormData();
+  formData.append(
+    'data',
+    JSON.stringify({
+      entradas,
+      password_autorizacion: options?.passwordAutorizacion,
+    }),
+  );
+
+  if (options?.actas && options.actas.length > 0) {
+    options.actas.forEach(({ file, nombre }) => {
+      // Backend usa file.filename como nombre_imagen, así que renombramos.
+      const blob = file.slice(0, file.size, file.type);
+      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
+      formData.append('actas', renamedFile);
+    });
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/entradas/masivo`, {
     method: 'POST',
-    body: JSON.stringify({ entradas }),
+    body: formData,
   });
-  if (!response.data) throw new Error(response.error || 'Error al crear entradas');
-  return response.data;
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+    throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || result.message || 'Error al crear entradas');
+  }
+
+  return result.data as { ids: number[]; total: number; codigo_carga: string };
 }
 
 export async function createSalidasMasivo(salidas: Array<{
@@ -346,13 +447,44 @@ export async function createSalidasMasivo(salidas: Array<{
   entregado_por?: string;
   registrado_por?: string;
   observaciones?: string;
-}>): Promise<{ ids: number[]; total: number }> {
-  const response = await fetchAPI<{ ids: number[]; total: number }>('/api/salidas/masivo', {
+}>,
+options?: {
+  actas?: Array<{ file: File; nombre: string }>;
+  passwordAutorizacion?: string;
+}): Promise<{ ids: number[]; total: number; codigo_carga: string }> {
+  const formData = new FormData();
+  formData.append(
+    'data',
+    JSON.stringify({
+      salidas,
+      password_autorizacion: options?.passwordAutorizacion,
+    }),
+  );
+
+  if (options?.actas && options.actas.length > 0) {
+    options.actas.forEach(({ file, nombre }) => {
+      const blob = file.slice(0, file.size, file.type);
+      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
+      formData.append('actas', renamedFile);
+    });
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/salidas/masivo`, {
     method: 'POST',
-    body: JSON.stringify({ salidas }),
+    body: formData,
   });
-  if (!response.data) throw new Error(response.error || 'Error al crear salidas');
-  return response.data;
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+    throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || result.message || 'Error al crear salidas');
+  }
+
+  return result.data as { ids: number[]; total: number; codigo_carga: string };
 }
 
 export async function updateSalida(
@@ -400,6 +532,118 @@ export async function getHistorialEntradas(): Promise<EntradaDB[]> {
 export async function getHistorialSalidas(): Promise<SalidaDB[]> {
   const response = await fetchAPI<SalidaDB[]>('/api/historial/salidas');
   return response.data || [];
+}
+
+// Cascada (agrupación por codigo_carga)
+export async function getEntradasCascada(): Promise<EntradaCascadaDB[]> {
+  const response = await fetchAPI<EntradaCascadaDB[]>('/api/entradas/cascada');
+  return response.data || [];
+}
+
+export async function getSalidasCascada(): Promise<SalidaCascadaDB[]> {
+  const response = await fetchAPI<SalidaCascadaDB[]>('/api/salidas/cascada');
+  return response.data || [];
+}
+
+// Gestión de actas en movimientos existentes
+export async function agregarActaEntrada(
+  idEntrada: number,
+  actas: Array<{ file: File; nombre: string }>
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('data', JSON.stringify({ id_entrada: idEntrada, nombre_acta: '' }));
+
+  actas.forEach(({ file, nombre }) => {
+    const blob = file.slice(0, file.size, file.type);
+    const renamedFile = new File([blob], nombre || file.name, { type: file.type });
+    formData.append('archivo', renamedFile);
+  });
+
+  const response = await fetch(`${API_BASE_URL}/api/actas/entrada`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+    throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || result.message || 'Error al agregar acta');
+  }
+}
+
+export async function agregarActaSalida(
+  idSalida: number,
+  actas: Array<{ file: File; nombre: string }>
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('data', JSON.stringify({ id_salida: idSalida, nombre_acta: '' }));
+
+  actas.forEach(({ file, nombre }) => {
+    const blob = file.slice(0, file.size, file.type);
+    const renamedFile = new File([blob], nombre || file.name, { type: file.type });
+    formData.append('archivo', renamedFile);
+  });
+
+  const response = await fetch(`${API_BASE_URL}/api/actas/salida`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+    throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || result.message || 'Error al agregar acta');
+  }
+}
+
+export async function eliminarActa(idActa: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/actas/${idActa}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error(`Error eliminando acta (${response.status})`);
+  const result = await response.json().catch(() => null);
+  if (result && result.success === false) throw new Error(result.error || result.message || 'Error eliminando acta');
+}
+
+export async function actualizarActaNombre(idActa: number, nombreImagen: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/actas/${idActa}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre_imagen: nombreImagen }),
+  });
+  if (!response.ok) throw new Error(`Error actualizando acta (${response.status})`);
+  const result = await response.json().catch(() => null);
+  if (result && result.success === false) throw new Error(result.error || result.message || 'Error actualizando acta');
+}
+
+// ─── Contraseña dinámica (movimientos) ──────────────────────────────────────
+export async function obtenerPasswordMovimientos(): Promise<{ password: string }> {
+  const response = await fetchAPI<{ password: string }>('/api/config/password', {
+    method: 'GET',
+  });
+  return response.data || { password: '' };
+}
+
+export async function cambiarPasswordMovimientos(
+  nuevaContrasena: string,
+  actualizadoPor: string
+): Promise<void> {
+  const response = await fetchAPI('/api/config/password', {
+    method: 'PUT',
+    body: JSON.stringify({
+      nueva_contrasena: nuevaContrasena,
+      actualizado_por: actualizadoPor,
+    }),
+  });
+  if (!response.success) {
+    throw new Error(response.error || response.message || 'Error al cambiar la contraseña');
+  }
 }
 
 // Abastecimiento
