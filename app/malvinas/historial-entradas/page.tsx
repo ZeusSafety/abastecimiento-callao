@@ -743,7 +743,7 @@ export default function HistorialEntradasPage() {
                                             <div key={cargaKey} className="px-4">
                                                 <div
                                                     className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
-                                                    onClick={() => setExpandedCodigo(isOpen ? null : cargaKey)}
+                                                    onClick={() => setExpandedCodigo(prev => (prev === cargaKey ? null : cargaKey))}
                                                 >
                                                     <div className="flex items-center gap-3 min-w-0">
                                                         <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">

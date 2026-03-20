@@ -185,9 +185,10 @@ export default function CascadaMovimientosSalidas({
               {search ? 'No se encontraron cargas con ese criterio' : 'No hay movimientos en cascada aún.'}
             </div>
           ) : (
-            paginatedCargas.map(carga => {
+            paginatedCargas.map((carga, idx) => {
               const detalleRep: SalidaDetalleCascadaDB | undefined = carga.detalles[0];
-              const isOpen = expandedCodigo === carga.codigo_carga;
+              const cargaKey = `${carga.codigo_carga || 'sin-codigo'}-${idx}`;
+              const isOpen = expandedCodigo === cargaKey;
               const { fecha, hora } = formatFechaDosLineas(carga.fecha_primera);
               // Contador de "productos agregados" = cantidad de renglones en el detalle.
               const itemsTotales = carga.detalles.length;
@@ -197,10 +198,10 @@ export default function CascadaMovimientosSalidas({
               const operador = detalleRep?.asesor || carga.asesor || '-';
 
               return (
-                <div key={carga.codigo_carga} className="px-4">
+                <div key={cargaKey} className="px-4">
                   <div
                     className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => setExpandedCodigo(isOpen ? null : carga.codigo_carga || null)}
+                    onClick={() => setExpandedCodigo(prev => (prev === cargaKey ? null : cargaKey))}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
