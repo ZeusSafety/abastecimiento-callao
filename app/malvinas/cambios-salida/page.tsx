@@ -84,6 +84,7 @@ export default function CambiosSalidaPage() {
     const totalCargas = filteredCargas.length;
     const pages = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
     const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+    const exportRows = useMemo(() => filteredCargas.flatMap(c => c.detalles), [filteredCargas]);
 
     const handleExportExcel = () => {
         const columns = [
@@ -101,7 +102,7 @@ export default function CambiosSalidaPage() {
             { header: 'Motivo', key: 'motivoCambio' },
             { header: 'Fecha Cambio', key: 'updatedAt' },
         ];
-        exportToExcel(filtered, columns, `Cambios_Salida_${new Date().toISOString().split('T')[0]}`);
+        exportToExcel(exportRows, columns, `Cambios_Salida_${new Date().toISOString().split('T')[0]}`);
     };
 
     const handleExportPDF = () => {
@@ -120,7 +121,7 @@ export default function CambiosSalidaPage() {
             { header: 'Motivo', dataKey: 'motivoCambio' },
             { header: 'Fecha Cambio', dataKey: 'updatedAt' },
         ];
-        exportToPDF(filtered, columns, `Cambios_Salida_${new Date().toISOString().split('T')[0]}`, 'Cambios de Salida');
+        exportToPDF(exportRows, columns, `Cambios_Salida_${new Date().toISOString().split('T')[0]}`, 'Cambios de Salida');
     };
 
     return (
