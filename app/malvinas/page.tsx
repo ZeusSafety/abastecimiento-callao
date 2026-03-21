@@ -2,9 +2,10 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { useMalvinas, TIENDAS, Tienda, Producto } from '../context/MalvinasContext';
-import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock } from 'lucide-react';
+import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock, FileSpreadsheet } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
 import * as api from '../services/api';
+import { exportToExcel } from '../utils/export';
 
 interface EditingProduct extends Producto {
     editing: {
@@ -281,6 +282,22 @@ export default function StockTotalPage() {
         setEditingProducts(newEditing);
     };
 
+    const handleExportExcel = () => {
+        const columns = [
+            { header: 'Codigo', key: 'codigo' },
+            { header: 'Producto', key: 'producto' },
+            { header: 'Disponibles', key: 'disponibles' },
+        ];
+
+        const rows = filtered.map(p => ({
+            codigo: p.codigo,
+            producto: p.nombre,
+            disponibles: TIENDAS.reduce((acc, t) => acc + p.existencia[t], 0),
+        }));
+
+        exportToExcel(rows, columns, `Inventario_Malvinas_${new Date().toISOString().split('T')[0]}`);
+    };
+
     return (
         <div id="view-malvinas" className="animate-in fade-in duration-500 font-poppins">
             <div className="container mx-auto">
@@ -360,6 +377,13 @@ export default function StockTotalPage() {
                                     className="w-full pl-12 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
+                            <button
+                                onClick={handleExportExcel}
+                                className="px-5 py-2.5 text-sm font-bold text-white bg-green-600 border border-green-600 rounded-2xl hover:bg-green-700 transition-all flex items-center gap-2 shadow-sm active:scale-95"
+                            >
+                                <FileSpreadsheet className="w-4 h-4" />
+                                <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Exportar Excel</span>
+                            </button>
                             <button
                                 onClick={() => setSearch('')}
                                 className="px-5 py-2.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:text-[#002D5A] transition-all flex items-center gap-2 shadow-sm active:scale-95"
