@@ -33,7 +33,9 @@ import {
     Check,
     XCircle,
     Loader2,
-    Image as ImageIcon
+    Image as ImageIcon,
+    Calendar,
+    Clock3
 } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
@@ -190,6 +192,40 @@ function ModalEntrada({
                                 placeholder="Selecciona un producto"
                             />
                         </div>
+                        {selectedProducto && (
+                            <div className="col-span-2">
+                                <label className="form-label" style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6 }}>
+                                    Existencia Almacén
+                                </label>
+                                <div className="grid grid-cols-4 gap-2">
+                                    {TIENDAS.map(tienda => {
+                                        const existencia = selectedProducto.existencia[tienda] || 0;
+                                        const stockMinimo = selectedProducto.stockMinimo[tienda] || 0;
+                                        const bajoStock = existencia < stockMinimo && stockMinimo > 0;
+                                        return (
+                                            <div
+                                                key={tienda}
+                                                className={`p-3 rounded-lg border-2 transition-all ${
+                                                    bajoStock ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'
+                                                }`}
+                                            >
+                                                <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
+                                                    {tienda.replace('TIENDA ', '')}
+                                                </div>
+                                                <div className={`text-lg font-black ${bajoStock ? 'text-red-700' : 'text-blue-700'}`}>
+                                                    {existencia}
+                                                </div>
+                                                {stockMinimo > 0 && (
+                                                    <div className="text-[8px] text-gray-500 mt-0.5">
+                                                        Mín: {stockMinimo}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                         <div>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Operación *</label>
                             <select
@@ -392,11 +428,13 @@ export default function HistorialEntradasPage() {
     const [idsPendientesPassword, setIdsPendientesPassword] = useState<string[]>([]);
     const [modalObsOpen, setModalObsOpen] = useState(false);
     const [observacionesSeleccionadas, setObservacionesSeleccionadas] = useState('');
+    const [modalConfirmacionOpen, setModalConfirmacionOpen] = useState(false);
+    const [cargaConfirmacion, setCargaConfirmacion] = useState<api.EntradaCascadaDB | null>(null);
 
     // ─── Vista Cascada (Agrupación por código_carga) ──────────────────────────
     const [cargas, setCargas] = useState<api.EntradaCascadaDB[]>([]);
     const [loadingCargas, setLoadingCargas] = useState(true);
-    const [expandedCodigo, setExpandedCodigo] = useState<string | null>(null);
+    const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
 
     // ─── Actas (Ver / Subir) ───────────────────────────────────────────────────
     const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
@@ -406,6 +444,7 @@ export default function HistorialEntradasPage() {
     const [modalSubirActasOpen, setModalSubirActasOpen] = useState(false);
     const [repIdActasEntrada, setRepIdActasEntrada] = useState<number | null>(null);
     const [actasParaSubir, setActasParaSubir] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [subiendoActas, setSubiendoActas] = useState(false);
 
     // Cargar entradas al montar el componente
     useEffect(() => {
@@ -472,6 +511,14 @@ export default function HistorialEntradasPage() {
     const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
     const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
+    useEffect(() => {
+        const keys = paginatedCargas.map((carga, idx) => `${carga.codigo_carga || 'sin-codigo'}-${idx}`);
+        setExpandedCodigos(prev => {
+            if (prev.size === keys.length && keys.every(k => prev.has(k))) return prev;
+            return new Set(keys);
+        });
+    }, [paginatedCargas]);
+
     const total = filtered.length;
     const pages = Math.max(1, Math.ceil(total / PER_PAGE));
     const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -483,7 +530,9 @@ export default function HistorialEntradasPage() {
 
     const queueUpdate = (payload: { id: string; data: Partial<RegistroEntrada>; motivo: string }) => {
         setPendingUpdates(prev => ({ ...prev, [payload.id]: { data: payload.data, motivo: payload.motivo } }));
-        showToast('success', 'Cambio agregado. Presiona "Actualizar registro" para guardar.');
+        const carga = cargas.find(c => c.detalles.some(d => String(d.id) === payload.id)) || null;
+        setCargaConfirmacion(carga);
+        setModalConfirmacionOpen(true);
     };
 
     const ejecutarActualizacionCarga = async (carga: api.EntradaCascadaDB, pendientes: string[]) => {
@@ -580,6 +629,7 @@ export default function HistorialEntradasPage() {
     };
 
     const guardarActasEntrada = async () => {
+        if (subiendoActas) return;
         if (!repIdActasEntrada) {
             showToast('error', 'No se encontró el registro de referencia para subir actas');
             return;
@@ -595,6 +645,7 @@ export default function HistorialEntradasPage() {
         }
 
         try {
+            setSubiendoActas(true);
             await api.agregarActaEntrada(
                 repIdActasEntrada,
                 actasParaSubir.map(a => ({ file: a.file, nombre: a.nombre }))
@@ -610,6 +661,8 @@ export default function HistorialEntradasPage() {
         } catch (error: any) {
             console.error('Error subiendo actas entrada:', error);
             showToast('error', error.message || 'Error al subir las actas');
+        } finally {
+            setSubiendoActas(false);
         }
     };
 
@@ -732,7 +785,7 @@ export default function HistorialEntradasPage() {
                                             ? state.entradas.find(en => en.id === String(detalleRep.id)) || null
                                             : null;
                                         const cargaKey = `${carga.codigo_carga || 'sin-codigo'}-${idx}`;
-                                        const isOpen = expandedCodigo === cargaKey;
+                                        const isOpen = expandedCodigos.has(cargaKey);
                                         const { fecha, hora } = formatFechaDosLineas(carga.fecha_primera);
                                         // Contador de "productos agregados" = cantidad de renglones en el detalle.
                                         const itemsTotales = carga.detalles.length;
@@ -743,7 +796,14 @@ export default function HistorialEntradasPage() {
                                             <div key={cargaKey} className="px-4">
                                                 <div
                                                     className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
-                                                    onClick={() => setExpandedCodigo(prev => (prev === cargaKey ? null : cargaKey))}
+                                                    onClick={() =>
+                                                        setExpandedCodigos(prev => {
+                                                            const next = new Set(prev);
+                                                            if (next.has(cargaKey)) next.delete(cargaKey);
+                                                            else next.add(cargaKey);
+                                                            return next;
+                                                        })
+                                                    }
                                                 >
                                                     <div className="flex items-center gap-3 min-w-0">
                                                         <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
@@ -754,19 +814,18 @@ export default function HistorialEntradasPage() {
                                                             )}
                                                         </div>
                                                         <div className="min-w-0">
-                                                            <div className="flex items-center gap-3 flex-wrap">
-                                                                <div className="flex items-center gap-3 whitespace-nowrap">
-                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest">FECHA</div>
-                                                                    <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
-                                                                        {fecha}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-center gap-3 whitespace-nowrap">
-                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest">HORA</div>
-                                                                    <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
-                                                                        {hora || '-'}
-                                                                    </div>
-                                                                </div>
+                                                            <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-gray-900">
+                                                                <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                                                                    <Calendar className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                                    <span className="text-[10px] text-gray-500 uppercase tracking-widest">Fecha</span>
+                                                                    <span>{fecha}</span>
+                                                                </span>
+                                                                <span className="hidden sm:block w-px h-4 bg-gray-300" />
+                                                                <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                                                                    <Clock3 className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                                    <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
+                                                                    <span>{hora || '-'}</span>
+                                                                </span>
                                                                 {/* Operación ya se muestra en la tabla interna */}
                                                             </div>
                                                         </div>
@@ -810,8 +869,8 @@ export default function HistorialEntradasPage() {
                                                             </div>
 
                                                             <div className="w-full xl:w-auto flex flex-wrap items-center justify-end gap-2">
-                                                                <div className="text-[10px] text-gray-500 whitespace-nowrap">
-                                                                    Actas:{' '}
+                                                                <div className="inline-flex items-center gap-1 text-[10px] text-gray-500 whitespace-nowrap">
+                                                                    <span>Actas:</span>
                                                                     <span className="text-gray-900 font-bold">{carga.actas.length}</span>
                                                                 </div>
                                                                 <button
@@ -1228,13 +1287,20 @@ export default function HistorialEntradasPage() {
                             </button>
                             <button
                                 onClick={guardarActasEntrada}
-                                disabled={actasParaSubir.length === 0}
+                                disabled={actasParaSubir.length === 0 || subiendoActas}
                                 className="btn"
                                 style={{ backgroundColor: '#002D5A', color: 'white' }}
                                 onMouseOver={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#001f3d')}
                                 onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#002D5A')}
                             >
-                                Guardar
+                                {subiendoActas ? (
+                                    <span className="inline-flex items-center gap-2">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Guardando...
+                                    </span>
+                                ) : (
+                                    'Guardar'
+                                )}
                             </button>
                         </div>
                     </div>
@@ -1252,6 +1318,44 @@ export default function HistorialEntradasPage() {
                 onClose={() => setModalObsOpen(false)}
                 observaciones={observacionesSeleccionadas}
             />
+            {modalConfirmacionOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalConfirmacionOpen(false)}>
+                    <div className="modal-box p-0 max-w-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-[#002D5A] to-[#003d7a] px-6 py-4">
+                            <h3 className="text-white font-bold text-sm uppercase tracking-wide">Confirmar Cambios</h3>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-gray-700 leading-relaxed">
+                                El cambio ha sido preparado con exito. Para aplicar los cambios de forma permanente en la base de datos, por favor presione el boton de actualizacion.
+                            </p>
+                        </div>
+                        <div className="px-6 pb-6 flex justify-end gap-2">
+                            <button
+                                onClick={() => setModalConfirmacionOpen(false)}
+                                className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                            >
+                                Cerrar
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (!cargaConfirmacion) {
+                                        showToast('error', 'No se encontro la carga para actualizar');
+                                        return;
+                                    }
+                                    await aplicarActualizacionCarga(cargaConfirmacion);
+                                    setModalConfirmacionOpen(false);
+                                    setCargaConfirmacion(null);
+                                }}
+                                disabled={updatingCodigo === (cargaConfirmacion?.codigo_carga || '__sin_codigo__')}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#002D5A] hover:bg-[#001f3d] disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                                <Save className="w-4 h-4" />
+                                {updatingCodigo === (cargaConfirmacion?.codigo_carga || '__sin_codigo__') ? 'Actualizando...' : 'Actualizar registro'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {modalPasswordOpen && (
                 <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalPasswordOpen(false)}>
                     <div className="modal-box p-0 max-w-md overflow-hidden">

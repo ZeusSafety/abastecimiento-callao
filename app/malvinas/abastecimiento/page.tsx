@@ -847,7 +847,7 @@ export default function AbastecimientoPage() {
                     {/* Header Principal */}
                     <header className="flex justify-between items-center flex-wrap gap-4 mb-8">
                         <div className="flex items-center space-x-3">
-                            <div className="w-11 h-11 bg-gradient-to-br from-[#059669] to-[#10b981] rounded-xl flex items-center justify-center text-white shadow-md shadow-emerald-900/10 transition-transform hover:scale-110">
+                            <div className="w-11 h-11 bg-gradient-to-br from-[#002D5A] to-[#0056b3] rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-900/10 transition-transform hover:scale-110">
                                 <RefreshCw className="w-5 h-5" />
                             </div>
                             <div>
@@ -980,8 +980,8 @@ export default function AbastecimientoPage() {
                     {/* Toolbar - Moved out of the card table area */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                         <div className="flex items-center gap-2">
-                            <div className="p-2 bg-emerald-50 rounded-lg">
-                                <Search className="w-4 h-4 text-[#059669]" />
+                            <div className="p-2 bg-blue-100/60 rounded-lg">
+                                <Search className="w-4 h-4 text-[#002D5A]" />
                             </div>
                             <span className="font-bold text-gray-800" style={{ fontSize: 14 }}>
                                 Listado de Reposición
@@ -1011,8 +1011,8 @@ export default function AbastecimientoPage() {
                                 </select>
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
-                            <button onClick={() => { setSearch(''); setFiltroEnviar('SI'); }} className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm active:scale-95">
-                                <RefreshCw className="w-4 h-4 text-gray-500" />
+                            <button onClick={() => { setSearch(''); setFiltroEnviar('SI'); }} className="p-2.5 bg-[#002D5A] border border-[#002D5A] rounded-xl hover:bg-[#001f3d] transition-all shadow-sm active:scale-95">
+                                <RefreshCw className="w-4 h-4 text-white" />
                             </button>
                         </div>
                     </div>

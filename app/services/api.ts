@@ -46,6 +46,7 @@ export interface EntradaDB {
   tienda_ingreso_nombre: string | null;
   operador: string | null;
   cantidad: number;
+  cantidad_anterior?: number | null;
   unidad_medida: string;
   entregado_por: string | null;
   registrado_por: string | null;
@@ -65,6 +66,7 @@ export interface SalidaDB {
   nro_comprobante: string | null;
   asesor: string | null;
   cantidad: number;
+  cantidad_anterior?: number | null;
   unidad_medida: string;
   tienda_codigo: string;
   tienda_nombre: string | null;

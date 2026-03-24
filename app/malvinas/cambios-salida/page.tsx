@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMalvinas, getOperacionColor } from '../../context/MalvinasContext';
-import { Search, TrendingUp, FileDown, FileSpreadsheet, Eye, Info, X, ChevronDown, ChevronRight, PackageMinus, FileImage } from 'lucide-react';
+import { Search, TrendingUp, FileDown, FileSpreadsheet, Eye, Info, X, ChevronDown, ChevronRight, PackageMinus, FileImage, Calendar, Clock3 } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '../../utils/export';
 
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
@@ -42,7 +42,7 @@ export default function CambiosSalidaPage() {
     const PER_PAGE = 20;
     const [modalObservaciones, setModalObservaciones] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
     const [modalMotivo, setModalMotivo] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
-    const [expandedCodigo, setExpandedCodigo] = useState<string | null>(null);
+    const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
 
     // Cargar datos al montar el componente
     useEffect(() => {
@@ -86,6 +86,14 @@ export default function CambiosSalidaPage() {
     const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
     const exportRows = useMemo(() => filteredCargas.flatMap(c => c.detalles), [filteredCargas]);
 
+    useEffect(() => {
+        const keys = paginatedCargas.map((carga, idx) => `${carga.codigo_carga || 'sin-codigo'}-${idx}`);
+        setExpandedCodigos(prev => {
+            if (prev.size === keys.length && keys.every(k => prev.has(k))) return prev;
+            return new Set(keys);
+        });
+    }, [paginatedCargas]);
+
     const handleExportExcel = () => {
         const columns = [
             { header: 'Fecha Original', key: 'fecha' },
@@ -93,7 +101,8 @@ export default function CambiosSalidaPage() {
             { header: 'Operación', key: 'operacion' },
             { header: 'Comprobante', key: 'comprobante' },
             { header: 'Asesor', key: 'asesor' },
-            { header: 'Cantidad', key: 'cantidad' },
+            { header: 'Cantidad Anterior', key: 'cantidadAnterior' },
+            { header: 'Cantidad Actual', key: 'cantidad' },
             { header: 'Unidad Medida', key: 'unidadMedida' },
             { header: 'Almacén', key: 'almacen' },
             { header: 'Entregado Por', key: 'entregado' },
@@ -112,7 +121,8 @@ export default function CambiosSalidaPage() {
             { header: 'Operación', dataKey: 'operacion' },
             { header: 'Comprobante', dataKey: 'comprobante' },
             { header: 'Asesor', dataKey: 'asesor' },
-            { header: 'Cantidad', dataKey: 'cantidad' },
+            { header: 'Cantidad Anterior', dataKey: 'cantidadAnterior' },
+            { header: 'Cantidad Actual', dataKey: 'cantidad' },
             { header: 'Unidad Medida', dataKey: 'unidadMedida' },
             { header: 'Almacén', dataKey: 'almacen' },
             { header: 'Entregado Por', dataKey: 'entregado' },
@@ -193,28 +203,39 @@ export default function CambiosSalidaPage() {
                             ) : totalCargas === 0 ? (
                                 <div className="p-10 text-center text-gray-500">No hay cambios registrados aún.</div>
                             ) : (
-                                paginatedCargas.map(carga => {
-                                    const isOpen = expandedCodigo === carga.codigo_carga;
+                                paginatedCargas.map((carga, idx) => {
+                                    const cargaKey = `${carga.codigo_carga || 'sin-codigo'}-${idx}`;
+                                    const isOpen = expandedCodigos.has(cargaKey);
                                     const { fecha, hora } = formatFechaDosLineas(carga.fecha_primera);
                                     return (
-                                        <div key={carga.codigo_carga} className="px-4">
+                                        <div key={cargaKey} className="px-4">
                                             <div
                                                 className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
-                                                onClick={() => setExpandedCodigo(isOpen ? null : carga.codigo_carga)}
+                                                onClick={() =>
+                                                    setExpandedCodigos(prev => {
+                                                        const next = new Set(prev);
+                                                        if (next.has(cargaKey)) next.delete(cargaKey);
+                                                        else next.add(cargaKey);
+                                                        return next;
+                                                    })
+                                                }
                                             >
                                                 <div className="flex items-center gap-3 min-w-0">
                                                     <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
                                                         {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                                     </div>
-                                                    <div className="flex items-center gap-3 flex-wrap">
-                                                        <div className="flex items-center gap-3 whitespace-nowrap">
-                                                            <div className="text-[10px] text-gray-500 uppercase tracking-widest">FECHA</div>
-                                                            <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">{fecha}</div>
-                                                        </div>
-                                                        <div className="flex items-center gap-3 whitespace-nowrap">
-                                                            <div className="text-[10px] text-gray-500 uppercase tracking-widest">HORA</div>
-                                                            <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">{hora || '-'}</div>
-                                                        </div>
+                                                    <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-gray-900">
+                                                        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                                                            <Calendar className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                            <span className="text-[10px] text-gray-500 uppercase tracking-widest">Fecha</span>
+                                                            <span>{fecha}</span>
+                                                        </span>
+                                                        <span className="hidden sm:block w-px h-4 bg-gray-300" />
+                                                        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                                                            <Clock3 className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                            <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
+                                                            <span>{hora || '-'}</span>
+                                                        </span>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
@@ -240,7 +261,8 @@ export default function CambiosSalidaPage() {
                                                                         <th className="px-4 py-3 text-left font-bold">OPERACIÓN</th>
                                                                         <th className="px-4 py-3 text-left font-bold">COMPROBANTE</th>
                                                                         <th className="px-4 py-3 text-left font-bold">ASESOR</th>
-                                                                        <th className="px-4 py-3 text-left font-bold">CANT.</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">CANT. ANT.</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">CANT. ACT.</th>
                                                                         <th className="px-4 py-3 text-left font-bold">U. MEDIDA</th>
                                                                         <th className="px-4 py-3 text-left font-bold">ALMACÉN</th>
                                                                         <th className="px-4 py-3 text-left font-bold">OBS.</th>
@@ -259,6 +281,7 @@ export default function CambiosSalidaPage() {
                                                                             </td>
                                                                             <td className="px-4 py-3 text-gray-700">{c.comprobante || '-'}</td>
                                                                             <td className="px-4 py-3 text-gray-700">{c.asesor || '-'}</td>
+                                                                            <td className="px-4 py-3 text-gray-700 font-semibold">{c.cantidadAnterior ?? '-'}</td>
                                                                             <td className="px-4 py-3 text-gray-700 font-semibold">{c.cantidad}</td>
                                                                             <td className="px-4 py-3 text-gray-600">{c.unidadMedida}</td>
                                                                             <td className="px-4 py-3 text-gray-700">{c.almacen}</td>

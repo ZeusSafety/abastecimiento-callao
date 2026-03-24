@@ -569,48 +569,46 @@ def create_entrada(request, headers):
             data.get('operador'), data.get('cantidad'), um_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
         ]
-
-        cursor.callproc('sp_registrar_entrada', params)
-        result_set = cursor.fetchall()
-        nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
-
-        
-
-        sp_call = 'sp_registrar_entrada'
         try:
-            logging.info(f"Ejecutando SP: {sp_call} con parámetros: {params}")
-            cursor.callproc(sp_call, params)
+            logging.info(f"Ejecutando SP: sp_registrar_entrada con parámetros: {params}")
+            cursor.callproc('sp_registrar_entrada', params)
             result_set = cursor.fetchall()
             nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
 
+            if not nuevo_id:
+                raise Exception("No se pudo obtener id_movimiento_generado en sp_registrar_entrada")
+
+            # En registros nuevos, cantidad_anterior inicia con el mismo valor de cantidad.
+            cursor.execute(
+                "UPDATE movimientos_entrada SET cantidad_anterior = cantidad WHERE id = %s",
+                (nuevo_id,)
+            )
+
             # Si la tienda de salida NO es un almacén (es una tienda), restar del stock
-            # Esto maneja el caso de traslados entre tiendas
             if not es_almacen_salida:
                 cantidad = data.get('cantidad', 0)
-                # Verificar si existe registro de existencia para esta tienda y producto
                 cursor.execute(
                     "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
                     (producto_id, tienda_salida_id)
                 )
                 existencia_row = cursor.fetchone()
-                
+
                 if existencia_row:
-                    # Actualizar restando la cantidad
                     nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
                     cursor.execute(
                         "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
                         (nueva_cantidad, producto_id, tienda_salida_id)
                     )
                 else:
-                    # Si no existe, crear registro con cantidad 0 (no debería pasar, pero por seguridad)
                     cursor.execute(
                         "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
                         (producto_id, tienda_salida_id, 0)
                     )
+
             # --- GUARDAR ACTAS EN GCS Y BD ---
-            if files and nuevo_id:
+            if files:
                 for file in files:
-                    url_publica = upload_to_gcs(file) # Asegúrate de tener esta función
+                    url_publica = upload_to_gcs(file)
                     cursor.execute("""
                         INSERT INTO movimientos_actas (id_movimiento_entrada, nombre_imagen, url_imagen) 
                         VALUES (%s, %s, %s)
@@ -618,7 +616,7 @@ def create_entrada(request, headers):
 
             conn.commit()
             return created_response(data={'id': nuevo_id}, message="Entrada registrada con actas", headers=headers)
-            
+
         except Exception as e:
             conn.rollback()
             logging.error(f"Error ejecutando entrada: {traceback.format_exc()}")
@@ -719,7 +717,7 @@ def create_entradas_masivo(request, headers):
                 # Actualizar código_carga en la entrada
                 if nuevo_id:
                     cursor.execute(
-                        "UPDATE movimientos_entrada SET codigo_carga = %s WHERE id = %s",
+                        "UPDATE movimientos_entrada SET codigo_carga = %s, cantidad_anterior = cantidad WHERE id = %s",
                         (codigo_carga, nuevo_id)
                     )
 
@@ -797,7 +795,21 @@ def update_entrada(request, headers, id_entrada):
         return bad_request_error("El campo 'motivo_cambio' es obligatorio para editar", headers)
 
     conn = get_connection()
+    cursor = conn.cursor()
     try:
+        # Obtener estado anterior del movimiento para recalcular impacto en stock.
+        cursor.execute(
+            """
+            SELECT id, id_producto, id_tienda_salida, id_tienda_ingreso, cantidad
+            FROM movimientos_entrada
+            WHERE id = %s
+            """,
+            (id_entrada,)
+        )
+        mov_anterior = cursor.fetchone()
+        if not mov_anterior:
+            return not_found_error(f"Entrada con ID {id_entrada} no encontrada", headers)
+
         # Convertir nombres/códigos a IDs (similar a create_entrada)
         producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
         if not producto_id:
@@ -819,6 +831,9 @@ def update_entrada(request, headers, id_entrada):
         if not um_id:
             return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
 
+        # Capturar cantidad actual antes de editar (será la nueva cantidad_anterior).
+        cantidad_previa = mov_anterior.get('cantidad', 0)
+
         # Llamar al SP
         params = [
             id_entrada, producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
@@ -826,15 +841,74 @@ def update_entrada(request, headers, id_entrada):
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
             motivo_cambio
         ]
-        sp_call = 'sp_editar_entrada'
-        success, message, _ = _ejecutar_sp_con_transaccion(conn, sp_call, params)
+        cursor.callproc('sp_editar_entrada', params)
+        # Consumir posibles result sets del SP para evitar "commands out of sync".
+        while cursor.nextset():
+            pass
 
-        if success:
-            return success_response(message="Entrada actualizada exitosamente", headers=headers)
-        else:
-            return server_error(f"Error al actualizar entrada: {message}", headers)
+        # Helpers para ajuste de existencias por tienda.
+        def _es_almacen(id_tienda):
+            cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea WHERE id = %s", (id_tienda,))
+            t = cursor.fetchone()
+            return bool(t and t.get('es_almacen') == 1)
 
+        def _ajustar_existencia(id_producto, id_tienda, delta):
+            cursor.execute(
+                "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+                (id_producto, id_tienda)
+            )
+            ex = cursor.fetchone()
+            if ex:
+                nueva = max(0, (ex.get('cantidad') or 0) + delta)
+                cursor.execute(
+                    "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                    (nueva, id_producto, id_tienda)
+                )
+            else:
+                # Si no existía, se crea con el delta (nunca negativo).
+                cursor.execute(
+                    "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                    (id_producto, id_tienda, max(0, delta))
+                )
+
+        # Recalcular impacto de tienda de salida cuando la salida es tienda (no almacén):
+        # 1) Deshacer impacto anterior
+        id_producto_prev = mov_anterior['id_producto']
+        id_salida_prev = mov_anterior['id_tienda_salida']
+        cantidad_prev = mov_anterior['cantidad'] or 0
+        if not _es_almacen(id_salida_prev):
+            _ajustar_existencia(id_producto_prev, id_salida_prev, cantidad_prev)
+
+        # 2) Aplicar nuevo impacto
+        cantidad_nueva = int(data.get('cantidad') or 0)
+        if not _es_almacen(tienda_salida_id):
+            _ajustar_existencia(producto_id, tienda_salida_id, -cantidad_nueva)
+
+        # Guardar cantidad previa en la tabla de movimiento actualizada.
+        cursor.execute(
+            "UPDATE movimientos_entrada SET cantidad_anterior = %s WHERE id = %s",
+            (cantidad_previa, id_entrada)
+        )
+        # Reflejar también cantidad previa en el último registro de cambios.
+        cursor.execute(
+            """
+            UPDATE cambios_entrada
+            SET cantidad_anterior = %s, cantidad = %s
+            WHERE id_movimiento_entrada = %s
+            ORDER BY fecha_cambio DESC, id DESC
+            LIMIT 1
+            """,
+            (cantidad_previa, cantidad_nueva, id_entrada)
+        )
+
+        conn.commit()
+        return success_response(message="Entrada actualizada exitosamente", headers=headers)
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error al actualizar entrada: {traceback.format_exc()}")
+        return server_error(f"Error al actualizar entrada: {str(e)}", headers)
     finally:
+        cursor.close()
         conn.close()
 
 # --- MÓDULO SALIDAS ---
@@ -910,9 +984,18 @@ def create_salida(request, headers):
             data.get('cantidad'), um_id, tienda_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
         ]
-        sp_call = 'sp_registrar_salida'
+        cursor.callproc('sp_registrar_salida', params)
         result_set = cursor.fetchall()
         nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
+
+        if not nuevo_id:
+            raise Exception("No se pudo obtener id_movimiento_generado en sp_registrar_salida")
+
+        # En registros nuevos, cantidad_anterior inicia con el mismo valor de cantidad.
+        cursor.execute(
+            "UPDATE movimientos_salida SET cantidad_anterior = cantidad WHERE id = %s",
+            (nuevo_id,)
+        )
 
         # Guardar actas vinculadas a SALIDA
         if files and nuevo_id:
@@ -1007,7 +1090,7 @@ def create_salidas_masivo(request, headers):
                 # Actualizar código_carga en la salida
                 if nuevo_id:
                     cursor.execute(
-                        "UPDATE movimientos_salida SET codigo_carga = %s WHERE id = %s",
+                        "UPDATE movimientos_salida SET codigo_carga = %s, cantidad_anterior = cantidad WHERE id = %s",
                         (codigo_carga, nuevo_id)
                     )
                 
@@ -1063,6 +1146,7 @@ def update_salida(request, headers, id_salida):
         return bad_request_error("El campo 'motivo_cambio' es obligatorio para editar", headers)
 
     conn = get_connection()
+    cursor = conn.cursor()
     try:
         producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
         if not producto_id:
@@ -1080,21 +1164,48 @@ def update_salida(request, headers, id_salida):
         if not um_id:
             return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
 
+        # Capturar cantidad actual antes de editar (será la nueva cantidad_anterior).
+        cursor.execute("SELECT cantidad FROM movimientos_salida WHERE id = %s", (id_salida,))
+        row_actual = cursor.fetchone()
+        if not row_actual:
+            return not_found_error(f"Salida con ID {id_salida} no encontrada", headers)
+        cantidad_previa = row_actual.get('cantidad', 0)
+
         params = [
             id_salida, producto_id, tipo_op_id, data.get('nro_comprobante'),
             data.get('asesor'), data.get('cantidad'), um_id, tienda_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
             motivo_cambio
         ]
-        sp_call = 'sp_editar_salida'
-        success, message, _ = _ejecutar_sp_con_transaccion(conn, sp_call, params)
+        cursor.callproc('sp_editar_salida', params)
+        while cursor.nextset():
+            pass
 
-        if success:
-            return success_response(message="Salida actualizada exitosamente", headers=headers)
-        else:
-            return server_error(f"Error al actualizar salida: {message}", headers)
+        # Guardar cantidad previa en la tabla de movimiento actualizada.
+        cursor.execute(
+            "UPDATE movimientos_salida SET cantidad_anterior = %s WHERE id = %s",
+            (cantidad_previa, id_salida)
+        )
+        # Reflejar también cantidad previa en el último registro de cambios.
+        cursor.execute(
+            """
+            UPDATE cambios_salida
+            SET cantidad_anterior = %s, cantidad = %s
+            WHERE id_movimiento_salida = %s
+            ORDER BY fecha_cambio DESC, id DESC
+            LIMIT 1
+            """,
+            (cantidad_previa, int(data.get('cantidad') or 0), id_salida)
+        )
 
+        conn.commit()
+        return success_response(message="Salida actualizada exitosamente", headers=headers)
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error al actualizar salida: {traceback.format_exc()}")
+        return server_error(f"Error al actualizar salida: {str(e)}", headers)
     finally:
+        cursor.close()
         conn.close()
 
 # --- MÓDULO EXISTENCIAS / STOCK TOTAL ---
@@ -1203,7 +1314,7 @@ def get_historial_entradas(request, headers):
                 tos.nombre as operacion,
                 ts.codigo as tienda_salida_codigo,
                 ti.codigo as tienda_ingreso_codigo,
-                ce.operador, ce.cantidad, um.nombre as unidad_medida,
+                ce.operador, ce.cantidad, ce.cantidad_anterior, um.nombre as unidad_medida,
                 ce.entregado_por, ce.registrado_por, ce.observaciones,
                 ce.motivo_cambio,
                 ce.fecha_movimiento_orig
@@ -1232,7 +1343,7 @@ def get_historial_salidas(request, headers):
                 cs.fecha_cambio as fecha,
                 p.codigo as producto_codigo, p.nombre as producto_nombre,
                 tos.nombre as operacion, cs.nro_comprobante, cs.asesor,
-                cs.cantidad, um.nombre as unidad_medida,
+                cs.cantidad, cs.cantidad_anterior, um.nombre as unidad_medida,
                 t.codigo as tienda_codigo,
                 cs.entregado_por, cs.registrado_por, cs.observaciones,
                 cs.motivo_cambio,

@@ -1097,6 +1097,10 @@ function ModalSalida({
                             <label className="form-label">Contraseña de autorización *</label>
                             <input
                                 type="password"
+                                name="pass_autorizacion_salidas"
+                                autoComplete="new-password"
+                                data-lpignore="true"
+                                inputMode="text"
                                 value={passwordAutorizacion}
                                 onChange={e => setPasswordAutorizacion(e.target.value)}
                                 className="form-input"

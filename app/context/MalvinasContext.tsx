@@ -107,6 +107,7 @@ export interface RegistroEntrada {
   almacenIngreso: Tienda;
   operador: string;
   cantidad: number;
+  cantidadAnterior?: number;
   unidadMedida: UnidadMedida;
   entregado: string;
   registradoPor: string;
@@ -124,6 +125,7 @@ export interface RegistroSalida {
   comprobante: string;
   asesor: string;
   cantidad: number;
+  cantidadAnterior?: number;
   unidadMedida: UnidadMedida;
   almacen: Tienda;
   entregado: string;
@@ -309,6 +311,7 @@ function convertirEntradaDB(entradaDB: api.EntradaDB, productos: Producto[]): Re
     almacenIngreso,
     operador: entradaDB.operador || '',
     cantidad: entradaDB.cantidad || 0,
+    cantidadAnterior: entradaDB.cantidad_anterior ?? undefined,
     unidadMedida: (entradaDB.unidad_medida as UnidadMedida) || 'DOCENAS',
     entregado: entradaDB.entregado_por || '',
     registradoPor: entradaDB.registrado_por || '',
@@ -345,6 +348,7 @@ function convertirSalidaDB(salidaDB: api.SalidaDB, productos: Producto[]): Regis
     comprobante: salidaDB.nro_comprobante || '',
     asesor: salidaDB.asesor || '',
     cantidad: salidaDB.cantidad || 0,
+    cantidadAnterior: salidaDB.cantidad_anterior ?? undefined,
     unidadMedida: (salidaDB.unidad_medida as UnidadMedida) || 'DOCENAS',
     almacen,
     entregado: salidaDB.entregado_por || '',

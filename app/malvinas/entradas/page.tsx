@@ -32,7 +32,9 @@ import {
     Eye,
     Check,
     XCircle,
-    Image as ImageIcon
+    Image as ImageIcon,
+    Calendar,
+    Clock3
 } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
@@ -1177,6 +1179,10 @@ function ModalEntrada({
                             <label className="form-label">Contraseña de autorización *</label>
                             <input
                                 type="password"
+                                name="pass_autorizacion_entradas"
+                                autoComplete="new-password"
+                                data-lpignore="true"
+                                inputMode="text"
                                 value={passwordAutorizacion}
                                 onChange={e => setPasswordAutorizacion(e.target.value)}
                                 className="form-input"
@@ -1228,7 +1234,7 @@ export default function EntradasPage() {
     // ─── Vista Cascada (Listado de Entradas) ─────────────────────────────
     const [loadingCargas, setLoadingCargas] = useState(true);
     const [cargas, setCargas] = useState<api.EntradaCascadaDB[]>([]);
-    const [expandedCodigo, setExpandedCodigo] = useState<string | null>(null);
+    const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
 
     // ─── Actas (Ver / Subir) ─────────────────────────────────────────────
     const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
@@ -1242,6 +1248,7 @@ export default function EntradasPage() {
     const [modalSubirActasOpen, setModalSubirActasOpen] = useState(false);
     const [repIdActasEntrada, setRepIdActasEntrada] = useState<number | null>(null);
     const [actasParaSubir, setActasParaSubir] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [subiendoActas, setSubiendoActas] = useState(false);
 
     // Cargar entradas al montar el componente
     useEffect(() => {
@@ -1300,6 +1307,14 @@ export default function EntradasPage() {
     const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
     const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
+    useEffect(() => {
+        const keys = paginatedCargas.map((carga, idx) => `${carga.codigo_carga || 'sin-codigo'}-${idx}`);
+        setExpandedCodigos(prev => {
+            if (prev.size === keys.length && keys.every(k => prev.has(k))) return prev;
+            return new Set(keys);
+        });
+    }, [paginatedCargas]);
+
     const openNew = () => { setEditData(null); setModalOpen(true); };
     const openEdit = (e: RegistroEntrada) => { setEditData(e); setModalOpen(true); };
     const handleCloseModalEntrada = () => {
@@ -1344,6 +1359,7 @@ export default function EntradasPage() {
     };
 
     const guardarActasEntrada = async () => {
+        if (subiendoActas) return;
         if (!repIdActasEntrada) {
             showToast('error', 'No se encontró el registro de referencia para subir actas');
             return;
@@ -1360,6 +1376,7 @@ export default function EntradasPage() {
         }
 
         try {
+            setSubiendoActas(true);
             await api.agregarActaEntrada(
                 repIdActasEntrada,
                 actasParaSubir.map(a => ({ file: a.file, nombre: a.nombre }))
@@ -1374,6 +1391,8 @@ export default function EntradasPage() {
         } catch (error: any) {
             console.error('Error subiendo actas entrada:', error);
             showToast('error', error.message || 'Error al subir las actas');
+        } finally {
+            setSubiendoActas(false);
         }
     };
 
@@ -1446,7 +1465,7 @@ export default function EntradasPage() {
                                         : null;
 
                                     const cargaKey = `${carga.codigo_carga || 'sin-codigo'}-${idx}`;
-                                    const isOpen = expandedCodigo === cargaKey;
+                                    const isOpen = expandedCodigos.has(cargaKey);
                                     const { fecha, hora } = formatFechaDosLineas(carga.fecha_primera);
                                     const operacion = detalleRep?.operacion || '';
                                     const itemsTotales = carga.cantidad_items;
@@ -1455,7 +1474,14 @@ export default function EntradasPage() {
                                         <div key={cargaKey} className="px-4">
                                             <div
                                                 className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
-                                                onClick={() => setExpandedCodigo(prev => (prev === cargaKey ? null : cargaKey))}
+                                                onClick={() =>
+                                                    setExpandedCodigos(prev => {
+                                                        const next = new Set(prev);
+                                                        if (next.has(cargaKey)) next.delete(cargaKey);
+                                                        else next.add(cargaKey);
+                                                        return next;
+                                                    })
+                                                }
                                             >
                                                 <div className="flex items-center gap-3 min-w-0">
                                                     <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
@@ -1466,19 +1492,18 @@ export default function EntradasPage() {
                                                         )}
                                                     </div>
                                                 <div className="min-w-0">
-                                                    <div className="flex items-center gap-3 flex-wrap">
-                                                        <div className="flex items-center gap-3 whitespace-nowrap">
-                                                            <div className="text-[10px] text-gray-500 uppercase tracking-widest">FECHA</div>
-                                                            <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
-                                                                {fecha}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-3 whitespace-nowrap">
-                                                            <div className="text-[10px] text-gray-500 uppercase tracking-widest">HORA</div>
-                                                            <div className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
-                                                                {hora}
-                                                            </div>
-                                                        </div>
+                                                    <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-gray-900">
+                                                        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                                                            <Calendar className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                            <span className="text-[10px] text-gray-500 uppercase tracking-widest">Fecha</span>
+                                                            <span>{fecha}</span>
+                                                        </span>
+                                                        <span className="hidden sm:block w-px h-4 bg-gray-300" />
+                                                        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                                                            <Clock3 className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                            <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
+                                                            <span>{hora || '-'}</span>
+                                                        </span>
                                                         {/* Operación ya se muestra en la tabla interna */}
                                                     </div>
                                                 </div>
@@ -1877,11 +1902,18 @@ export default function EntradasPage() {
                             </button>
                             <button
                                 onClick={guardarActasEntrada}
-                                disabled={actasParaSubir.length === 0}
+                                disabled={actasParaSubir.length === 0 || subiendoActas}
                                 className="btn"
                                 style={{ backgroundColor: '#002D5A', color: 'white' }}
                             >
-                                Guardar
+                                {subiendoActas ? (
+                                    <span className="inline-flex items-center gap-2">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Guardando...
+                                    </span>
+                                ) : (
+                                    'Guardar'
+                                )}
                             </button>
                         </div>
                     </div>
