@@ -649,7 +649,12 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
       showToast('success', 'Salida registrada correctamente');
     } catch (error: any) {
       console.error('Error creando salida:', error);
-      showToast('error', error.message || 'Error al registrar salida');
+      const msg = error?.message || 'Error al registrar salida';
+      if (msg.toLowerCase().includes('stock insuficiente')) {
+        showToast('warning', msg);
+      } else {
+        showToast('error', msg);
+      }
       throw error;
     }
   }, [state.productos, refreshSalidas, refreshProductos, addNotification, showToast]);
@@ -683,7 +688,12 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
       showToast('success', 'Salida actualizada correctamente');
     } catch (error: any) {
       console.error('Error actualizando salida:', error);
-      showToast('error', error.message || 'Error al actualizar salida');
+      const msg = error?.message || 'Error al actualizar salida';
+      if (msg.toLowerCase().includes('stock insuficiente')) {
+        showToast('warning', msg);
+      } else {
+        showToast('error', msg);
+      }
       throw error;
     }
   }, [state.salidas, state.productos, refreshSalidas, refreshProductos, refreshHistorialSalidas, addNotification, showToast]);

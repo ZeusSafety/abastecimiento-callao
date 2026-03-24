@@ -155,6 +155,19 @@ def _get_id_producto_por_codigo_o_nombre(codigo_o_nombre, conn):
     cursor.close()
     return result['id'] if result else None
 
+def _get_existencia_producto_tienda(id_producto: int, id_tienda: int, conn) -> int:
+    """Obtiene la existencia actual de un producto en una tienda. Si no hay registro, retorna 0."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+            (id_producto, id_tienda)
+        )
+        row = cursor.fetchone()
+        return row['cantidad'] if row and row['cantidad'] is not None else 0
+    finally:
+        cursor.close()
+
 def _ejecutar_sp_con_transaccion(conn, sp_call, params):
     """Ejecuta un Stored Procedure y maneja commit/rollback."""
     cursor = conn.cursor()
@@ -978,6 +991,15 @@ def create_salida(request, headers):
         if not um_id:
             return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
 
+        # Validación de stock: no permitir que la salida deje stock negativo.
+        try:
+            existencia_actual = _get_existencia_producto_tienda(producto_id, tienda_id, conn)
+        except Exception:
+            existencia_actual = 0
+        cantidad_salida = int(data.get('cantidad') or 0)
+        if cantidad_salida > existencia_actual:
+            return bad_request_error(f"Stock insuficiente en la tienda. Existencia actual: {existencia_actual}, salida pedida: {cantidad_salida}", headers)
+
         # Llamar al SP
         params = [
             producto_id, tipo_op_id, data.get('nro_comprobante'), data.get('asesor'),
@@ -1076,6 +1098,16 @@ def create_salidas_masivo(request, headers):
                     errores.append(f"Salida {idx + 1}: Unidad de medida no válida")
                     continue
 
+                # Validación de stock: no permitir que la salida deje stock negativo.
+                try:
+                    existencia_actual = _get_existencia_producto_tienda(producto_id, tienda_id, conn)
+                except Exception:
+                    existencia_actual = 0
+                cantidad_salida = int(salida_data.get('cantidad') or 0)
+                if cantidad_salida > existencia_actual:
+                    errores.append(f"Salida {idx + 1}: Stock insuficiente en la tienda (existencia {existencia_actual}, salida {cantidad_salida})")
+                    continue
+
                 # Llamar al SP
                 params = [
                     producto_id, tipo_op_id, salida_data.get('nro_comprobante'), salida_data.get('asesor'),
@@ -1164,12 +1196,33 @@ def update_salida(request, headers, id_salida):
         if not um_id:
             return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
 
-        # Capturar cantidad actual antes de editar (será la nueva cantidad_anterior).
-        cursor.execute("SELECT cantidad FROM movimientos_salida WHERE id = %s", (id_salida,))
+        # Capturar estado actual antes de editar (para cantidad_anterior y validación de stock).
+        cursor.execute(
+            "SELECT id_producto, id_tienda, cantidad FROM movimientos_salida WHERE id = %s",
+            (id_salida,)
+        )
         row_actual = cursor.fetchone()
         if not row_actual:
             return not_found_error(f"Salida con ID {id_salida} no encontrada", headers)
         cantidad_previa = row_actual.get('cantidad', 0)
+        producto_previo = row_actual.get('id_producto')
+        tienda_previa = row_actual.get('id_tienda')
+
+        # Validación de stock al editar:
+        # - Si editas la misma tienda/producto, la salida previa ya descontó stock.
+        #   Por eso se "devuelve virtualmente" la cantidad previa para validar el nuevo valor.
+        # - Si cambias tienda/producto, se valida contra la existencia actual del nuevo destino.
+        existencia_actual_nueva = _get_existencia_producto_tienda(producto_id, tienda_id, conn)
+        disponibilidad_virtual = existencia_actual_nueva
+        if producto_previo == producto_id and tienda_previa == tienda_id:
+            disponibilidad_virtual += int(cantidad_previa or 0)
+
+        cantidad_nueva = int(data.get('cantidad') or 0)
+        if cantidad_nueva > disponibilidad_virtual:
+            return bad_request_error(
+                f"Stock insuficiente para editar salida. Disponible: {disponibilidad_virtual}, solicitado: {cantidad_nueva}",
+                headers
+            )
 
         params = [
             id_salida, producto_id, tipo_op_id, data.get('nro_comprobante'),
@@ -1195,7 +1248,7 @@ def update_salida(request, headers, id_salida):
             ORDER BY fecha_cambio DESC, id DESC
             LIMIT 1
             """,
-            (cantidad_previa, int(data.get('cantidad') or 0), id_salida)
+            (cantidad_previa, cantidad_nueva, id_salida)
         )
 
         conn.commit()

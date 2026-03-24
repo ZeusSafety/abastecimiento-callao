@@ -226,7 +226,11 @@ async function fetchAPI<T>(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
-      throw new Error(errorData.error || `Error ${response.status}`);
+      const backendMessage =
+        (typeof errorData?.error === 'string' && errorData.error) ||
+        (typeof errorData?.message === 'string' && errorData.message) ||
+        `Error ${response.status}`;
+      throw new Error(backendMessage);
     }
 
     return await response.json();
