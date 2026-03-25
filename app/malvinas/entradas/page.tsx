@@ -262,16 +262,12 @@ function ModalEntrada({
             showToast('error', 'Ingresa una cantidad válida mayor a 0'); 
             return; 
         }
-        if (form.operacion === 'OTROS' && !form.operacionPersonalizada.trim()) {
-            showToast('error', 'Especifica el nombre de la operación');
-            return;
-        }
 
         const nuevoProducto = {
             productoId: form.productoId,
             producto: form.producto,
             codigo: selectedProducto?.codigo || '',
-            operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
+            operacion: form.operacion,
             almacenSalida: form.almacenSalida,
             almacenIngreso: form.almacenIngreso,
             operador: form.operador,
@@ -475,7 +471,7 @@ function ModalEntrada({
                 await updateEntrada(editData!.id, {
                     productoId: form.productoId,
                     producto: form.producto,
-                    operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
+                    operacion: form.operacion,
                     almacenSalida: form.almacenSalida,
                     almacenIngreso: form.almacenIngreso,
                     operador: form.operador,
@@ -615,7 +611,7 @@ function ModalEntrada({
                             <div className="relative">
                                 <select
                                     value={form.operacion}
-                                    onChange={e => setForm(f => ({ ...f, operacion: e.target.value, operacionPersonalizada: e.target.value !== 'OTROS' ? '' : f.operacionPersonalizada }))}
+                                    onChange={e => setForm(f => ({ ...f, operacion: e.target.value }))}
                                     className="form-input"
                                     style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                 >
@@ -624,19 +620,6 @@ function ModalEntrada({
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
                         </div>
-                        {form.operacion === 'OTROS' && (
-                            <div className="col-span-2">
-                                <label className="form-label">Especificar Operación *</label>
-                                <input
-                                    type="text"
-                                    value={form.operacionPersonalizada}
-                                    onChange={e => setForm(f => ({ ...f, operacionPersonalizada: e.target.value }))}
-                                    placeholder="Escribe el nombre de la operación..."
-                                    className="form-input"
-                                    style={{ fontSize: 12 }}
-                                />
-                            </div>
-                        )}
 
                         {/* Almacén Salida */}
                         <div>
@@ -680,7 +663,7 @@ function ModalEntrada({
                                     className="form-input"
                                     style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                 >
-                                    {OPERADORES.map(o => <option key={o}>{o}</option>)}
+                                    {OPERADORES.map(o => <option key={o} value={o}>{o.toUpperCase()}</option>)}
                                 </select>
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
@@ -731,7 +714,7 @@ function ModalEntrada({
                                     className="form-input"
                                     style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                 >
-                                    {OPERADORES.map(o => <option key={o}>{o}</option>)}
+                                    {OPERADORES.map(o => <option key={o} value={o}>{o.toUpperCase()}</option>)}
                                 </select>
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
@@ -748,7 +731,7 @@ function ModalEntrada({
                                         className="form-input"
                                         style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                     >
-                                        {REGISTRADORES.map(r => <option key={r}>{r}</option>)}
+                                        {REGISTRADORES.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
                                     </select>
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
@@ -774,7 +757,7 @@ function ModalEntrada({
                             <label className="form-label">Observaciones</label>
                             <textarea
                                 value={form.observaciones}
-                                onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
+                                onChange={e => setForm(f => ({ ...f, observaciones: e.target.value.toUpperCase() }))}
                                 className="form-input"
                                 rows={3}
                                 style={{ resize: 'vertical', fontSize: 12 }}

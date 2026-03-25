@@ -5,7 +5,7 @@ import { useMalvinas, TIENDAS, Tienda, Producto } from '../context/MalvinasConte
 import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock, FileSpreadsheet } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
 import * as api from '../services/api';
-import { exportToExcel } from '../utils/export';
+import * as XLSX from 'xlsx';
 
 interface EditingProduct extends Producto {
     editing: {
@@ -283,19 +283,100 @@ export default function StockTotalPage() {
     };
 
     const handleExportExcel = () => {
-        const columns = [
-            { header: 'Codigo', key: 'codigo' },
-            { header: 'Producto', key: 'producto' },
-            { header: 'Disponibles', key: 'disponibles' },
+        const headerTop = [
+            'CODIGO',
+            'PRODUCTO',
+            'CANT.',
+            'STOCK MINIMO',
+            '',
+            '',
+            '',
+            'STOCK GLOBAL',
+            'U. MEDIDA',
+            'EXISTENCIA ALMACEN',
+            '',
+            '',
+            '',
+            'DISPONIBLES',
+            'STOCK DETALLADO',
+            '',
+            '',
         ];
 
-        const rows = filtered.map(p => ({
-            codigo: p.codigo,
-            producto: p.nombre,
-            disponibles: TIENDAS.reduce((acc, t) => acc + p.existencia[t], 0),
-        }));
+        const headerBottom = [
+            '',
+            '',
+            '',
+            '3006',
+            '3131',
+            '412-A',
+            '3133',
+            '',
+            '',
+            '3006',
+            '3131',
+            '412-A',
+            '3133',
+            '',
+            'CAJAS',
+            'MED.',
+            'U.MED',
+        ];
 
-        exportToExcel(rows, columns, `Inventario_Malvinas_${new Date().toISOString().split('T')[0]}`);
+        const rows = filtered.map(p => {
+            const editing = editingProducts.get(p.id);
+            const stockMin = editing ? editing.editing.stockMinimo : p.stockMinimo;
+            const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
+            const stockGlobalMin = TIENDAS.reduce((acc, t) => acc + (stockMin[t] || 0), 0);
+            const disponibles = TIENDAS.reduce((acc, t) => acc + (p.existencia[t] || 0), 0);
+            const cajas = cantidadReg > 0 ? Math.ceil(disponibles / cantidadReg) : 0;
+            const medida = (cajas * cantidadReg) - disponibles;
+
+            return [
+                p.codigo,
+                p.nombre,
+                cantidadReg,
+                stockMin['TIENDA 3006'] || 0,
+                stockMin['TIENDA 3131'] || 0,
+                stockMin['TIENDA 412-A'] || 0,
+                stockMin['TIENDA 3133'] || 0,
+                stockGlobalMin,
+                p.unidadMedidaRegCalculo,
+                p.existencia['TIENDA 3006'] || 0,
+                p.existencia['TIENDA 3131'] || 0,
+                p.existencia['TIENDA 412-A'] || 0,
+                p.existencia['TIENDA 3133'] || 0,
+                disponibles,
+                cajas,
+                Math.abs(medida),
+                p.unidadMedidaRegCalculo,
+            ];
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet([headerTop, headerBottom, ...rows]);
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } }, // CODIGO
+            { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // PRODUCTO
+            { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // CANT.
+            { s: { r: 0, c: 3 }, e: { r: 0, c: 6 } }, // STOCK MINIMO
+            { s: { r: 0, c: 7 }, e: { r: 1, c: 7 } }, // STOCK GLOBAL
+            { s: { r: 0, c: 8 }, e: { r: 1, c: 8 } }, // U. MEDIDA
+            { s: { r: 0, c: 9 }, e: { r: 0, c: 12 } }, // EXISTENCIA ALMACEN
+            { s: { r: 0, c: 13 }, e: { r: 1, c: 13 } }, // DISPONIBLES
+            { s: { r: 0, c: 14 }, e: { r: 0, c: 16 } }, // STOCK DETALLADO
+        ];
+        ws['!cols'] = [
+            { wch: 12 }, { wch: 34 }, { wch: 8 },
+            { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+            { wch: 12 }, { wch: 12 },
+            { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+            { wch: 12 },
+            { wch: 8 }, { wch: 8 }, { wch: 10 },
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+        XLSX.writeFile(wb, `Inventario_Malvinas_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
     return (

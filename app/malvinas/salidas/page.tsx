@@ -153,16 +153,12 @@ function ModalSalida({
             showToast('error', 'Ingresa una cantidad válida mayor a 0'); 
             return; 
         }
-        if (form.operacion === 'OTROS' && !form.operacionPersonalizada.trim()) {
-            showToast('error', 'Especifica el nombre de la operación');
-            return;
-        }
 
         const nuevoProducto = {
             productoId: form.productoId,
             producto: form.producto,
             codigo: selectedProducto?.codigo || '',
-            operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
+            operacion: form.operacion,
             comprobante: form.comprobante,
             asesor: form.asesor,
             cantidad: Number(form.cantidad),
@@ -356,16 +352,12 @@ function ModalSalida({
                 showToast('error', 'Ingresa el motivo del cambio'); 
                 return; 
             }
-            if (form.operacion === 'OTROS' && !form.operacionPersonalizada.trim()) {
-                showToast('error', 'Especifica el nombre de la operación');
-                return;
-            }
 
             try {
                 await updateSalida(editData!.id, {
                     productoId: form.productoId,
                     producto: form.producto,
-                    operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
+                    operacion: form.operacion,
                     comprobante: form.comprobante,
                     asesor: form.asesor,
                     cantidad: Number(form.cantidad),
@@ -509,7 +501,6 @@ function ModalSalida({
                                         setForm(f => ({ 
                                             ...f, 
                                             operacion: nuevaOperacion, 
-                                            operacionPersonalizada: nuevaOperacion !== 'OTROS' ? '' : f.operacionPersonalizada,
                                     // Mantener comprobante/asesor para no borrar lo que el usuario ingresó
                                         }));
                                     }}
@@ -521,19 +512,6 @@ function ModalSalida({
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
                         </div>
-                        {form.operacion === 'OTROS' && (
-                            <div className="col-span-2">
-                                <label className="form-label">Especificar Operación *</label>
-                                <input
-                                    type="text"
-                                    value={form.operacionPersonalizada}
-                                    onChange={e => setForm(f => ({ ...f, operacionPersonalizada: e.target.value }))}
-                                    placeholder="Escribe el nombre de la operación..."
-                                    className="form-input"
-                                    style={{ fontSize: 12 }}
-                                />
-                            </div>
-                        )}
 
                         {/* N° Comprobante */}
                         <div>
@@ -565,7 +543,7 @@ function ModalSalida({
                             <input
                                 type="text"
                                 value={form.asesor}
-                                onChange={e => setForm(f => ({ ...f, asesor: e.target.value }))}
+                                onChange={e => setForm(f => ({ ...f, asesor: e.target.value.toUpperCase() }))}
                                 className="form-input"
                                 style={{ fontSize: 12 }}
                                 placeholder="Nombre del asesor"
@@ -629,7 +607,7 @@ function ModalSalida({
                             <input
                                 type="text"
                                 value={form.entregado}
-                                onChange={e => setForm(f => ({ ...f, entregado: e.target.value }))}
+                                onChange={e => setForm(f => ({ ...f, entregado: e.target.value.toUpperCase() }))}
                                 className="form-input"
                                 style={{ fontSize: 12 }}
                                 placeholder="Nombre de quien recibe"
@@ -647,7 +625,7 @@ function ModalSalida({
                                         className="form-input"
                                         style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                     >
-                                        {REGISTRADORES.map(r => <option key={r}>{r}</option>)}
+                                        {REGISTRADORES.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
                                     </select>
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
@@ -673,7 +651,7 @@ function ModalSalida({
                             <label className="form-label">Observaciones</label>
                             <textarea
                                 value={form.observaciones}
-                                onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
+                                    onChange={e => setForm(f => ({ ...f, observaciones: e.target.value.toUpperCase() }))}
                                 className="form-input"
                                 rows={3}
                                 style={{ resize: 'vertical', fontSize: 12 }}
@@ -805,7 +783,7 @@ function ModalSalida({
                                                                         <input
                                                                             type="text"
                                                                             value={p.asesor}
-                                                                            onChange={e => handleActualizarProducto(index, 'asesor', e.target.value)}
+                                                                            onChange={e => handleActualizarProducto(index, 'asesor', e.target.value.toUpperCase())}
                                                                             className="form-input text-[10px] py-1 px-2"
                                                                             onClick={e => e.stopPropagation()}
                                                                         />
