@@ -528,6 +528,60 @@ export async function getStockTotal(): Promise<StockTotalDB[]> {
   return response.data || [];
 }
 
+// Stock Total - Importar Excel (preview / aplicar)
+export interface ImportStockTotalResult {
+  modo: string;
+  hoja: string;
+  filas_procesadas: number;
+  productos_actualizados_cant_reg: number;
+  registros_stock_minimo_upsert: number;
+  filas_omitidas_sin_codigo: number;
+  filas_omitidas_producto_no_existe: number;
+  productos_no_encontrados_muestra: string[];
+  movimientos_entrada_sugeridos: Array<{
+    producto: string; // código
+    operacion: string; // OTROS
+    almacen_salida: string; // CALLAO
+    almacen_ingreso: string; // 3006/3131/412-A/3133
+    cantidad: number; // delta positivo
+    unidad_medida: string;
+    cantidad_anterior: number;
+    cantidad_objetivo_excel: number;
+  }>;
+  ajustes_negativos: Array<{
+    producto: string;
+    tienda: string;
+    cantidad_actual: number;
+    cantidad_excel: number;
+    delta: number;
+  }>;
+}
+
+export async function importStockTotalExcel(
+  file: File,
+  modo: 'preview' | 'aplicar'
+): Promise<ImportStockTotalResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('data', JSON.stringify({ modo }));
+
+  const response = await fetch(`${API_BASE_URL}/api/stock-total/importar`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+    throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+  }
+
+  const result = await response.json().catch(() => null);
+  if (!result || result.success === false) {
+    throw new Error(result?.error || result?.message || 'Error al importar Excel');
+  }
+  return (result.data || {}) as ImportStockTotalResult;
+}
+
 // Historial Entradas
 export async function getHistorialEntradas(): Promise<EntradaDB[]> {
   const response = await fetchAPI<EntradaDB[]>('/api/historial/entradas');

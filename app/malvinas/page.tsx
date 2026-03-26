@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { useMalvinas, TIENDAS, Tienda, Producto } from '../context/MalvinasContext';
-import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock, FileSpreadsheet } from 'lucide-react';
+import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock, FileSpreadsheet, Upload } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
 import * as api from '../services/api';
 import * as XLSX from 'xlsx';
@@ -33,7 +33,7 @@ const STORAGE_KEY_EDITING = 'malvinas_inventario_editing';
 const PASSWORD_REQUIRED = '0427';
 
 export default function StockTotalPage() {
-    const { state, refreshProductos, showToast } = useMalvinas();
+    const { state, refreshProductos, refreshEntradas, showToast } = useMalvinas();
     const [search, setSearch] = useState('');
     const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
     const [editingProducts, setEditingProducts] = useState<Map<string, EditingProduct>>(new Map());
@@ -43,6 +43,26 @@ export default function StockTotalPage() {
     const [password, setPassword] = useState('');
     const [passwordError, setPasswordError] = useState(false);
     const isLoading = state.loading;
+
+    // ─── Importación Excel -> Movimientos de Entrada (OTROS) ───────────────────
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importMovs, setImportMovs] = useState<api.ImportStockTotalResult['movimientos_entrada_sugeridos']>([]);
+    const [importNegativos, setImportNegativos] = useState<api.ImportStockTotalResult['ajustes_negativos']>([]);
+    const [isImportingPreview, setIsImportingPreview] = useState(false);
+    const [isImportSaving, setIsImportSaving] = useState(false);
+
+    const [importForm, setImportForm] = useState({
+        operacion: 'OTROS',
+        almacenSalida: 'CALLAO',
+        operador: 'Manuel',
+        entregado: 'Manuel',
+        registradoPor: 'Manuel',
+        observaciones: '',
+    });
+    const [importActas, setImportActas] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [showImportPasswordModal, setShowImportPasswordModal] = useState(false);
+    const [importPassword, setImportPassword] = useState('');
 
     // Restaurar datos del localStorage al cargar (solo una vez cuando los productos estén listos)
     useEffect(() => {
@@ -379,6 +399,108 @@ export default function StockTotalPage() {
         XLSX.writeFile(wb, `Inventario_Malvinas_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
+    const handleImportExcelClick = () => {
+        const el = document.getElementById('stock-total-import-excel-input') as HTMLInputElement | null;
+        el?.click();
+    };
+
+    const handleImportExcelSelected = async (file: File | null) => {
+        if (!file) return;
+        setIsImportingPreview(true);
+        try {
+            const preview = await api.importStockTotalExcel(file, 'preview');
+            setImportFile(file);
+            setImportMovs(preview.movimientos_entrada_sugeridos || []);
+            setImportNegativos(preview.ajustes_negativos || []);
+
+            if ((preview.movimientos_entrada_sugeridos || []).length === 0) {
+                showToast('info', 'No se detectaron ingresos (deltas positivos) para registrar');
+                return;
+            }
+            setShowImportModal(true);
+        } catch (error: any) {
+            showToast('error', error.message || 'Error al leer el Excel');
+        } finally {
+            setIsImportingPreview(false);
+            // limpiar input para permitir re-seleccionar el mismo archivo
+            const el = document.getElementById('stock-total-import-excel-input') as HTMLInputElement | null;
+            if (el) el.value = '';
+        }
+    };
+
+    const handleAddImportActas = (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+        const nuevas = Array.from(files).map(file => ({
+            file,
+            nombre: file.name,
+            preview: URL.createObjectURL(file),
+        }));
+        setImportActas(prev => [...prev, ...nuevas]);
+    };
+
+    const removeImportActa = (idx: number) => {
+        setImportActas(prev => {
+            const copy = [...prev];
+            const removed = copy.splice(idx, 1)[0];
+            if (removed?.preview) URL.revokeObjectURL(removed.preview);
+            return copy;
+        });
+    };
+
+    const confirmImportSave = async (passwordAutorizacion?: string) => {
+        if (!importFile) {
+            showToast('error', 'No se encontró el archivo Excel seleccionado');
+            return;
+        }
+        if (importMovs.length === 0) {
+            showToast('error', 'No hay movimientos para registrar');
+            return;
+        }
+
+        setIsImportSaving(true);
+        try {
+            // 1) Aplicar cambios de CANT. y Stock Mínimo (sin pisar existencias)
+            await api.importStockTotalExcel(importFile, 'aplicar');
+
+            // 2) Registrar entradas masivas para ajustar existencias (OTROS, salida CALLAO)
+            const actasPayload = importActas.length > 0 ? importActas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined;
+            const entradasPayload = importMovs.map(m => ({
+                producto: m.producto,
+                operacion: importForm.operacion || 'OTROS',
+                almacen_salida: importForm.almacenSalida || 'CALLAO',
+                almacen_ingreso: m.almacen_ingreso,
+                operador: importForm.operador,
+                cantidad: m.cantidad,
+                unidad_medida: m.unidad_medida,
+                entregado_por: importForm.entregado,
+                registrado_por: importForm.registradoPor,
+                observaciones: importForm.observaciones,
+            }));
+
+            await api.createEntradasMasivo(entradasPayload, {
+                actas: actasPayload,
+                passwordAutorizacion: actasPayload ? undefined : passwordAutorizacion,
+            });
+
+            await Promise.all([refreshProductos(), refreshEntradas()]);
+            showToast('success', `Importación exitosa: ${importMovs.length} ingreso(s) registrado(s)`);
+
+            // limpiar estado/modal
+            importActas.forEach(a => URL.revokeObjectURL(a.preview));
+            setImportActas([]);
+            setImportFile(null);
+            setImportMovs([]);
+            setImportNegativos([]);
+            setImportPassword('');
+            setShowImportPasswordModal(false);
+            setShowImportModal(false);
+        } catch (error: any) {
+            showToast('error', error.message || 'Error al guardar la importación');
+        } finally {
+            setIsImportSaving(false);
+        }
+    };
+
     return (
         <div id="view-malvinas" className="animate-in fade-in duration-500 font-poppins">
             <div className="container mx-auto">
@@ -398,13 +520,13 @@ export default function StockTotalPage() {
                         </div>
                         {editingProducts.size > 0 && (
                             <div className="flex items-center gap-3">
-                                <span className="text-sm font-bold text-orange-600">
+                                <span className="text-sm font-bold text-blue-600">
                                     {editingProducts.size} producto(s) en edición
                                 </span>
                                 <button
                                     onClick={handleConfirmAllClick}
                                     disabled={isSaving}
-                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[11px] bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[11px] bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
                                 >
                                     <Check className="w-4 h-4" />
                                     <span>Confirmar Todo</span>
@@ -464,6 +586,23 @@ export default function StockTotalPage() {
                             >
                                 <FileSpreadsheet className="w-4 h-4" />
                                 <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Exportar Excel</span>
+                            </button>
+                            <input
+                                id="stock-total-import-excel-input"
+                                type="file"
+                                accept=".xlsx,.xlsm,.xltx,.xltm"
+                                className="hidden"
+                                onChange={e => handleImportExcelSelected(e.target.files?.[0] || null)}
+                            />
+                            <button
+                                onClick={handleImportExcelClick}
+                                disabled={isImportingPreview || isLoading}
+                                className="px-5 py-2.5 text-sm font-bold text-white bg-blue-600 border border-blue-600 rounded-2xl hover:bg-blue-700 transition-all flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-60"
+                            >
+                                <Upload className={`w-4 h-4 ${isImportingPreview ? 'animate-pulse' : ''}`} />
+                                <span className="hidden sm:inline uppercase tracking-wider text-[10px]">
+                                    {isImportingPreview ? 'Leyendo...' : 'Importar datos'}
+                                </span>
                             </button>
                             <button
                                 onClick={() => setSearch('')}
@@ -639,8 +778,8 @@ export default function StockTotalPage() {
                         {/* Header */}
                         <div className="flex items-center justify-between p-6 border-b border-gray-200">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                                    <Lock className="w-5 h-5 text-orange-600" />
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                    <Lock className="w-5 h-5 text-blue-600" />
                                 </div>
                                 <div>
                                     <h2 className="text-xl font-bold text-gray-900">Confirmar Cambios</h2>
@@ -680,7 +819,7 @@ export default function StockTotalPage() {
                                     className={`w-full px-4 py-3 border-2 rounded-xl text-sm font-medium transition-all outline-none ${
                                         passwordError
                                             ? 'border-red-500 bg-red-50 focus:border-red-600 focus:ring-4 focus:ring-red-100'
-                                            : 'border-gray-200 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-100'
+                                            : 'border-gray-200 bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100'
                                     }`}
                                     placeholder="Ingresa la contraseña"
                                     autoFocus
@@ -691,8 +830,8 @@ export default function StockTotalPage() {
                                     </p>
                                 )}
                             </div>
-                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                                <p className="text-xs text-orange-800 font-medium">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                <p className="text-xs text-blue-800 font-medium">
                                     Se actualizarán <strong>{editingProducts.size} producto(s)</strong>. Esta acción no se puede deshacer.
                                 </p>
                             </div>
@@ -713,9 +852,295 @@ export default function StockTotalPage() {
                             <button
                                 onClick={handleConfirmAll}
                                 disabled={isSaving || !password}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isSaving ? (
+                                    <>
+                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                        Guardando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check className="w-4 h-4" />
+                                        Confirmar
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Importar Excel -> Registro de Entrada Masivo */}
+            {showImportModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[10000]">
+                        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-900">Importar Excel - Registro de entrada</h2>
+                                <p className="text-sm text-gray-500 mt-0.5">
+                                    Se registrarán ingresos con operación <strong>OTROS</strong> desde <strong>ALMACEN CALLAO</strong>
+                                </p>
+                                {importNegativos.length > 0 && (
+                                    <p className="text-xs text-blue-700 mt-2 font-semibold">
+                                        Aviso: se detectaron {importNegativos.length} ajuste(s) negativo(s) (Excel menor que sistema). No se registrarán automáticamente.
+                                    </p>
+                                )}
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowImportModal(false);
+                                    setImportPassword('');
+                                    setShowImportPasswordModal(false);
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                disabled={isImportSaving}
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto flex-1">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Operación</label>
+                                    <select
+                                        value={importForm.operacion}
+                                        onChange={e => setImportForm(f => ({ ...f, operacion: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
+                                    >
+                                        <option value="OTROS">OTROS</option>
+                                        <option value="TRASLADO">TRASLADO</option>
+                                        <option value="REPOSICION">REPOSICION</option>
+                                        <option value="DEVOLUCION">DEVOLUCION</option>
+                                        <option value="CAMBIO">CAMBIO</option>
+                                        <option value="MERMA">MERMA</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Almacén salida</label>
+                                    <select
+                                        value={importForm.almacenSalida}
+                                        onChange={e => setImportForm(f => ({ ...f, almacenSalida: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
+                                    >
+                                        <option value="CALLAO">ALMACEN CALLAO</option>
+                                        <option value="MALVINAS">ALMACEN MALVINAS</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Operador</label>
+                                    <select
+                                        value={importForm.operador}
+                                        onChange={e => setImportForm(f => ({ ...f, operador: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
+                                    >
+                                        <option value="MANUEL" >MANUEL</option>
+                                        <option value="VICTOR" >VICTOR</option>
+                                        <option value="JUAN" >JUAN</option>
+                                        <option value="JHONSON" >JHONSON</option>
+                                        <option value="" >OTROS</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Entregado por</label>
+                                    <select
+                                        value={importForm.entregado}
+                                        onChange={e => setImportForm(f => ({ ...f, entregado: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
+                                    >
+                                        <option value="MANUEL" >MANUEL</option>
+                                        <option value="VICTOR" >VICTOR</option>
+                                        <option value="JUAN" >JUAN</option>
+                                        <option value="JHONSON" >JHONSON</option>
+                                        <option value="" >OTROS</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Registrado por</label>
+                                    <select
+                                        value={importForm.registradoPor}
+                                        onChange={e => setImportForm(f => ({ ...f, registradoPor: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
+                                    >
+                                        <option value="MANUEL" >MANUEL</option>
+                                        <option value="VICTOR" >VICTOR</option>
+                                        <option value="JUAN" >JUAN</option>
+                                        <option value="JHONSON" >JHONSON</option>
+                                        <option value="" >OTROS</option>
+                                    </select>
+                                </div>
+                                <div className="lg:col-span-3">
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Observaciones</label>
+                                    <textarea
+                                        value={importForm.observaciones}
+                                        onChange={e => setImportForm(f => ({ ...f, observaciones: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold min-h-[70px]"
+                                        placeholder="Observaciones (opcional)"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="border border-gray-200 rounded-2xl overflow-hidden">
+                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                    <div className="text-xs font-black uppercase tracking-wider text-gray-700">
+                                        Productos a registrar ({importMovs.length})
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            id="import-actas-input"
+                                            type="file"
+                                            className="hidden"
+                                            multiple
+                                            onChange={e => handleAddImportActas(e.target.files)}
+                                        />
+                                        <label
+                                            htmlFor="import-actas-input"
+                                            className="px-3 py-1.5 text-xs font-black text-white bg-[#002D5A] rounded-xl cursor-pointer hover:bg-[#003d7a] transition-colors"
+                                        >
+                                            Subir actas ({importActas.length})
+                                        </label>
+                                    </div>
+                                </div>
+                                {importActas.length > 0 && (
+                                    <div className="px-4 py-3 border-b border-gray-200">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            {importActas.map((a, idx) => (
+                                                <div key={`${a.nombre}-${idx}`} className="flex items-center gap-2">
+                                                    <input
+                                                        value={a.nombre}
+                                                        onChange={e => {
+                                                            const v = e.target.value;
+                                                            setImportActas(prev => prev.map((x, i) => (i === idx ? { ...x, nombre: v } : x)));
+                                                        }}
+                                                        className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold"
+                                                    />
+                                                    <button
+                                                        onClick={() => removeImportActa(idx)}
+                                                        className="px-3 py-2 text-xs font-black bg-red-50 text-red-700 rounded-xl hover:bg-red-100"
+                                                        type="button"
+                                                    >
+                                                        Quitar
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-white sticky top-0">
+                                            <tr className="text-[10px] uppercase tracking-wider font-black text-gray-600 border-b border-gray-200">
+                                                <th className="px-4 py-3 text-left">Código</th>
+                                                <th className="px-4 py-3 text-left">Tienda ingreso</th>
+                                                <th className="px-4 py-3 text-right">Cantidad</th>
+                                                <th className="px-4 py-3 text-center">U. Med</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {importMovs.map((m, idx) => (
+                                                <tr key={`${m.producto}-${m.almacen_ingreso}-${idx}`} className="text-[11px]">
+                                                    <td className="px-4 py-2 font-bold text-[#002D5A]">{m.producto}</td>
+                                                    <td className="px-4 py-2 font-semibold text-gray-700">{m.almacen_ingreso}</td>
+                                                    <td className="px-4 py-2 text-right font-extrabold">{m.cantidad}</td>
+                                                    <td className="px-4 py-2 text-center text-gray-600 font-bold">{m.unidad_medida}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+                            <button
+                                onClick={() => setShowImportModal(false)}
+                                className="px-6 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+                                disabled={isImportSaving}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (importActas.length === 0) {
+                                        setShowImportPasswordModal(true);
+                                        setImportPassword('');
+                                    } else {
+                                        confirmImportSave(undefined);
+                                    }
+                                }}
+                                disabled={isImportSaving}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#002D5A] to-[#0056b3] hover:from-[#003d7a] hover:to-[#0066cc] text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50"
+                            >
+                                {isImportSaving ? (
+                                    <>
+                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                        Guardando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check className="w-4 h-4" />
+                                        Guardar
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal contraseña importación (solo si no hay actas) */}
+            {showImportPasswordModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 z-[10000]">
+                        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                                    <Lock className="w-5 h-5 text-orange-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900">Autorización</h2>
+                                    <p className="text-sm text-gray-500 mt-0.5">No hay actas. Ingresa la contraseña para guardar</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowImportPasswordModal(false)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                disabled={isImportSaving}
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Contraseña *</label>
+                            <input
+                                type="password"
+                                value={importPassword}
+                                onChange={e => setImportPassword(e.target.value)}
+                                className="w-full px-4 py-3 border-2 rounded-xl text-sm font-medium transition-all outline-none border-gray-200 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
+                                placeholder="Ingresa la contraseña"
+                                autoFocus
+                            />
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mt-4">
+                                <p className="text-xs text-orange-800 font-medium">
+                                    Se guardarán <strong>{importMovs.length}</strong> ingreso(s) sin actas.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+                            <button
+                                onClick={() => setShowImportPasswordModal(false)}
+                                className="px-6 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+                                disabled={isImportSaving}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => confirmImportSave(importPassword)}
+                                disabled={isImportSaving || !importPassword}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isImportSaving ? (
                                     <>
                                         <RefreshCw className="w-4 h-4 animate-spin" />
                                         Guardando...

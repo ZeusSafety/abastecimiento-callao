@@ -631,7 +631,7 @@ export default function HistorialCargaPage() {
                                 Selecciona uno de los abastecimientos guardados en el menú superior para ver el desglose completo de productos.
                             </p>
                             {state.historialAbastecimiento.length === 0 && (
-                                <div className="mt-8 inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-full text-[10px] font-black uppercase tracking-widest">
+                                <div className="mt-8 inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-widest">
                                     <AlertTriangle className="w-4 h-4" />
                                     No hay reportes disponibles
                                 </div>

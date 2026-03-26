@@ -5,6 +5,7 @@ import requests
 import logging
 import traceback
 import io
+from openpyxl import load_workbook
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
@@ -1354,6 +1355,224 @@ def get_stock_total(request, headers):
         cursor.close()
         conn.close()
 
+def importar_stock_total_excel(request, headers):
+    """
+    Importa un Excel con el mismo formato que el export de Stock Total.
+    Lee la hoja 'Inventario' y actualiza únicamente:
+    - productos_abastecimiento.cantidad_reg_calculo (columna C)
+    - stock_minimo_tienda.stock_minimo para tiendas 3006/3131/412-A/3133 (columnas D-G)
+    - existencias_tienda.cantidad para tiendas 3006/3131/412-A/3133 (columnas J-M)
+    """
+    if request.method != 'POST':
+        return bad_request_error("Método no permitido", headers)
+
+    # Espera multipart/form-data con el archivo Excel
+    file = (
+        request.files.get('file')
+        or request.files.get('archivo')
+        or request.files.get('excel')
+        or request.files.get('xlsx')
+    )
+    if not file or not getattr(file, "filename", ""):
+        return bad_request_error("Archivo Excel requerido (multipart/form-data: file)", headers)
+
+    filename_lower = (file.filename or "").lower()
+    if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".xlsm") or filename_lower.endswith(".xltx") or filename_lower.endswith(".xltm")):
+        return bad_request_error("Formato inválido. Sube un archivo .xlsx", headers)
+
+    try:
+        file_bytes = file.read()
+        if not file_bytes:
+            return bad_request_error("El archivo está vacío", headers)
+        wb = load_workbook(filename=io.BytesIO(file_bytes), data_only=True, read_only=True)
+    except Exception as e:
+        logging.error(f"Error leyendo Excel: {traceback.format_exc()}")
+        return bad_request_error(f"No se pudo leer el Excel: {str(e)}", headers)
+
+    if "Inventario" not in wb.sheetnames:
+        return bad_request_error("La hoja requerida 'Inventario' no existe en el Excel", headers)
+
+    ws = wb["Inventario"]
+
+    tiendas_col_stock_min = {
+        "3006": "D",
+        "3131": "E",
+        "412-A": "F",
+        "3133": "G",
+    }
+    tiendas_col_existencias = {
+        "3006": "J",
+        "3131": "K",
+        "412-A": "L",
+        "3133": "M",
+    }
+
+    def _to_int(value):
+        if value is None:
+            return 0
+        if isinstance(value, (int, float)):
+            try:
+                return int(value)
+            except Exception:
+                return 0
+        s = str(value).strip()
+        if s == "":
+            return 0
+        # Soportar "12.0" o "12,0"
+        s = s.replace(",", ".")
+        try:
+            return int(float(s))
+        except Exception:
+            return 0
+
+    # Permitir modo "preview" (no escribe en BD) y "aplicar" (actualiza cant_reg + stock mínimo).
+    # NOTA: las existencias NO se pisan directamente en "aplicar"; se devuelven como movimientos sugeridos
+    # para que el frontend las registre mediante ENTRADAS (con actas/contraseña).
+    modo = "aplicar_directo"
+    try:
+        raw_data = request.form.get("data") if getattr(request, "form", None) else None
+        if raw_data:
+            payload = json.loads(raw_data)
+            modo = (payload.get("modo") or payload.get("mode") or "aplicar_directo").strip().lower()
+    except Exception:
+        modo = "aplicar_directo"
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Cachear ids de tienda
+        cursor.execute("SELECT id, codigo FROM tiendas_gestion_sea WHERE codigo IN ('3006','3131','412-A','3133')")
+        tiendas_rows = cursor.fetchall() or []
+        tienda_id_por_codigo = {r["codigo"]: r["id"] for r in tiendas_rows}
+
+        faltantes_tiendas = [c for c in ["3006", "3131", "412-A", "3133"] if c not in tienda_id_por_codigo]
+        if faltantes_tiendas:
+            return server_error(f"No existen tiendas en BD: {', '.join(faltantes_tiendas)}", headers)
+
+        sql_upsert_stock_min = """
+            INSERT INTO stock_minimo_tienda (id_producto, id_tienda, stock_minimo)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE stock_minimo = VALUES(stock_minimo)
+        """
+
+        procesadas = 0
+        actualizadas_productos = 0
+        actualizadas_stock_min = 0
+        omitidas_sin_codigo = 0
+        omitidas_producto_no_existe = 0
+        productos_no_encontrados = []
+        movimientos_sugeridos = []
+        ajustes_negativos = []
+
+        # Encabezados ocupan 2 filas, data inicia desde fila 3
+        for row_idx in range(3, ws.max_row + 1):
+            codigo = ws[f"A{row_idx}"].value
+            if codigo is None or str(codigo).strip() == "":
+                omitidas_sin_codigo += 1
+                continue
+
+            codigo = str(codigo).strip()
+            cursor.execute(
+                """
+                SELECT p.id, p.codigo, um_reg.nombre AS unidad_medida_reg
+                FROM productos_abastecimiento p
+                JOIN unidades_medida_sea um_reg ON p.id_unidad_medida_reg = um_reg.id
+                WHERE p.codigo = %s
+                """,
+                (codigo,)
+            )
+            prod_row = cursor.fetchone()
+            if not prod_row:
+                omitidas_producto_no_existe += 1
+                if len(productos_no_encontrados) < 200:
+                    productos_no_encontrados.append(codigo)
+                continue
+
+            id_producto = int(prod_row["id"])
+            unidad_medida_reg = prod_row.get("unidad_medida_reg") or "UNIDADES"
+            procesadas += 1
+
+            # CANT. (columna C) -> cantidad_reg_calculo
+            cantidad_reg_calculo = _to_int(ws[f"C{row_idx}"].value)
+            if modo in ("aplicar", "aplicar_directo"):
+                cursor.execute(
+                    "UPDATE productos_abastecimiento SET cantidad_reg_calculo = %s WHERE id = %s",
+                    (cantidad_reg_calculo, id_producto)
+                )
+                actualizadas_productos += cursor.rowcount
+
+            # Stock mínimo por tienda (D-G)
+            if modo in ("aplicar", "aplicar_directo"):
+                for codigo_tienda, col in tiendas_col_stock_min.items():
+                    val = _to_int(ws[f"{col}{row_idx}"].value)
+                    cursor.execute(
+                        sql_upsert_stock_min,
+                        (id_producto, tienda_id_por_codigo[codigo_tienda], val)
+                    )
+                    actualizadas_stock_min += 1
+
+            # Existencias por tienda (J-M): calcular deltas para movimientos sugeridos
+            for codigo_tienda, col in tiendas_col_existencias.items():
+                nuevo_val = _to_int(ws[f"{col}{row_idx}"].value)
+                id_tienda = tienda_id_por_codigo[codigo_tienda]
+                cursor.execute(
+                    "SELECT cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+                    (id_producto, id_tienda)
+                )
+                ex_row = cursor.fetchone()
+                actual_val = int(ex_row["cantidad"]) if ex_row and ex_row.get("cantidad") is not None else 0
+                delta = int(nuevo_val) - int(actual_val)
+
+                if delta > 0:
+                    movimientos_sugeridos.append({
+                        "producto": codigo,
+                        "operacion": "OTROS",
+                        "almacen_salida": "CALLAO",
+                        "almacen_ingreso": codigo_tienda,
+                        "cantidad": delta,
+                        "unidad_medida": unidad_medida_reg,
+                        "cantidad_anterior": actual_val,
+                        "cantidad_objetivo_excel": nuevo_val,
+                    })
+                elif delta < 0:
+                    # Por requerimiento, no generamos salidas automáticamente; reportamos para revisión.
+                    ajustes_negativos.append({
+                        "producto": codigo,
+                        "tienda": codigo_tienda,
+                        "cantidad_actual": actual_val,
+                        "cantidad_excel": nuevo_val,
+                        "delta": delta,
+                    })
+
+        if modo == "preview":
+            conn.rollback()
+        else:
+            conn.commit()
+
+        return success_response(
+            data={
+                "modo": modo,
+                "hoja": "Inventario",
+                "filas_procesadas": procesadas,
+                "productos_actualizados_cant_reg": actualizadas_productos,
+                "registros_stock_minimo_upsert": actualizadas_stock_min,
+                "filas_omitidas_sin_codigo": omitidas_sin_codigo,
+                "filas_omitidas_producto_no_existe": omitidas_producto_no_existe,
+                "productos_no_encontrados_muestra": productos_no_encontrados,
+                "movimientos_entrada_sugeridos": movimientos_sugeridos,
+                "ajustes_negativos": ajustes_negativos,
+            },
+            message="Excel procesado correctamente",
+            headers=headers
+        )
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error importando Excel: {traceback.format_exc()}")
+        return server_error(f"Error importando Excel: {str(e)}", headers)
+    finally:
+        cursor.close()
+        conn.close()
+
 # --- MÓDULO HISTORIAL DE CAMBIOS ---
 def get_historial_entradas(request, headers):
     """Obtiene el historial de cambios de entradas (tabla cambios_entrada)."""
@@ -2289,6 +2508,8 @@ def abastecimiento_entra_salida_malvinas(request):
             return get_existencias(request, headers)
         elif path == '/api/stock-total' and method == 'GET':
             return get_stock_total(request, headers)  # Vista similar a la hoja "Stock Total"
+        elif path == '/api/stock-total/importar' and method == 'POST':
+            return importar_stock_total_excel(request, headers)
 
         # ==================== MÓDULO: GESTIÓN DE ACTAS ====================
         elif path == '/api/actas/entrada' and method in ['POST', 'PUT']:
