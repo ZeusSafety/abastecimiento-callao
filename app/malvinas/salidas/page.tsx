@@ -1061,11 +1061,11 @@ function ModalSalida({
                     </div>
 
                     <div className="modal-body">
-                        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
-                            <Lock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                            <Lock className="w-5 h-5 text-[#002D5A] flex-shrink-0" />
                             <div>
-                                <p className="text-sm font-semibold text-amber-900 mb-1">Contraseña de autorización requerida</p>
-                                <p className="text-xs text-amber-700">
+                                <p className="text-sm font-semibold text-[#002D5A] mb-1">Contraseña de autorización requerida</p>
+                                <p className="text-xs text-blue-700">
                                     Se valida contra la contraseña dinámica del sistema.
                                 </p>
                             </div>

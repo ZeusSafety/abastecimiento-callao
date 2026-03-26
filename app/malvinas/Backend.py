@@ -1341,13 +1341,13 @@ def get_stock_total(request, headers):
             # Stock Detallado: Cajas, Medida
             cantidad_reg = row['cantidad_reg_calculo'] if row['cantidad_reg_calculo'] and row['cantidad_reg_calculo'] > 0 else 1
             disponibles = row['disponibles']
-            # Cajas = REDONDEAR.MAS(disponibles / cantidad_reg) -> En Python, es math.ceil (redondea hacia arriba)
-            # Si la división da 11.1, 11.2, etc., se redondea a 12
-            import math
-            cajas = math.ceil(disponibles / cantidad_reg) if cantidad_reg else 0
+
+            # Truncar hacia abajo en cajas (2.90 -> 2), mostrando entero.
+            cajas = int(disponibles // cantidad_reg) if cantidad_reg else 0
             row['stock_detallado_cajas'] = cajas
-            # Medida = (Cajas * cantidad_reg) - disponibles
-            row['stock_detallado_medida'] = (cajas * cantidad_reg) - disponibles
+
+            # Medida = disponibles - (cajas * cantidad_reg)
+            row['stock_detallado_medida'] = disponibles - (cajas * cantidad_reg)
             row['stock_detallado_unidad_medida'] = row['unidad_medida_reg']  # Usa la misma UM
 
         return success_response(data=resultados, message="Stock total obtenido correctamente", headers=headers)

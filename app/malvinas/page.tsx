@@ -349,8 +349,10 @@ export default function StockTotalPage() {
             const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
             const stockGlobalMin = TIENDAS.reduce((acc, t) => acc + (stockMin[t] || 0), 0);
             const disponibles = TIENDAS.reduce((acc, t) => acc + (p.existencia[t] || 0), 0);
-            const cajas = cantidadReg > 0 ? Math.ceil(disponibles / cantidadReg) : 0;
-            const medida = (cajas * cantidadReg) - disponibles;
+            // Cajas se trunca hacia abajo (2.90 -> 2).
+            const cajas = cantidadReg > 0 ? Math.floor(disponibles / cantidadReg) : 0;
+            // Medida = disponibles - (cajas * cant.)
+            const medida = disponibles - (cajas * cantidadReg);
 
             return [
                 p.codigo,
@@ -368,7 +370,7 @@ export default function StockTotalPage() {
                 p.existencia['TIENDA 3133'] || 0,
                 disponibles,
                 cajas,
-                Math.abs(medida),
+                medida,
                 p.unidadMedidaRegCalculo,
             ];
         });
@@ -526,7 +528,7 @@ export default function StockTotalPage() {
                                 <button
                                     onClick={handleConfirmAllClick}
                                     disabled={isSaving}
-                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[11px] bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-md text-[11px] bg-gradient-to-r from-[#002D5A] to-[#003d7a] hover:from-[#001f3d] hover:to-[#002D5A] text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
                                 >
                                     <Check className="w-4 h-4" />
                                     <span>Confirmar Todo</span>
@@ -597,7 +599,7 @@ export default function StockTotalPage() {
                             <button
                                 onClick={handleImportExcelClick}
                                 disabled={isImportingPreview || isLoading}
-                                className="px-5 py-2.5 text-sm font-bold text-white bg-blue-600 border border-blue-600 rounded-2xl hover:bg-blue-700 transition-all flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-60"
+                                className="px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-60"
                             >
                                 <Upload className={`w-4 h-4 ${isImportingPreview ? 'animate-pulse' : ''}`} />
                                 <span className="hidden sm:inline uppercase tracking-wider text-[10px]">
@@ -678,9 +680,8 @@ export default function StockTotalPage() {
                                                 acc + p.existencia[t], 0
                                             );
                                             const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
-                                            // Redondear hacia arriba: si es 11.1, 11.2, etc., se redondea a 12
-                                            const cajas = cantidadReg > 0 ? Math.ceil(disponibles / cantidadReg) : 0;
-                                            const medida = (cajas * cantidadReg) - disponibles;
+                                            const cajas = cantidadReg > 0 ? Math.floor(disponibles / cantidadReg) : 0;
+                                            const medida = disponibles - (cajas * cantidadReg);
                                             
                                             return (
                                                 <tr
@@ -755,7 +756,7 @@ export default function StockTotalPage() {
                                                     <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{disponibles}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]">{cajas}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: medida < 0 ? '#dc2626' : '#22c55e' }}>
-                                                        {Math.abs(medida)}
+                                                        {medida}
                                                     </td>
                                                     <td className="px-4 py-3 text-center text-[9px] text-gray-400 font-medium whitespace-nowrap uppercase">
                                                         {p.unidadMedidaRegCalculo}
@@ -852,7 +853,7 @@ export default function StockTotalPage() {
                             <button
                                 onClick={handleConfirmAll}
                                 disabled={isSaving || !password}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#002D5A] to-[#003d7a] hover:from-[#001f3d] hover:to-[#002D5A] text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isSaving ? (
                                     <>
