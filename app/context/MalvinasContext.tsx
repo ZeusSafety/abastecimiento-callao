@@ -5,15 +5,49 @@ import * as api from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type UnidadMedida = 'DOCENAS' | 'DECENAS' | 'UNIDADES' | 'CAJITAS' | 'BOLSITAS';
-export type Tienda = 'TIENDA 3006' | 'TIENDA 3131' | 'TIENDA 412-A' | 'TIENDA 3133';
+/** Códigos en BD: OFICINA, CALLAO-1, CALLAO-2 (`tiendas_gestion_sea_callao`). */
+export type Tienda = 'TIENDA OFICINA' | 'TIENDA CALLAO-1' | 'TIENDA CALLAO-2';
+/** Incluye `ALMACEN CALLAO` solo por compatibilidad con histórico (API CALLAO). */
 export type AlmacenCompleto = 'ALMACEN CALLAO' | 'ALMACEN MALVINAS' | Tienda;
 
-export const TIENDAS: Tienda[] = ['TIENDA 3006', 'TIENDA 3131', 'TIENDA 412-A', 'TIENDA 3133'];
+export const TIENDAS: Tienda[] = ['TIENDA OFICINA', 'TIENDA CALLAO-1', 'TIENDA CALLAO-2'];
+
+/** Tiendas mostradas en la tabla Inventario Callao (3 columnas: Stock mínimo y Existencia). */
+export const TIENDAS_VISTA_INVENTARIO_CALLAO: ReadonlyArray<{ tienda: Tienda; etiqueta: string }> = [
+  { tienda: 'TIENDA OFICINA', etiqueta: 'Oficina' },
+  { tienda: 'TIENDA CALLAO-1', etiqueta: 'Callao 1' },
+  { tienda: 'TIENDA CALLAO-2', etiqueta: 'Callao 2' },
+];
+
+/** Destino (entrada) y almacén (salida) en modales: OFICINA, CALLAO 1, CALLAO 2. */
+export const TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO: ReadonlyArray<{ tienda: Tienda; label: string }> = [
+  { tienda: 'TIENDA OFICINA', label: 'OFICINA' },
+  { tienda: 'TIENDA CALLAO-1', label: 'CALLAO 1' },
+  { tienda: 'TIENDA CALLAO-2', label: 'CALLAO 2' },
+];
+
+export function etiquetaTiendaMovimientosCallao(t: Tienda): string {
+  return TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.find(x => x.tienda === t)?.label ?? t;
+}
+
+/** Origen en "Registrar entrada": MALVINAS, OFICINA, CALLAO-1, CALLAO-2 (API). */
+export const ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO: ReadonlyArray<{ value: AlmacenCompleto; label: string }> = [
+  { value: 'ALMACEN MALVINAS', label: 'ALMACEN MALVINAS' },
+  { value: 'TIENDA OFICINA', label: 'OFICINA' },
+  { value: 'TIENDA CALLAO-1', label: 'CALLAO 1' },
+  { value: 'TIENDA CALLAO-2', label: 'CALLAO 2' },
+];
+
+export function etiquetaOrigenAlmacenSalidaEntrada(a: AlmacenCompleto): string {
+  const row = ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.find(o => o.value === a);
+  if (row) return row.label;
+  if (a === 'ALMACEN CALLAO') return 'ALMACEN CALLAO';
+  return a;
+}
+
 export const OPERADORES = ['Manuel', 'Victor', 'Jose', 'Jhonsom'];
 export const REGISTRADORES = ['Manuel', 'Jose', 'Kimberly', 'Hervin', 'Victor', 'Alvaro'];
 export const UNIDADES: UnidadMedida[] = ['DOCENAS', 'DECENAS', 'UNIDADES', 'CAJITAS', 'BOLSITAS'];
-export const ALMACENES_COMPLETO: AlmacenCompleto[] = ['ALMACEN CALLAO', 'ALMACEN MALVINAS', 'TIENDA 3006', 'TIENDA 3131', 'TIENDA 412-A', 'TIENDA 3133'];
-
 export const OPS_ENTRADA = ['TRASLADO', 'DEVOLUCION', 'CAMBIO', 'MERMA', 'REPOSICION', 'OTROS'] as const;
 export const OPS_SALIDA = ['VENTA', 'TRASLADO', 'DEVOLUCION', 'CAMBIO', 'REPOSICION', 'MERMA', 'VERIFICACION', 'OTROS'] as const;
 
@@ -62,22 +96,43 @@ const UNIDAD_MEDIDA_REVERSE_MAP: Record<UnidadMedida, number> = {
 // ─── Mapeo de Tiendas ────────────────────────────────────────────────────────
 function getTiendaFromCodigo(codigo: string): Tienda | null {
   const map: Record<string, Tienda> = {
-    '3006': 'TIENDA 3006',
-    '3131': 'TIENDA 3131',
-    '412-A': 'TIENDA 412-A',
-    '3133': 'TIENDA 3133',
+    OFICINA: 'TIENDA OFICINA',
+    'CALLAO-1': 'TIENDA CALLAO-1',
+    'CALLAO-2': 'TIENDA CALLAO-2',
+    // Compatibilidad lectura histórica
+    '3006': 'TIENDA OFICINA',
+    '3131': 'TIENDA CALLAO-1',
+    '412-A': 'TIENDA CALLAO-2',
   };
   return map[codigo] || null;
 }
 
-function getCodigoFromTienda(tienda: Tienda): string {
+export function getCodigoFromTienda(tienda: Tienda): string {
   const map: Record<Tienda, string> = {
-    'TIENDA 3006': '3006',
-    'TIENDA 3131': '3131',
-    'TIENDA 412-A': '412-A',
-    'TIENDA 3133': '3133',
+    'TIENDA OFICINA': 'OFICINA',
+    'TIENDA CALLAO-1': 'CALLAO-1',
+    'TIENDA CALLAO-2': 'CALLAO-2',
   };
   return map[tienda];
+}
+
+export function getCodigoAlmacenSalidaEntrada(a: AlmacenCompleto): string {
+  if (a === 'ALMACEN CALLAO') return 'CALLAO';
+  if (a === 'ALMACEN MALVINAS') return 'MALVINAS';
+  return getCodigoFromTienda(a as Tienda);
+}
+
+export function resolveAlmacenSalidaEntradaDesdeApi(codigo: string, nombre: string | null | undefined): AlmacenCompleto {
+  const c = (codigo || '').trim().toUpperCase();
+  if (c === 'MALVINAS') return 'ALMACEN MALVINAS';
+  if (c === 'CALLAO') return 'ALMACEN MALVINAS';
+  const t = getTiendaFromCodigo(c);
+  if (t) return t;
+  const nom = nombre || '';
+  if (TIENDAS.includes(nom as Tienda)) return nom as Tienda;
+  const nu = nom.toUpperCase();
+  if (nu.includes('MALVINAS')) return 'ALMACEN MALVINAS';
+  return 'ALMACEN MALVINAS';
 }
 
 export interface Producto {
@@ -91,10 +146,17 @@ export interface Producto {
   // Reg Calculo
   cantidadRegCalculo: number;
   unidadMedidaRegCalculo: UnidadMedida;
+  /** id `unidades_medida_sea_callao` para UM de reg. cálculo (guardar abastecimiento, etc.). */
+  idUnidadMedidaReg?: number;
   // Stock mínimo por tienda
   stockMinimo: Record<Tienda, number>;
   // Existencia actual por tienda
   existencia: Record<Tienda, number>;
+}
+
+/** id en `unidades_medida_sea_callao` para la UM de reg. cálculo del producto. */
+export function resolveIdUnidadMedidaReg(producto: Producto): number {
+  return producto.idUnidadMedidaReg ?? UNIDAD_MEDIDA_REVERSE_MAP[producto.unidadMedidaRegCalculo];
 }
 
 export interface RegistroEntrada {
@@ -237,30 +299,27 @@ function convertirProductoDB(productoDB: api.ProductoDB, stockTotal?: api.StockT
 
   // Obtener stock mínimo y existencia del stockTotal si está disponible
   let stockMinimo: Record<Tienda, number> = {
-    'TIENDA 3006': 0,
-    'TIENDA 3131': 0,
-    'TIENDA 412-A': 0,
-    'TIENDA 3133': 0,
+    'TIENDA OFICINA': 0,
+    'TIENDA CALLAO-1': 0,
+    'TIENDA CALLAO-2': 0,
   };
   let existencia: Record<Tienda, number> = {
-    'TIENDA 3006': 0,
-    'TIENDA 3131': 0,
-    'TIENDA 412-A': 0,
-    'TIENDA 3133': 0,
+    'TIENDA OFICINA': 0,
+    'TIENDA CALLAO-1': 0,
+    'TIENDA CALLAO-2': 0,
   };
 
   if (stockTotal) {
+    const st = stockTotal;
     stockMinimo = {
-      'TIENDA 3006': stockTotal.sm_3006 || 0,
-      'TIENDA 3131': stockTotal.sm_3131 || 0,
-      'TIENDA 412-A': stockTotal.sm_412a || 0,
-      'TIENDA 3133': stockTotal.sm_3133 || 0,
+      'TIENDA OFICINA': st.sm_oficina ?? 0,
+      'TIENDA CALLAO-1': st.sm_callao1 ?? 0,
+      'TIENDA CALLAO-2': st.sm_callao2 ?? 0,
     };
     existencia = {
-      'TIENDA 3006': stockTotal.existencia_3006 || 0,
-      'TIENDA 3131': stockTotal.existencia_3131 || 0,
-      'TIENDA 412-A': stockTotal.existencia_412a || 0,
-      'TIENDA 3133': stockTotal.existencia_3133 || 0,
+      'TIENDA OFICINA': st.existencia_oficina ?? 0,
+      'TIENDA CALLAO-1': st.existencia_callao1 ?? 0,
+      'TIENDA CALLAO-2': st.existencia_callao2 ?? 0,
     };
   }
 
@@ -273,23 +332,23 @@ function convertirProductoDB(productoDB: api.ProductoDB, stockTotal?: api.StockT
     cantidadUnidadesCaja: productoDB.cantidad_unidades_caja || 0,
     cantidadRegCalculo: productoDB.cantidad_reg_calculo || 1,
     unidadMedidaRegCalculo: unidadMedidaReg as UnidadMedida,
+    idUnidadMedidaReg: productoDB.id_unidad_medida_reg,
     stockMinimo,
     existencia,
   };
 }
 
 function convertirEntradaDB(entradaDB: api.EntradaDB, productos: Producto[]): RegistroEntrada {
-  // Validar que tienda_salida_nombre existe y es un string
-  const tiendaSalidaNombre = entradaDB.tienda_salida_nombre || entradaDB.tienda_salida_codigo || '';
-  const almacenSalida: AlmacenCompleto = tiendaSalidaNombre && typeof tiendaSalidaNombre === 'string' && tiendaSalidaNombre.includes('ALMACEN')
-    ? (tiendaSalidaNombre as AlmacenCompleto)
-    : (tiendaSalidaNombre as Tienda) || 'ALMACEN CALLAO';
+  const almacenSalida = resolveAlmacenSalidaEntradaDesdeApi(
+    entradaDB.tienda_salida_codigo || '',
+    entradaDB.tienda_salida_nombre
+  );
   
   const almacenIngreso: Tienda = (getTiendaFromCodigo(entradaDB.tienda_ingreso_codigo) || 
     (entradaDB.tienda_ingreso_nombre && TIENDAS.includes(entradaDB.tienda_ingreso_nombre as Tienda) 
       ? entradaDB.tienda_ingreso_nombre as Tienda 
       : null) || 
-    'TIENDA 3006') as Tienda;
+    'TIENDA OFICINA') as Tienda;
 
   // Buscar producto por código o nombre
   const producto = productos.find(p => 
@@ -327,7 +386,7 @@ function convertirSalidaDB(salidaDB: api.SalidaDB, productos: Producto[]): Regis
     (salidaDB.tienda_nombre && TIENDAS.includes(salidaDB.tienda_nombre as Tienda) 
       ? salidaDB.tienda_nombre as Tienda 
       : null) || 
-    'TIENDA 3006') as Tienda;
+    'TIENDA OFICINA') as Tienda;
 
   // Buscar producto por código o nombre
   const producto = productos.find(p => 
@@ -562,9 +621,7 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
       const producto = state.productos.find(p => p.id === e.productoId);
       if (!producto) throw new Error('Producto no encontrado');
 
-      const almacenSalidaStr = e.almacenSalida === 'ALMACEN CALLAO' ? 'CALLAO' :
-                               e.almacenSalida === 'ALMACEN MALVINAS' ? 'MALVINAS' :
-                               getCodigoFromTienda(e.almacenSalida as Tienda);
+      const almacenSalidaStr = getCodigoAlmacenSalidaEntrada(e.almacenSalida);
 
       await api.createEntrada({
         producto: producto.codigo,
@@ -598,9 +655,7 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
       if (!producto) throw new Error('Producto no encontrado');
 
       const finalData = { ...entrada, ...data };
-      const almacenSalidaStr = finalData.almacenSalida === 'ALMACEN CALLAO' ? 'CALLAO' :
-                               finalData.almacenSalida === 'ALMACEN MALVINAS' ? 'MALVINAS' :
-                               getCodigoFromTienda(finalData.almacenSalida as Tienda);
+      const almacenSalidaStr = getCodigoAlmacenSalidaEntrada(finalData.almacenSalida);
 
       await api.updateEntrada(parseInt(id), {
         producto: producto.codigo,
@@ -729,10 +784,9 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
           cantidad: item.cantidad,
           unidadMedida: item.unidad_medida as UnidadMedida,
           tiendas: {
-            'TIENDA 3006': item.cant_tienda_3006,
-            'TIENDA 3131': item.cant_tienda_3131,
-            'TIENDA 412-A': item.cant_tienda_412a,
-            'TIENDA 3133': item.cant_tienda_3133,
+            'TIENDA OFICINA': item.cant_almacen_oficina ?? 0,
+            'TIENDA CALLAO-1': item.cant_almacen_callao_1 ?? 0,
+            'TIENDA CALLAO-2': item.cant_almacen_callao_2 ?? 0,
           },
           abastecerCajas: item.abastecer_cajas,
           enviar: item.enviar as 'SI' | 'NO',
@@ -759,10 +813,11 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
 
         return {
           codigo: item.codigo,
-          cant_tienda_3006: Math.max(0, item.tiendas['TIENDA 3006']),
-          cant_tienda_3131: Math.max(0, item.tiendas['TIENDA 3131']),
-          cant_tienda_412a: Math.max(0, item.tiendas['TIENDA 412-A']),
-          cant_tienda_3133: Math.max(0, item.tiendas['TIENDA 3133']),
+          cantidad_reg_calculo: producto.cantidadRegCalculo,
+          id_unidad_medida: resolveIdUnidadMedidaReg(producto),
+          cant_almacen_oficina: Math.max(0, item.tiendas['TIENDA OFICINA']),
+          cant_almacen_callao_1: Math.max(0, item.tiendas['TIENDA CALLAO-1']),
+          cant_almacen_callao_2: Math.max(0, item.tiendas['TIENDA CALLAO-2']),
           abastecer_cajas: item.abastecerCajas,
           enviar: item.enviar,
         };

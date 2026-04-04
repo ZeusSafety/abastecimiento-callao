@@ -10,8 +10,8 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Zeus Safety | Sistema Malvinas",
-  description: "Sistema de gestión de entradas, salidas y abastecimiento - Almacén Malvinas",
+  title: "Zeus Safety | Sistema Callao",
+  description: "Sistema de gestión de entradas, salidas y abastecimiento - Almacén Callao",
 };
 
 export default function RootLayout({

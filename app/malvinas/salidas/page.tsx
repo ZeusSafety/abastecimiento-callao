@@ -4,6 +4,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
     useMalvinas,
     TIENDAS,
+    TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO,
+    getCodigoFromTienda,
+    etiquetaTiendaMovimientosCallao,
     REGISTRADORES,
     OPS_SALIDA,
     RegistroSalida,
@@ -41,7 +44,7 @@ function ModalSalida({
         asesor: editData?.asesor ?? '',
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
-        almacen: (editData?.almacen ?? 'TIENDA 3006') as Tienda,
+        almacen: (editData?.almacen ?? 'TIENDA OFICINA') as Tienda,
         entregado: editData?.entregado ?? '',
         registradoPor: editData?.registradoPor ?? REGISTRADORES[0],
         observaciones: editData?.observaciones ?? '',
@@ -88,7 +91,7 @@ function ModalSalida({
                 asesor: '',
                 cantidad: 0,
                 unidadMedida: 'DOCENAS' as UnidadMedida,
-                almacen: 'TIENDA 3006',
+                almacen: 'TIENDA OFICINA',
                 entregado: '',
                 registradoPor: REGISTRADORES[0],
                 observaciones: '',
@@ -276,7 +279,7 @@ function ModalSalida({
             const prod = state.productos.find(pr => pr.id === p.productoId);
             if (!prod) throw new Error(`Producto ${p.productoId} no encontrado`);
 
-            const almacenStr = p.almacen.replace('TIENDA ', '');
+            const almacenStr = getCodigoFromTienda(p.almacen);
 
             return {
                 producto: prod.codigo,
@@ -458,7 +461,7 @@ function ModalSalida({
                         {selectedProducto && (
                             <div className="col-span-2">
                                 <label className="form-label">Existencia Almacén</label>
-                                <div className="grid grid-cols-4 gap-2">
+                                <div className="grid grid-cols-3 gap-2">
                                     {TIENDAS.map(tienda => {
                                         const existencia = selectedProducto.existencia[tienda] || 0;
                                         const stockMinimo = selectedProducto.stockMinimo[tienda] || 0;
@@ -473,7 +476,7 @@ function ModalSalida({
                                                 }`}
                                             >
                                                 <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
-                                                    {tienda.replace('TIENDA ', '')}
+                                                    {etiquetaTiendaMovimientosCallao(tienda)}
                                                 </div>
                                                 <div className={`text-lg font-black ${bajoStock ? 'text-red-700' : 'text-blue-700'}`}>
                                                     {existencia}
@@ -595,7 +598,9 @@ function ModalSalida({
                                     className="form-input"
                                     style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                 >
-                                    {TIENDAS.map(t => <option key={t}>{t}</option>)}
+                                    {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
+                                        <option key={tienda} value={tienda}>{label}</option>
+                                    ))}
                                 </select>
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
@@ -825,12 +830,14 @@ function ModalSalida({
                                                                                 style={{ paddingRight: 20, appearance: 'none' }}
                                                                                 onClick={e => e.stopPropagation()}
                                                                             >
-                                                                                {TIENDAS.map(t => <option key={t}>{t}</option>)}
+                                                                                {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
+                                                                                    <option key={tienda} value={tienda}>{label}</option>
+                                                                                ))}
                                                                             </select>
                                                                             <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
                                                                         </div>
                                                                     ) : (
-                                                                        <span className="text-[10px] text-gray-700">{p.almacen}</span>
+                                                                        <span className="text-[10px] text-gray-700">{etiquetaTiendaMovimientosCallao(p.almacen)}</span>
                                                                     )}
                                                                 </td>
                                                                 {/* Acción */}

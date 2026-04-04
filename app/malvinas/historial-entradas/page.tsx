@@ -7,7 +7,9 @@ import {
     OPERADORES,
     REGISTRADORES,
     OPS_ENTRADA,
-    ALMACENES_COMPLETO,
+    ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO,
+    TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO,
+    etiquetaTiendaMovimientosCallao,
     RegistroEntrada,
     Tienda,
     AlmacenCompleto,
@@ -61,8 +63,8 @@ function ModalEntrada({
         producto: editData?.producto ?? '',
         operacion: editData?.operacion ?? OPS_ENTRADA[0],
         operacionPersonalizada: '',
-        almacenSalida: (editData?.almacenSalida ?? 'ALMACEN CALLAO') as AlmacenCompleto,
-        almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA 3006') as Tienda,
+        almacenSalida: (editData?.almacenSalida ?? 'ALMACEN MALVINAS') as AlmacenCompleto,
+        almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA OFICINA') as Tienda,
         operador: editData?.operador ?? OPERADORES[0],
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
@@ -197,7 +199,7 @@ function ModalEntrada({
                                 <label className="form-label" style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6 }}>
                                     Existencia Almacén
                                 </label>
-                                <div className="grid grid-cols-4 gap-2">
+                                <div className="grid grid-cols-3 gap-2">
                                     {TIENDAS.map(tienda => {
                                         const existencia = selectedProducto.existencia[tienda] || 0;
                                         const stockMinimo = selectedProducto.stockMinimo[tienda] || 0;
@@ -210,7 +212,7 @@ function ModalEntrada({
                                                 }`}
                                             >
                                                 <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
-                                                    {tienda.replace('TIENDA ', '')}
+                                                    {etiquetaTiendaMovimientosCallao(tienda)}
                                                 </div>
                                                 <div className={`text-lg font-black ${bajoStock ? 'text-red-700' : 'text-blue-700'}`}>
                                                     {existencia}
@@ -255,7 +257,9 @@ function ModalEntrada({
                                 onChange={e => setForm(f => ({ ...f, almacenSalida: e.target.value as AlmacenCompleto }))}
                                 className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
                             >
-                                {ALMACENES_COMPLETO.map(a => <option key={a}>{a}</option>)}
+                                {ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => (
+                                    <option key={value} value={value}>{label}</option>
+                                ))}
                             </select>
                         </div>
                         <div>
@@ -265,7 +269,9 @@ function ModalEntrada({
                                 onChange={e => setForm(f => ({ ...f, almacenIngreso: e.target.value as Tienda }))}
                                 className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
                             >
-                                {TIENDAS.map(t => <option key={t}>{t}</option>)}
+                                {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
+                                    <option key={tienda} value={tienda}>{label}</option>
+                                ))}
                             </select>
                         </div>
                         <div>

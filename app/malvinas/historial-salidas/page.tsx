@@ -4,6 +4,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
     useMalvinas,
     TIENDAS,
+    TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO,
+    etiquetaTiendaMovimientosCallao,
     REGISTRADORES,
     OPS_SALIDA,
     RegistroSalida,
@@ -62,7 +64,7 @@ function ModalSalida({
         asesor: editData?.asesor ?? '',
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
-        almacen: (editData?.almacen ?? 'TIENDA 3006') as Tienda,
+        almacen: (editData?.almacen ?? 'TIENDA OFICINA') as Tienda,
         entregado: editData?.entregado ?? '',
         registradoPor: editData?.registradoPor ?? REGISTRADORES[0],
         observaciones: editData?.observaciones ?? '',
@@ -193,7 +195,7 @@ function ModalSalida({
                                 <label className="form-label" style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6 }}>
                                     Existencia Almacén
                                 </label>
-                                <div className="grid grid-cols-4 gap-2">
+                                <div className="grid grid-cols-3 gap-2">
                                     {TIENDAS.map(tienda => {
                                         const existencia = selectedProducto.existencia[tienda] || 0;
                                         const stockMinimo = selectedProducto.stockMinimo[tienda] || 0;
@@ -206,7 +208,7 @@ function ModalSalida({
                                                 }`}
                                             >
                                                 <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
-                                                    {tienda.replace('TIENDA ', '')}
+                                                    {etiquetaTiendaMovimientosCallao(tienda)}
                                                 </div>
                                                 <div className={`text-lg font-black ${bajoStock ? 'text-red-700' : 'text-blue-700'}`}>
                                                     {existencia}
@@ -251,7 +253,9 @@ function ModalSalida({
                                 onChange={e => setForm(f => ({ ...f, almacen: e.target.value as Tienda }))}
                                 className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
                             >
-                                {TIENDAS.map(t => <option key={t}>{t}</option>)}
+                                {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
+                                    <option key={tienda} value={tienda}>{label}</option>
+                                ))}
                             </select>
                         </div>
                         <div>

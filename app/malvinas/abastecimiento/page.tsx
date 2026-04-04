@@ -4,9 +4,11 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
     useMalvinas,
     TIENDAS,
+    TIENDAS_VISTA_INVENTARIO_CALLAO,
     Tienda,
     AbastecimientoRow,
     UnidadMedida,
+    resolveIdUnidadMedidaReg,
 } from '../../context/MalvinasContext';
 import * as api from '../../services/api';
 import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download, Loader2, Upload, Trash2, FileImage, Lock } from 'lucide-react';
@@ -182,10 +184,11 @@ function ModalGuardar({
 
                 return {
                     codigo: item.codigo,
-                    cant_tienda_3006: Math.max(0, item.tiendas['TIENDA 3006']),
-                    cant_tienda_3131: Math.max(0, item.tiendas['TIENDA 3131']),
-                    cant_tienda_412a: Math.max(0, item.tiendas['TIENDA 412-A']),
-                    cant_tienda_3133: Math.max(0, item.tiendas['TIENDA 3133']),
+                    cantidad_reg_calculo: producto.cantidadRegCalculo,
+                    id_unidad_medida: resolveIdUnidadMedidaReg(producto),
+                    cant_almacen_oficina: Math.max(0, item.tiendas['TIENDA OFICINA']),
+                    cant_almacen_callao_1: Math.max(0, item.tiendas['TIENDA CALLAO-1']),
+                    cant_almacen_callao_2: Math.max(0, item.tiendas['TIENDA CALLAO-2']),
                     abastecer_cajas: item.abastecerCajas,
                     enviar: item.enviar,
                 };
@@ -216,10 +219,9 @@ function ModalGuardar({
                         producto: row.nombre,
                         cantidad: row.cantidad,
                         unidadMedida: row.unidadMedida,
-                        tienda3006: row.tiendas['TIENDA 3006'],
-                        tienda3131: row.tiendas['TIENDA 3131'],
-                        tienda412A: row.tiendas['TIENDA 412-A'],
-                        tienda3133: row.tiendas['TIENDA 3133'],
+                        oficina: row.tiendas['TIENDA OFICINA'],
+                        callao1: row.tiendas['TIENDA CALLAO-1'],
+                        callao2: row.tiendas['TIENDA CALLAO-2'],
                         abastecerCajas: row.abastecerCajas,
                         enviar: row.enviar,
                     }));
@@ -228,10 +230,9 @@ function ModalGuardar({
                         { header: 'PRODUCTO', dataKey: 'producto' },
                         { header: 'CANT.', dataKey: 'cantidad' },
                         { header: 'U. MEDIDA', dataKey: 'unidadMedida' },
-                        { header: 'TIENDA 3006', dataKey: 'tienda3006' },
-                        { header: 'TIENDA 3131', dataKey: 'tienda3131' },
-                        { header: 'TIENDA 412-A', dataKey: 'tienda412A' },
-                        { header: 'TIENDA 3133', dataKey: 'tienda3133' },
+                        { header: 'OFICINA', dataKey: 'oficina' },
+                        { header: 'CALLAO 1', dataKey: 'callao1' },
+                        { header: 'CALLAO 2', dataKey: 'callao2' },
                         { header: 'ABASTECER CAJAS', dataKey: 'abastecerCajas' },
                         { header: 'ENVIAR', dataKey: 'enviar' },
                     ];
@@ -344,8 +345,8 @@ function ModalGuardar({
                                     <th>Nombre</th>
                                     <th style={{ textAlign: 'center' }}>Cantidad</th>
                                     <th>U. Medida</th>
-                                    {TIENDAS.map(t => (
-                                        <th key={t} style={{ textAlign: 'center' }}>{t}</th>
+                                    {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
+                                        <th key={tienda} style={{ textAlign: 'center' }}>{etiqueta}</th>
                                     ))}
                                     <th style={{ textAlign: 'center' }}>Abastecer Cajas</th>
                                     <th style={{ textAlign: 'center' }}>Enviar</th>
@@ -373,7 +374,7 @@ function ModalGuardar({
                                             <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.nombre}</td>
                                             <td style={{ textAlign: 'center' }}>{r.cantidad}</td>
                                             <td><span className="badge badge-entrada" style={{ fontSize: 10 }}>{r.unidadMedida}</span></td>
-                                            {TIENDAS.map(t => (
+                                            {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => (
                                                 <td key={t} style={{ textAlign: 'center' }}>
                                                     <span className={r.tiendas[t] < 0 ? 'value-negative' : r.tiendas[t] === 0 ? 'value-zero' : 'value-positive'}>
                                                         {r.tiendas[t]}
@@ -657,10 +658,9 @@ export default function AbastecimientoPage() {
                         cantidad: item.cantidad,
                         unidadMedida: item.unidad_medida as UnidadMedida,
                         tiendas: {
-                            'TIENDA 3006': item.abastecer_3006,
-                            'TIENDA 3131': item.abastecer_3131,
-                            'TIENDA 412-A': item.abastecer_412a,
-                            'TIENDA 3133': item.abastecer_3133,
+                            'TIENDA OFICINA': item.abastecer_oficina,
+                            'TIENDA CALLAO-1': item.abastecer_callao1,
+                            'TIENDA CALLAO-2': item.abastecer_callao2,
                         },
                         abastecerCajas: item.abastecer_cajas,
                         enviar: item.enviar as 'SI' | 'NO',
@@ -737,10 +737,9 @@ export default function AbastecimientoPage() {
                 producto: row.nombre,
                 cantidad: row.cantidad,
                 unidadMedida: row.unidadMedida,
-                tienda3006: row.tiendas['TIENDA 3006'],
-                tienda3131: row.tiendas['TIENDA 3131'],
-                tienda412A: row.tiendas['TIENDA 412-A'],
-                tienda3133: row.tiendas['TIENDA 3133'],
+                oficina: row.tiendas['TIENDA OFICINA'],
+                callao1: row.tiendas['TIENDA CALLAO-1'],
+                callao2: row.tiendas['TIENDA CALLAO-2'],
                 abastecerCajas: row.abastecerCajas,
                 enviar: row.enviar,
             }));
@@ -751,10 +750,9 @@ export default function AbastecimientoPage() {
                 { header: 'PRODUCTO', dataKey: 'producto' },
                 { header: 'CANT.', dataKey: 'cantidad' },
                 { header: 'U. MEDIDA', dataKey: 'unidadMedida' },
-                { header: 'TIENDA 3006', dataKey: 'tienda3006' },
-                { header: 'TIENDA 3131', dataKey: 'tienda3131' },
-                { header: 'TIENDA 412-A', dataKey: 'tienda412A' },
-                { header: 'TIENDA 3133', dataKey: 'tienda3133' },
+                { header: 'OFICINA', dataKey: 'oficina' },
+                { header: 'CALLAO 1', dataKey: 'callao1' },
+                { header: 'CALLAO 2', dataKey: 'callao2' },
                 { header: 'ABASTECER CAJAS', dataKey: 'abastecerCajas' },
                 { header: 'ENVIAR', dataKey: 'enviar' },
             ];
@@ -929,9 +927,9 @@ export default function AbastecimientoPage() {
                                     <th style={{ textAlign: 'left', padding: 10, border: '1px solid #0b2b52' }}>Producto</th>
                                     <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>Cant.</th>
                                     <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>U. Medida</th>
-                                    {TIENDAS.map(t => (
-                                        <th key={`img-${t}`} style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>
-                                            {t.replace('TIENDA ', '')}
+                                    {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
+                                        <th key={`img-${tienda}`} style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>
+                                            {etiqueta}
                                         </th>
                                     ))}
                                     <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>Abastecer Cajas</th>
@@ -948,7 +946,7 @@ export default function AbastecimientoPage() {
                                         <td style={{ padding: 10, border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 800, color: '#1d4ed8' }}>
                                             {r.unidadMedida}
                                         </td>
-                                        {TIENDAS.map(t => {
+                                        {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => {
                                             const val = r.tiendas[t];
                                             const color =
                                                 val === 0 ? '#94a3b8' : val < 0 ? '#dc2626' : '#059669';
@@ -1029,22 +1027,22 @@ export default function AbastecimientoPage() {
                                         <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a] min-w-[200px]">Producto</th>
                                         <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a] text-center">Cant.</th>
                                         <th rowSpan={2} className="px-4 py-4 border-r border-[#ffffff1a]">U. Medida</th>
-                                        <th colSpan={4} className="px-4 py-2 text-center border-b border-[#ffffff1a] bg-[#001f3d]">Abastecer por Tienda</th>
+                                        <th colSpan={3} className="px-4 py-2 text-center border-b border-[#ffffff1a] bg-[#001f3d]">Abastecer por Tienda</th>
                                         <th rowSpan={2} className="px-4 py-4 border-l border-[#ffffff1a] text-center">Abastecer Cajas</th>
                                         <th rowSpan={2} className="px-4 py-4 text-center">Enviar</th>
                                     </tr>
                                     <tr className="bg-[#001f3d] text-white">
-                                        {TIENDAS.map(t => (
-                                            <th key={t} className="px-2 py-3 text-center border-r border-[#ffffff1a] last:border-r-0">{t}</th>
+                                        {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
+                                            <th key={tienda} className="px-2 py-3 text-center border-r border-[#ffffff1a] last:border-r-0">{etiqueta}</th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 font-poppins">
                                     {loading ? (
-                                        <TableSkeleton rows={5} cols={10} />
+                                        <TableSkeleton rows={5} cols={9} />
                                     ) : filtered.length === 0 ? (
                                         <tr>
-                                            <td colSpan={10} className="px-4 py-20 text-center">
+                                            <td colSpan={9} className="px-4 py-20 text-center">
                                                 <div className="flex flex-col items-center justify-center opacity-40">
                                                     <Search className="w-12 h-12 mb-4" />
                                                     <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">
@@ -1064,7 +1062,7 @@ export default function AbastecimientoPage() {
                                                     {r.unidadMedida}
                                                 </span>
                                             </td>
-                                            {TIENDAS.map(t => (
+                                            {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => (
                                                 <td key={t} className="px-2 py-3 text-center border-r border-gray-50 text-[11px]">
                                                     {r.tiendas[t] === 0 ? (
                                                         <span className="text-gray-300">0</span>
@@ -1181,9 +1179,9 @@ export default function AbastecimientoPage() {
                                                 <th style={{ textAlign: 'left', padding: 10, border: '1px solid #0b2b52' }}>Producto</th>
                                                 <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>Cant.</th>
                                                 <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>U. Medida</th>
-                                                {TIENDAS.map(t => (
-                                                    <th key={`prev-${t}`} style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>
-                                                        {t.replace('TIENDA ', '')}
+                                                {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
+                                                    <th key={`prev-${tienda}`} style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>
+                                                        {etiqueta}
                                                     </th>
                                                 ))}
                                                 <th style={{ textAlign: 'center', padding: 10, border: '1px solid #0b2b52' }}>Abastecer Cajas</th>
@@ -1200,7 +1198,7 @@ export default function AbastecimientoPage() {
                                                     <td style={{ padding: 10, border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 800, color: '#1d4ed8' }}>
                                                         {r.unidadMedida}
                                                     </td>
-                                                    {TIENDAS.map(t => {
+                                                    {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => {
                                                         const val = r.tiendas[t];
                                                         const color =
                                                             val === 0 ? '#94a3b8' : val < 0 ? '#dc2626' : '#059669';

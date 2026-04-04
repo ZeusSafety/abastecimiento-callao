@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useMalvinas, TIENDAS, UnidadMedida } from '../../context/MalvinasContext';
+import { useMalvinas, TIENDAS_VISTA_INVENTARIO_CALLAO, UnidadMedida } from '../../context/MalvinasContext';
 import { Search } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import * as api from '../../services/api';
@@ -48,10 +48,9 @@ export default function HistorialGeneralPage() {
                         cantidad: item.cantidad,
                         unidadMedida: item.unidad_medida as UnidadMedida,
                         tiendas: {
-                            'TIENDA 3006': item.cant_tienda_3006 || 0,
-                            'TIENDA 3131': item.cant_tienda_3131 || 0,
-                            'TIENDA 412-A': item.cant_tienda_412a || 0,
-                            'TIENDA 3133': item.cant_tienda_3133 || 0,
+                            'TIENDA OFICINA': item.cant_almacen_oficina ?? 0,
+                            'TIENDA CALLAO-1': item.cant_almacen_callao_1 ?? 0,
+                            'TIENDA CALLAO-2': item.cant_almacen_callao_2 ?? 0,
                         },
                         abastecerCajas: item.abastecer_cajas || 0,
                         enviar: item.enviar as 'SI' | 'NO',
@@ -142,8 +141,8 @@ export default function HistorialGeneralPage() {
                                         <th className="px-5 py-4 border-r border-[#ffffff1a] min-w-[200px]">Producto</th>
                                         <th className="px-5 py-4 border-r border-[#ffffff1a] text-center">Cant.</th>
                                         <th className="px-5 py-4 border-r border-[#ffffff1a]">U.M</th>
-                                        {TIENDAS.map(t => (
-                                            <th key={t} className="px-2 py-4 text-center border-r border-[#ffffff1a] font-bold">{t}</th>
+                                        {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
+                                            <th key={tienda} className="px-2 py-4 text-center border-r border-[#ffffff1a] font-bold">{etiqueta}</th>
                                         ))}
                                         <th className="px-5 py-4 border-l border-[#ffffff1a] text-center">Cajas</th>
                                         <th className="px-5 py-4 text-center">Envío</th>
@@ -153,10 +152,10 @@ export default function HistorialGeneralPage() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {loading ? (
-                                        <TableSkeleton rows={5} cols={14} />
+                                        <TableSkeleton rows={5} cols={11} />
                                     ) : paginated.length === 0 ? (
                                         <tr>
-                                            <td colSpan={14} className="px-6 py-20 text-center">
+                                            <td colSpan={11} className="px-6 py-20 text-center">
                                                 <div className="flex flex-col items-center justify-center opacity-40">
                                                     <Search className="w-12 h-12 mb-4" />
                                                     <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">No se encontraron registros</p>
@@ -174,7 +173,7 @@ export default function HistorialGeneralPage() {
                                                     {r.unidadMedida}
                                                 </span>
                                             </td>
-                                            {TIENDAS.map(t => (
+                                            {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => (
                                                 <td key={t} className="px-2 py-3 text-center border-r border-gray-50/50">
                                                     <span className={`font-bold text-[10px] ${r.tiendas[t] < 0 ? 'text-red-500' : r.tiendas[t] === 0 ? 'text-gray-300' : 'text-[#002D5A]'}`}>
                                                         {r.tiendas[t]}

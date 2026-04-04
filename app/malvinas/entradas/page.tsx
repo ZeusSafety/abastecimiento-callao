@@ -7,7 +7,12 @@ import {
     OPERADORES,
     REGISTRADORES,
     OPS_ENTRADA,
-    ALMACENES_COMPLETO,
+    ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO,
+    TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO,
+    getCodigoAlmacenSalidaEntrada,
+    getCodigoFromTienda,
+    etiquetaOrigenAlmacenSalidaEntrada,
+    etiquetaTiendaMovimientosCallao,
     RegistroEntrada,
     Tienda,
     AlmacenCompleto,
@@ -145,8 +150,8 @@ function ModalEntrada({
         codigo: '', // Agregar código al estado del formulario
         operacion: editData?.operacion ?? OPS_ENTRADA[0],
         operacionPersonalizada: '',
-        almacenSalida: (editData?.almacenSalida ?? 'ALMACEN CALLAO') as AlmacenCompleto,
-        almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA 3006') as Tienda,
+        almacenSalida: (editData?.almacenSalida ?? 'ALMACEN MALVINAS') as AlmacenCompleto,
+        almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA OFICINA') as Tienda,
         operador: editData?.operador ?? OPERADORES[0],
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
@@ -192,8 +197,8 @@ function ModalEntrada({
                 codigo: '',
                 operacion: OPS_ENTRADA[0],
                 operacionPersonalizada: '',
-                almacenSalida: 'ALMACEN CALLAO',
-                almacenIngreso: 'TIENDA 3006',
+                almacenSalida: 'ALMACEN MALVINAS',
+                almacenIngreso: 'TIENDA OFICINA',
                 operador: OPERADORES[0],
                 cantidad: 0,
                 unidadMedida: 'DOCENAS' as UnidadMedida,
@@ -384,12 +389,8 @@ function ModalEntrada({
             const prod = state.productos.find(pr => pr.id === p.productoId);
             if (!prod) throw new Error(`Producto ${p.productoId} no encontrado`);
 
-            const almacenSalidaStr =
-                p.almacenSalida === 'ALMACEN CALLAO' ? 'CALLAO' :
-                p.almacenSalida === 'ALMACEN MALVINAS' ? 'MALVINAS' :
-                p.almacenSalida.replace('TIENDA ', '');
-
-            const almacenIngresoStr = p.almacenIngreso.replace('TIENDA ', '');
+            const almacenSalidaStr = getCodigoAlmacenSalidaEntrada(p.almacenSalida);
+            const almacenIngresoStr = getCodigoFromTienda(p.almacenIngreso);
 
             return {
                 producto: prod.codigo,
@@ -573,7 +574,7 @@ function ModalEntrada({
                         {selectedProducto && (
                             <div className="col-span-2">
                                 <label className="form-label">Existencia Almacén</label>
-                                <div className="grid grid-cols-4 gap-2">
+                                <div className="grid grid-cols-3 gap-2">
                                     {TIENDAS.map(tienda => {
                                         const existencia = selectedProducto.existencia[tienda] || 0;
                                         const stockMinimo = selectedProducto.stockMinimo[tienda] || 0;
@@ -588,7 +589,7 @@ function ModalEntrada({
                                                 }`}
                                             >
                                                 <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
-                                                    {tienda.replace('TIENDA ', '')}
+                                                    {etiquetaTiendaMovimientosCallao(tienda)}
                                                 </div>
                                                 <div className={`text-lg font-black ${bajoStock ? 'text-red-700' : 'text-blue-700'}`}>
                                                     {existencia}
@@ -631,7 +632,9 @@ function ModalEntrada({
                                     className="form-input"
                                     style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                 >
-                                    {ALMACENES_COMPLETO.map(a => <option key={a}>{a}</option>)}
+                                    {ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => (
+                                        <option key={value} value={value}>{label}</option>
+                                    ))}
                                 </select>
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
@@ -647,7 +650,9 @@ function ModalEntrada({
                                     className="form-input"
                                     style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                 >
-                                    {TIENDAS.map(t => <option key={t}>{t}</option>)}
+                                    {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
+                                        <option key={tienda} value={tienda}>{label}</option>
+                                    ))}
                                 </select>
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
@@ -868,12 +873,14 @@ function ModalEntrada({
                                                                                 style={{ paddingRight: 20, appearance: 'none' }}
                                                                                 onClick={e => e.stopPropagation()}
                                                                             >
-                                                                                {ALMACENES_COMPLETO.map(a => <option key={a}>{a}</option>)}
+                                                                                {ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => (
+                                                                                    <option key={value} value={value}>{label}</option>
+                                                                                ))}
                                                                             </select>
                                                                             <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
                                                                         </div>
                                                                     ) : (
-                                                                        <span className="text-[10px] text-gray-700">{p.almacenSalida}</span>
+                                                                        <span className="text-[10px] text-gray-700">{etiquetaOrigenAlmacenSalidaEntrada(p.almacenSalida)}</span>
                                                                     )}
                                                                 </td>
                                                                 {/* Ingreso */}
@@ -887,12 +894,14 @@ function ModalEntrada({
                                                                                 style={{ paddingRight: 20, appearance: 'none' }}
                                                                                 onClick={e => e.stopPropagation()}
                                                                             >
-                                                                                {TIENDAS.map(t => <option key={t}>{t}</option>)}
+                                                                                {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
+                                                                                    <option key={tienda} value={tienda}>{label}</option>
+                                                                                ))}
                                                                             </select>
                                                                             <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
                                                                         </div>
                                                                     ) : (
-                                                                        <span className="text-[10px] text-gray-700">{p.almacenIngreso}</span>
+                                                                        <span className="text-[10px] text-gray-700">{etiquetaTiendaMovimientosCallao(p.almacenIngreso)}</span>
                                                                     )}
                                                                 </td>
                                                                 {/* Cantidad */}

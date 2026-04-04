@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useMalvinas, TIENDAS } from '../../context/MalvinasContext';
+import { useMalvinas, TIENDAS_VISTA_INVENTARIO_CALLAO } from '../../context/MalvinasContext';
 import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown, Calendar, Image as ImageIcon, X, Loader2, Upload, Trash2, Lock, Eye, EyeOff, Save, AlertCircle } from 'lucide-react';
 import * as api from '../../services/api';
 
@@ -431,13 +431,13 @@ export default function HistorialCargaPage() {
                                             {selectedHistorial.fecha}
                                         </div>
                                     </div>
-                                    <div className="animate-in slide-in-from-left-8 duration-400">
+                                    <div className="animate-in slide-in-from-left-8 duration-400 min-w-0 lg:col-span-2">
                                         <label className="block text-[10px] font-black text-[#002D5A] uppercase tracking-widest mb-2 opacity-60">Registrado Por</label>
-                                        <div className="bg-white px-4 py-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-700 shadow-sm flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] text-[#002D5A]">
+                                        <div className="bg-white px-4 py-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-700 shadow-sm flex flex-nowrap items-center gap-2 overflow-x-auto">
+                                            <div className="w-6 h-6 shrink-0 rounded-full bg-blue-100 flex items-center justify-center text-[10px] text-[#002D5A]">
                                                 {selectedHistorial.registradoPor.charAt(0).toUpperCase()}
                                             </div>
-                                            {selectedHistorial.registradoPor}
+                                            <span className="whitespace-nowrap">{selectedHistorial.registradoPor}</span>
                                         </div>
                                     </div>
                                 </>
@@ -556,8 +556,8 @@ export default function HistorialCargaPage() {
                                                 <th className="px-5 py-4 border-r border-[#ffffff1a] min-w-[200px]">Producto</th>
                                                 <th className="px-5 py-4 border-r border-[#ffffff1a] text-center">Cant.</th>
                                                 <th className="px-5 py-4 border-r border-[#ffffff1a]">U. Medida</th>
-                                                {TIENDAS.map(t => (
-                                                    <th key={t} className="px-2 py-4 text-center border-r border-[#ffffff1a]">{t}</th>
+                                                {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
+                                                    <th key={tienda} className="px-2 py-4 text-center border-r border-[#ffffff1a]">{etiqueta}</th>
                                                 ))}
                                                 <th className="px-5 py-4 border-l border-[#ffffff1a] text-center">Cajas</th>
                                                 <th className="px-5 py-4 text-center">Envío</th>
@@ -566,7 +566,7 @@ export default function HistorialCargaPage() {
                                         <tbody className="divide-y divide-gray-100">
                                             {loading ? (
                                                 <tr>
-                                                    <td colSpan={7 + TIENDAS.length} className="px-6 py-20 text-center">
+                                                    <td colSpan={7 + TIENDAS_VISTA_INVENTARIO_CALLAO.length} className="px-6 py-20 text-center">
                                                         <div className="flex flex-col items-center justify-center">
                                                             <div className="w-8 h-8 border-4 border-[#002D5A] border-t-transparent rounded-full animate-spin mb-4"></div>
                                                             <p className="text-sm font-medium text-gray-500">Cargando productos...</p>
@@ -575,7 +575,7 @@ export default function HistorialCargaPage() {
                                                 </tr>
                                             ) : filtered.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan={7 + TIENDAS.length} className="px-6 py-20 text-center">
+                                                    <td colSpan={7 + TIENDAS_VISTA_INVENTARIO_CALLAO.length} className="px-6 py-20 text-center">
                                                         <div className="flex flex-col items-center justify-center opacity-40">
                                                             <Search className="w-12 h-12 mb-4" />
                                                             <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">
@@ -595,7 +595,7 @@ export default function HistorialCargaPage() {
                                                                 {r.unidadMedida}
                                                             </span>
                                                         </td>
-                                                        {TIENDAS.map(t => (
+                                                        {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => (
                                                             <td key={t} className="px-2 py-3 text-center border-r border-gray-50/50">
                                                                 <span className={`font-bold text-[10px] ${r.tiendas[t] < 0 ? 'text-red-500' : r.tiendas[t] === 0 ? 'text-gray-300' : 'text-emerald-600'}`}>
                                                                     {r.tiendas[t]}
@@ -709,11 +709,11 @@ export default function HistorialCargaPage() {
                                                         </span>
                                                     </div>
                                                     {acta.registrado_por && (
-                                                        <div className="flex items-center gap-2 text-gray-600">
-                                                            <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-[8px] font-bold text-blue-700">
+                                                        <div className="flex flex-nowrap items-center gap-2 text-gray-600 overflow-x-auto min-w-0">
+                                                            <div className="w-5 h-5 shrink-0 rounded-full bg-blue-100 flex items-center justify-center text-[8px] font-bold text-blue-700">
                                                                 {acta.registrado_por.charAt(0).toUpperCase()}
                                                             </div>
-                                                            <span>{acta.registrado_por}</span>
+                                                            <span className="whitespace-nowrap">{acta.registrado_por}</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -946,9 +946,9 @@ export default function HistorialCargaPage() {
                                             Contraseña de Autorización Requerida
                                         </p>
                                         <p className="text-xs text-amber-700">
-                                            {modoSubida === 'emergencia' 
+                                            {modoSubida === 'emergencia'
                                                 ? 'Para proceder con la subida de actas de emergencia, ingrese la contraseña de autorización.'
-                                                : 'Para proceder con la subida de actas, ingrese la contraseña de autorización.'}
+                                                : 'Use la misma contraseña que en entradas/salidas (gestión credencial). Si configuró una específica para abastecimiento, use esa.'}
                                         </p>
                                     </div>
                                 </div>

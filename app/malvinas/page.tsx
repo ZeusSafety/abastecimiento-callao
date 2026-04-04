@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { useMalvinas, TIENDAS, Tienda, Producto } from '../context/MalvinasContext';
+import { useMalvinas, TIENDAS, TIENDAS_VISTA_INVENTARIO_CALLAO, Tienda, Producto } from '../context/MalvinasContext';
 import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock, FileSpreadsheet, Upload } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
 import * as api from '../services/api';
@@ -30,8 +30,6 @@ function StockBadge({ value, min }: { value: number; min: number }) {
 const STORAGE_KEY_SELECTED = 'malvinas_inventario_selected';
 const STORAGE_KEY_EDITING = 'malvinas_inventario_editing';
 
-const PASSWORD_REQUIRED = '0427';
-
 export default function StockTotalPage() {
     const { state, refreshProductos, refreshEntradas, showToast } = useMalvinas();
     const [search, setSearch] = useState('');
@@ -54,7 +52,7 @@ export default function StockTotalPage() {
 
     const [importForm, setImportForm] = useState({
         operacion: 'OTROS',
-        almacenSalida: 'CALLAO',
+        almacenSalida: 'MALVINAS',
         operador: 'Manuel',
         entregado: 'Manuel',
         registradoPor: 'Manuel',
@@ -236,11 +234,24 @@ export default function StockTotalPage() {
         setPasswordError(false);
     };
 
-    // Validar contraseña y confirmar cambios
+    // Misma clave que movimientos sin acta (configuracion_sistema_callao.pass_movimiento_sin_acta)
     const handleConfirmAll = async () => {
-        if (password !== PASSWORD_REQUIRED) {
+        const ingresada = password.trim();
+        if (!ingresada) {
             setPasswordError(true);
-            showToast('error', 'Contraseña incorrecta');
+            showToast('error', 'Ingresa la contraseña');
+            return;
+        }
+        try {
+            const conf = await api.obtenerPasswordMovimientos();
+            if ((conf.password || '') !== ingresada) {
+                setPasswordError(true);
+                showToast('error', 'Contraseña incorrecta');
+                return;
+            }
+        } catch {
+            setPasswordError(true);
+            showToast('error', 'No se pudo validar la contraseña. Revisa la conexión.');
             return;
         }
 
@@ -310,11 +321,9 @@ export default function StockTotalPage() {
             'STOCK MINIMO',
             '',
             '',
-            '',
             'STOCK GLOBAL',
             'U. MEDIDA',
             'EXISTENCIA ALMACEN',
-            '',
             '',
             '',
             'DISPONIBLES',
@@ -327,16 +336,10 @@ export default function StockTotalPage() {
             '',
             '',
             '',
-            '3006',
-            '3131',
-            '412-A',
-            '3133',
+            ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
             '',
             '',
-            '3006',
-            '3131',
-            '412-A',
-            '3133',
+            ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
             '',
             'CAJAS',
             'MED.',
@@ -347,8 +350,14 @@ export default function StockTotalPage() {
             const editing = editingProducts.get(p.id);
             const stockMin = editing ? editing.editing.stockMinimo : p.stockMinimo;
             const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
-            const stockGlobalMin = TIENDAS.reduce((acc, t) => acc + (stockMin[t] || 0), 0);
-            const disponibles = TIENDAS.reduce((acc, t) => acc + (p.existencia[t] || 0), 0);
+            const stockGlobalMin = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
+                (acc, { tienda }) => acc + (stockMin[tienda] || 0),
+                0
+            );
+            const disponibles = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
+                (acc, { tienda }) => acc + (p.existencia[tienda] || 0),
+                0
+            );
             // Cajas se trunca hacia abajo (2.90 -> 2).
             const cajas = cantidadReg > 0 ? Math.floor(disponibles / cantidadReg) : 0;
             // Medida = disponibles - (cajas * cant.)
@@ -358,16 +367,10 @@ export default function StockTotalPage() {
                 p.codigo,
                 p.nombre,
                 cantidadReg,
-                stockMin['TIENDA 3006'] || 0,
-                stockMin['TIENDA 3131'] || 0,
-                stockMin['TIENDA 412-A'] || 0,
-                stockMin['TIENDA 3133'] || 0,
+                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => stockMin[tienda] || 0),
                 stockGlobalMin,
                 p.unidadMedidaRegCalculo,
-                p.existencia['TIENDA 3006'] || 0,
-                p.existencia['TIENDA 3131'] || 0,
-                p.existencia['TIENDA 412-A'] || 0,
-                p.existencia['TIENDA 3133'] || 0,
+                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0),
                 disponibles,
                 cajas,
                 medida,
@@ -380,25 +383,25 @@ export default function StockTotalPage() {
             { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } }, // CODIGO
             { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // PRODUCTO
             { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // CANT.
-            { s: { r: 0, c: 3 }, e: { r: 0, c: 6 } }, // STOCK MINIMO
-            { s: { r: 0, c: 7 }, e: { r: 1, c: 7 } }, // STOCK GLOBAL
-            { s: { r: 0, c: 8 }, e: { r: 1, c: 8 } }, // U. MEDIDA
-            { s: { r: 0, c: 9 }, e: { r: 0, c: 12 } }, // EXISTENCIA ALMACEN
-            { s: { r: 0, c: 13 }, e: { r: 1, c: 13 } }, // DISPONIBLES
-            { s: { r: 0, c: 14 }, e: { r: 0, c: 16 } }, // STOCK DETALLADO
+            { s: { r: 0, c: 3 }, e: { r: 0, c: 5 } }, // STOCK MINIMO
+            { s: { r: 0, c: 6 }, e: { r: 1, c: 6 } }, // STOCK GLOBAL
+            { s: { r: 0, c: 7 }, e: { r: 1, c: 7 } }, // U. MEDIDA
+            { s: { r: 0, c: 8 }, e: { r: 0, c: 10 } }, // EXISTENCIA ALMACEN
+            { s: { r: 0, c: 11 }, e: { r: 1, c: 11 } }, // DISPONIBLES
+            { s: { r: 0, c: 12 }, e: { r: 0, c: 14 } }, // STOCK DETALLADO
         ];
         ws['!cols'] = [
             { wch: 12 }, { wch: 34 }, { wch: 8 },
-            { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+            { wch: 10 }, { wch: 10 }, { wch: 10 },
             { wch: 12 }, { wch: 12 },
-            { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+            { wch: 10 }, { wch: 10 }, { wch: 10 },
             { wch: 12 },
             { wch: 8 }, { wch: 8 }, { wch: 10 },
         ];
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
-        XLSX.writeFile(wb, `Inventario_Malvinas_${new Date().toISOString().split('T')[0]}.xlsx`);
+        XLSX.writeFile(wb, `Inventario_Callao_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
     const handleImportExcelClick = () => {
@@ -469,7 +472,7 @@ export default function StockTotalPage() {
             const entradasPayload = importMovs.map(m => ({
                 producto: m.producto,
                 operacion: importForm.operacion || 'OTROS',
-                almacen_salida: importForm.almacenSalida || 'CALLAO',
+                almacen_salida: importForm.almacenSalida || 'MALVINAS',
                 almacen_ingreso: m.almacen_ingreso,
                 operador: importForm.operador,
                 cantidad: m.cantidad,
@@ -515,7 +518,7 @@ export default function StockTotalPage() {
                             </div>
                             <div>
                                 <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
-                                    Inventario Malvinas
+                                    Inventario Callao
                                 </h1>
                                 <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Vista general del stock y gestión por tienda</p>
                             </div>
@@ -625,26 +628,26 @@ export default function StockTotalPage() {
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20]">Código</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] min-w-[200px]">Producto</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">Cant.</th>
-                                        <th colSpan={4} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
+                                        <th colSpan={3} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
                                             Stock Mínimo
                                         </th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">Stock Global</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">U. Medida</th>
-                                        <th colSpan={4} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
+                                        <th colSpan={3} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
                                             Existencia Almacén
                                         </th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center bg-[#001F3D]">Disponibles</th>
                                         <th colSpan={3} className="px-4 py-2 text-center bg-[#1a4a7a]">Stock Detallado</th>
                                     </tr>
                                     <tr className="bg-[#1a4a7a] text-white border-t border-[#ffffff20]">
-                                        {TIENDAS.map(t => (
-                                            <th key={`min-${t}`} className="px-2 py-2 border-r border-[#ffffff20] text-center text-[9px]">
-                                                {t.replace('TIENDA ', '')}
+                                        {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
+                                            <th key={`min-${tienda}`} className="px-2 py-2 border-r border-[#ffffff20] text-center text-[9px]">
+                                                {etiqueta}
                                             </th>
                                         ))}
-                                        {TIENDAS.map(t => (
-                                            <th key={`ex-${t}`} className="px-2 py-2 border-r border-[#ffffff20] text-center text-[9px]">
-                                                {t.replace('TIENDA ', '')}
+                                        {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
+                                            <th key={`ex-${tienda}`} className="px-2 py-2 border-r border-[#ffffff20] text-center text-[9px]">
+                                                {etiqueta}
                                             </th>
                                         ))}
                                         <th className="px-2 py-2 border-r border-[#ffffff20] text-center">Cajas</th>
@@ -654,10 +657,10 @@ export default function StockTotalPage() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {isLoading ? (
-                                        <TableSkeleton rows={20} cols={17} />
+                                        <TableSkeleton rows={20} cols={15} />
                                     ) : filtered.length === 0 ? (
                                         <tr>
-                                            <td colSpan={17} className="px-4 py-12 text-center">
+                                            <td colSpan={15} className="px-4 py-12 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <Package className="w-12 h-12 text-gray-300" />
                                                     <p className="text-gray-400 text-sm font-medium">
@@ -672,12 +675,15 @@ export default function StockTotalPage() {
                                             const editing = editingProducts.get(p.id);
                                             const isEditing = !!editing;
                                             
-                                            const stockGlobalMin = TIENDAS.reduce((acc, t) => 
-                                                acc + (editing ? editing.editing.stockMinimo[t] : p.stockMinimo[t]), 0
+                                            const stockGlobalMin = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
+                                                (acc, { tienda: t }) =>
+                                                    acc + (editing ? editing.editing.stockMinimo[t] : p.stockMinimo[t]),
+                                                0
                                             );
                                             // Existencia siempre usa el valor original porque no se puede editar
-                                            const disponibles = TIENDAS.reduce((acc, t) => 
-                                                acc + p.existencia[t], 0
+                                            const disponibles = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
+                                                (acc, { tienda: t }) => acc + p.existencia[t],
+                                                0
                                             );
                                             const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
                                             const cajas = cantidadReg > 0 ? Math.floor(disponibles / cantidadReg) : 0;
@@ -711,7 +717,7 @@ export default function StockTotalPage() {
                                                             p.cantidadRegCalculo
                                                         )}
                                                     </td>
-                                                    {TIENDAS.map(t => (
+                                                    {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => (
                                                         <td key={`min-${t}`} className="px-2 py-3 text-center text-[11px]">
                                                             {isEditing ? (
                                                                 <input
@@ -735,7 +741,7 @@ export default function StockTotalPage() {
                                                             {p.unidadMedidaRegCalculo}
                                                         </span>
                                                     </td>
-                                                    {TIENDAS.map(t => {
+                                                    {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => {
                                                         // Calcular el stock mínimo actual (puede estar en edición)
                                                         const stockMinActual = editing ? editing.editing.stockMinimo[t] : p.stockMinimo[t];
                                                         const existenciaActual = p.existencia[t];
@@ -880,7 +886,7 @@ export default function StockTotalPage() {
                             <div>
                                 <h2 className="text-xl font-bold text-gray-900">Importar Excel - Registro de entrada</h2>
                                 <p className="text-sm text-gray-500 mt-0.5">
-                                    Se registrarán ingresos con operación <strong>OTROS</strong> desde <strong>ALMACEN CALLAO</strong>
+                                    Se registrarán ingresos con la operación elegida y el <strong>origen de salida</strong> indicado abajo (Malvinas, Oficina o Callao 1/2).
                                 </p>
                                 {importNegativos.length > 0 && (
                                     <p className="text-xs text-blue-700 mt-2 font-semibold">
@@ -925,8 +931,10 @@ export default function StockTotalPage() {
                                         onChange={e => setImportForm(f => ({ ...f, almacenSalida: e.target.value }))}
                                         className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
                                     >
-                                        <option value="CALLAO">ALMACEN CALLAO</option>
                                         <option value="MALVINAS">ALMACEN MALVINAS</option>
+                                        <option value="OFICINA">OFICINA</option>
+                                        <option value="CALLAO-1">CALLAO 1</option>
+                                        <option value="CALLAO-2">CALLAO 2</option>
                                     </select>
                                 </div>
                                 <div>

@@ -1,0 +1,351 @@
+//ESTA ES LA API QUE VAS A CONSUMIR O EL ERROR ES PORQUE NO ESTAS CONSUMIENDO ESTA ENDOPOINT?
+https://api-abastecimiento-callao-2946605267.us-central1.run.app
+
+-- TABLA TIENDAS DISPONIBLES POR ALMACEN CALLAO
+--
+CREATE TABLE tiendas_gestion_sea_callao (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    codigo      VARCHAR(20)  NOT NULL UNIQUE,  -- 'OFICINA', 'CALLAO 1 (MONICA)', 'CALLAO 2 (NUEVO)'
+    nombre      VARCHAR(100) NOT NULL,          -- 'OFICINA', etc.
+    es_almacen  TINYINT(1)   NOT NULL DEFAULT 0, 
+    activo      TINYINT(1)   NOT NULL DEFAULT 1
+);
+select * from tiendas_gestion_sea_callao;
+--
+INSERT INTO tiendas_gestion_sea_callao (codigo, nombre, es_almacen) VALUES
+('MALVINAS','ALMACEN MALVINAS',1),
+('OFICINA', 'OFICINA', 0),
+('CALLAO-1', 'CALLAO 1', 0), -- CALLAO 1 (MONICA)
+('CALLAO-2', 'CALLAO 2', 0);
+--
+
+--
+-- TABLA DE UNIDAD DE MEDIDA DISPONIBLES
+--
+CREATE TABLE unidades_medida_sea_callao (
+    id     INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(20) NOT NULL UNIQUE  -- DOCENAS, DECENAS, UNIDADES, CAJITAS, BOLSITAS
+);
+Select * from unidades_medida_sea_callao;
+--
+INSERT INTO unidades_medida_sea_callao (nombre) VALUES
+('DOCENAS'),('DECENAS'),('UNIDADES'),('CAJITAS'),('BOLSITAS');
+
+-- 
+-- TABLA PRODUCTOS PARA ABASTECIMIENTO CALLAO
+-- 
+CREATE TABLE IF NOT EXISTS productos_abastecimiento_callao (
+     id                      INT     NOT NULL AUTO_INCREMENT,
+     codigo                  VARCHAR(30)      NOT NULL,
+     nombre                  VARCHAR(200)     NOT NULL,
+     -- Sección INFORMACIÓN
+     cantidad_en_caja        INT,
+     id_unidad_medida_info   INT      NOT NULL,
+     cantidad_unidades_caja  INT,
+     -- Sección REG. CÁLCULO
+     cantidad_reg_calculo    INT,        
+     id_unidad_medida_reg    INT      NOT NULL,        
+     activo                  TINYINT(1)       NOT NULL DEFAULT 1,
+     PRIMARY KEY (id),
+     UNIQUE KEY uq_productos_codigo (codigo),
+     KEY idx_productos_nombre (nombre),
+     CONSTRAINT fk_prod_callao_um_info FOREIGN KEY (id_unidad_medida_info) REFERENCES unidades_medida_sea_callao(id),
+     CONSTRAINT fk_prod_callao_um_reg  FOREIGN KEY (id_unidad_medida_reg)  REFERENCES unidades_medida_sea_callao(id)
+ ) ENGINE=InnoDB COMMENT='Catálogo maestro de productos para Callao';
+
+ -- TABLA PARA DETERMINAR EL STOCK MINIMO CALLAO
+CREATE TABLE IF NOT EXISTS stock_minimo_almacen_callao (
+    id              INT 	      NOT NULL AUTO_INCREMENT,
+    id_producto     INT   		  NOT NULL,
+    id_tienda       INT           NOT NULL,
+    stock_minimo    INT NOT NULL DEFAULT 0
+        COMMENT 'Cantidad mínima requerida según UM del producto',
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_stock_min (id_producto, id_tienda),
+    CONSTRAINT fk_smt_callao_producto FOREIGN KEY (id_producto) REFERENCES productos_abastecimiento_callao(id) ON DELETE CASCADE,
+    CONSTRAINT fk_smt_callao_tienda   FOREIGN KEY (id_tienda)   REFERENCES tiendas_gestion_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Stock mínimo por producto para alamcenes de callao';
+--
+select * from stock_minimo_almacen_callao;
+--
+-- TABLA SECCION EXISTENCIAS DE LOS ALAMACENES CALLAO
+--
+CREATE TABLE IF NOT EXISTS existencias_almacen_callao (
+    id          INT   		  NOT NULL AUTO_INCREMENT,
+    id_producto INT   		  NOT NULL,
+    id_tienda   INT           NOT NULL,
+    cantidad    INT 		  NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_existencias (id_producto, id_tienda),
+    CONSTRAINT fk_ext_callao_producto FOREIGN KEY (id_producto) REFERENCES productos_abastecimiento_callao(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ext_callao_tienda   FOREIGN KEY (id_tienda)   REFERENCES tiendas_gestion_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Stock actual por producto para almacenes de Callao';
+--
+select * from existencias_almacen_callao;
+--
+-- TABLA TIPOS DE OPERACION CALLAO (ENTRADA/SALIDA)
+--
+CREATE TABLE IF NOT EXISTS tipos_operacion_sea_callao (
+    id     INT  NOT NULL AUTO_INCREMENT,
+    nombre VARCHAR(30)      NOT NULL,
+    tipo   ENUM('ENTRADA','SALIDA') NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_op_nombre_tipo_callao (nombre, tipo)
+) ENGINE=InnoDB;
+--
+Select * from tipos_operacion_sea_callao;
+--
+INSERT INTO tipos_operacion_sea_callao (nombre, tipo) VALUES
+('TRASLADO',    'ENTRADA'),
+('DEVOLUCION',  'ENTRADA'),
+('CAMBIO',      'ENTRADA'),
+('MERMA',       'ENTRADA'),
+('REPOSICION',  'ENTRADA'),
+('OTROS',  'ENTRADA'),
+('VENTA',       'SALIDA'),
+('TRASLADO',    'SALIDA'),
+('DEVOLUCION',  'SALIDA'),
+('CAMBIO',      'SALIDA'),
+('REPOSICION',  'SALIDA'),
+('MERMA',       'SALIDA'),
+('VERIFICACION','SALIDA'),
+('OTROS',  'SALIDA');
+
+--
+-- TABLA MOVIMIENTOS DE ENTRADA CALLAO
+--
+CREATE TABLE IF NOT EXISTS movimientos_entrada_callao (
+    id                  INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    fecha_registro      DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_producto         INT              NOT NULL,
+    id_tipo_operacion   INT              NOT NULL,
+    id_tienda_salida    INT              NOT NULL  COMMENT 'Almacén/tienda de origen',
+    id_tienda_ingreso   INT              NOT NULL  COMMENT 'Tienda destino',
+    operador            VARCHAR(50)          NULL,
+    cantidad            INT              NOT NULL,
+    cantidad_anterior   INT              NOT NULL,
+    id_unidad_medida    INT  NOT NULL,
+    entregado_por       VARCHAR(100)         NULL,
+    registrado_por      VARCHAR(50)          NULL,
+    observaciones       TEXT                 NULL,
+    fecha_actualizacion DATETIME             NULL,
+    motivo_cambio       TEXT                 NULL,
+    PRIMARY KEY (id),
+    KEY idx_me_fecha      (fecha_registro),
+    KEY idx_me_producto   (id_producto),
+    KEY idx_me_tienda_ing (id_tienda_ingreso),
+    CONSTRAINT fk_me_callao_producto   FOREIGN KEY (id_producto)       REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_me_callao_tipo_op    FOREIGN KEY (id_tipo_operacion) REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_me_callao_tienda_sal FOREIGN KEY (id_tienda_salida)  REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_me_callao_tienda_ing FOREIGN KEY (id_tienda_ingreso) REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_me_callao_um         FOREIGN KEY (id_unidad_medida)  REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Movimientos de entrada para Callao';
+--
+Select * from movimientos_entrada;
+--
+-- TABLA HISTORIAL CAMBIOS ENTRADA CALLAO
+--
+CREATE TABLE IF NOT EXISTS cambios_entrada_callao (
+    id                    INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    id_movimiento_entrada INT UNSIGNED     NOT NULL,
+    fecha_movimiento_orig DATETIME         NOT NULL,
+    id_producto           INT 		       NOT NULL,
+    id_tipo_operacion     INT  			   NOT NULL,
+    id_tienda_salida      INT              NOT NULL,
+    id_tienda_ingreso     INT              NOT NULL,
+    operador           	  VARCHAR(50)          NULL,
+    cantidad              INT	           NOT NULL,
+    cantidad_anterior     INT              NOT NULL,
+    id_unidad_medida      INT 			   NOT NULL,
+    entregado_por         VARCHAR(100)         NULL,
+    registrado_por        VARCHAR(50)          NULL,
+    observaciones         TEXT                 NULL,
+    motivo_cambio         TEXT                 NULL,
+    fecha_cambio          DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_ce_movimiento (id_movimiento_entrada),
+    CONSTRAINT fk_ce_callao_movimiento FOREIGN KEY (id_movimiento_entrada) REFERENCES movimientos_entrada_callao(id),
+    CONSTRAINT fk_ce_callao_producto   FOREIGN KEY (id_producto)           REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_ce_callao_tipo_op    FOREIGN KEY (id_tipo_operacion)     REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_ce_callao_tienda_sal FOREIGN KEY (id_tienda_salida)      REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_ce_callao_tienda_ing FOREIGN KEY (id_tienda_ingreso)     REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_ce_callao_um         FOREIGN KEY (id_unidad_medida)      REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Historial de ediciones sobre entradas para los almacenes de Callao';
+--
+select * from cambios_entrada_callao;
+--
+-- TABLA MOVIMIENTOS DE SALIDA CALLAO
+--
+CREATE TABLE IF NOT EXISTS movimientos_salida_callao (
+    id                  INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    fecha_registro      DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_producto         INT 		     NOT NULL,
+    id_tipo_operacion   INT 		     NOT NULL,
+    nro_comprobante     VARCHAR(50)          NULL,
+    asesor              VARCHAR(50)          NULL,
+    cantidad            INT	         	 NOT NULL,
+    cantidad_anterior   INT              NOT NULL,
+    id_unidad_medida    INT 			 NOT NULL,
+    id_tienda           INT              NOT NULL,
+    entregado_por       VARCHAR(100)         NULL,
+    registrado_por   	VARCHAR(50)          NULL,
+    observaciones       TEXT                 NULL,
+    fecha_actualizacion DATETIME             NULL,
+    motivo_cambio       TEXT                 NULL,
+    PRIMARY KEY (id),
+    KEY idx_ms_fecha    (fecha_registro),
+    KEY idx_ms_producto (id_producto),
+    KEY idx_ms_tienda   (id_tienda),
+    CONSTRAINT fk_ms_callao_producto   FOREIGN KEY (id_producto)       REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_ms_callao_tipo_op    FOREIGN KEY (id_tipo_operacion) REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_ms_callao_tienda     FOREIGN KEY (id_tienda)         REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_ms_callao_um         FOREIGN KEY (id_unidad_medida)  REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Movimientos de salida Callao';
+--
+select * from movimientos_salida_callao;
+--
+-- TABLA HISTORIAL CAMBIOS SALIDA CALLAO
+--
+CREATE TABLE IF NOT EXISTS cambios_salida_callao (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id_movimiento_salida INT UNSIGNED,
+    fecha_movimiento_orig DATETIME,
+    id_producto INT,
+    id_tipo_operacion INT,
+    nro_comprobante VARCHAR(50),
+    asesor VARCHAR(150),
+    cantidad INT,
+    cantidad_anterior INT,
+    id_unidad_medida INT,
+    id_tienda INT,
+    entregado_por VARCHAR(100),
+    registrado_por VARCHAR(50),
+    observaciones TEXT,
+    motivo_cambio TEXT,
+    fecha_cambio         DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_cs_movimiento (id_movimiento_salida),
+    CONSTRAINT fk_cs_callao_movimiento FOREIGN KEY (id_movimiento_salida) REFERENCES movimientos_salida_callao(id),
+    CONSTRAINT fk_cs_callao_producto   FOREIGN KEY (id_producto)          REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_cs_callao_tipo_op    FOREIGN KEY (id_tipo_operacion)    REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_cs_callao_tienda     FOREIGN KEY (id_tienda)            REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_cs_callao_um         FOREIGN KEY (id_unidad_medida)     REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Historial de ediciones sobre salidas para Callao';
+--
+select * from cambios_salida_callao;
+--
+-- TABLA CABECERA DE ABASTECIMIENTO CALLAO
+--
+CREATE TABLE IF NOT EXISTS abastecimiento_cabecera_callao (
+    id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    nombre         VARCHAR(150) NOT NULL,
+    registrado_por VARCHAR(50) NOT NULL,
+    fecha_registro DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_abast_nombre (nombre)
+) ENGINE=InnoDB COMMENT='Encabezado de cada sesión de abastecimiento guardada';
+--
+select * from abastecimiento_cabecera_callao;
+--
+-- TABLA DETALLE ABASTECIMIENTO CALLAO
+-- 
+CREATE TABLE IF NOT EXISTS abastecimiento_detalle_callao (
+    id                   INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    id_abastecimiento    INT UNSIGNED     NOT NULL,
+    id_producto          INT  		      NOT NULL,
+    cantidad_reg_calculo INT	          NOT NULL,
+    id_unidad_medida     INT 		  	  NOT NULL,
+    cant_almacen_oficina INT	          NOT NULL,
+    cant_alamacen_callao_1     INT	          NOT NULL,
+    cant_almacen_callao_2     INT	          NOT NULL,
+    abastecer_cajas      INT	          NOT NULL,
+    enviar               ENUM('SI','NO')  NOT NULL DEFAULT 'NO',
+    PRIMARY KEY (id),
+    KEY idx_abd_callao_abast   (id_abastecimiento),
+    KEY idx_abd_callao_producto (id_producto),
+    CONSTRAINT fk_abd_callao_cabecera FOREIGN KEY (id_abastecimiento) REFERENCES abastecimiento_cabecera_callao(id) ON DELETE CASCADE,
+    CONSTRAINT fk_abd_callao_producto FOREIGN KEY (id_producto)       REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_abd_callao_um       FOREIGN KEY (id_unidad_medida)  REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Abastecimiento guardado para almacenes Callao';
+--
+select * from abastecimiento_detalle_callao;
+
+--
+-- TABLA ACTAS DE ABASTECIMIENTO (historial de carga / guardar abastecimiento)
+-- Usada por: INSERT en guardar_abastecimiento, GET/POST /api/abastecimiento/actas/:id
+-- Sin esta tabla: error 1146 "Table '...abastecimiento_actas_callao' doesn't exist"
+--
+CREATE TABLE IF NOT EXISTS abastecimiento_actas_callao (
+    id                  INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    id_abastecimiento   INT UNSIGNED     NOT NULL,
+    nombre_imagen       VARCHAR(250)     NOT NULL,
+    url_imagen          VARCHAR(2048)    NOT NULL,
+    fecha_subida        DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_abast_actas_cab (id_abastecimiento),
+    CONSTRAINT fk_abast_actas_cabecera FOREIGN KEY (id_abastecimiento)
+        REFERENCES abastecimiento_cabecera_callao(id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Archivos/actas vinculados a abastecimiento_cabecera_callao';
+
+select * from abastecimiento_actas_callao;
+
+-- ==================================================
+-- TABLA PARA LAS ACTAS EN MOVIMIENTOS CALLAO
+-- ================================================== 
+CREATE TABLE movimientos_actas_callao (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    codigo_carga VARCHAR(50) NULL,
+    id_movimiento_entrada INT UNSIGNED NULL,
+    id_movimiento_salida INT UNSIGNED NULL,
+    nombre_imagen VARCHAR(250),
+    url_imagen VARCHAR(255) NOT NULL,
+    fecha_subida DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_acta_callao_entrada 
+        FOREIGN KEY (id_movimiento_entrada) 
+        REFERENCES movimientos_entrada_callao(id) ON DELETE CASCADE,
+    CONSTRAINT fk_acta_callao_salida 
+        FOREIGN KEY (id_movimiento_salida) 
+        REFERENCES movimientos_salida_callao(id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Actas de soporte para entradas y salidas de Callao';
+--
+Select * from movimientos_actas_callao;
+--
+CREATE INDEX idx_actas_callao_codigo_carga_callao ON movimientos_actas_callao(codigo_carga);
+--
+-- ==========================================
+-- CONTRASEÑA DINAMICA CALLAO
+-- ========================================== 
+--
+CREATE TABLE configuracion_sistema_callao (
+    clave VARCHAR(50) PRIMARY KEY, -- Ejemplo: 'pass_movimiento_sin_acta'
+    valor VARCHAR(255) NOT NULL,
+    ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    actualizado_por VARCHAR(50)
+);
+Select * from colaboradores;
+--
+-- Insert Incial
+INSERT IGNORE INTO configuracion_sistema_callao (clave, valor) 
+VALUES ('pass_movimiento_sin_acta', '12345');
+-- Insert Despues de actualizar
+INSERT INTO configuracion_sistema_callao (clave, valor) VALUES ('pass_movimiento_sin_acta', 'CONSULTAR CON EL SELECT');
+--
+Select * from configuracion_sistema_callao;
+--
+-- Subida de actas de abastecimiento (POST /api/abastecimiento/actas/:id):
+-- El backend acepta pass_abastecimiento_sin_acta si existe y no está vacía;
+-- si no, usa pass_movimiento_sin_acta (misma que entradas/salidas).
+-- Opcional: clave dedicada (mismo valor o distinto según política):
+-- INSERT IGNORE INTO configuracion_sistema_callao (clave, valor) VALUES ('pass_abastecimiento_sin_acta', '12345');
+
+-- =============================================================================
+-- NOTA: error 1048 "cantidad_anterior cannot be null" en sp_registrar_*_callao
+-- =============================================================================
+-- Si "SELECT IFNULL(cantidad,0) INTO v FROM existencias ... WHERE producto AND tienda"
+-- no devuelve fila, en MySQL la variable INTO queda NULL y el INSERT falla.
+-- Solución A (recomendada en SP): usar subconsulta escalar:
+--   SELECT IFNULL((SELECT cantidad FROM existencias_almacen_callao
+--                  WHERE id_producto = p_id_producto AND id_tienda = p_id_tienda_ingreso), 0)
+--   INTO v_cant_anterior;
+-- (Igual para salida con p_id_tienda.)
+-- Solución B: el Backend asegura fila (producto, tienda) con cantidad 0 antes del CALL.
+

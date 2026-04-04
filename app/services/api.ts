@@ -1,5 +1,5 @@
 // Servicio de API para conectar con el backend
-const API_BASE_URL = 'https://api-abastecimiento-2946605267.us-central1.run.app';
+const API_BASE_URL = 'https://api-abastecimiento-callao-2946605267.us-central1.run.app';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 export interface ApiResponse<T> {
@@ -79,20 +79,21 @@ export interface SalidaDB {
   fecha?: string | null; // Para historial de cambios (fecha_cambio)
 }
 
+/**
+ * Respuesta de GET /api/stock-total — tiendas `tiendas_gestion_sea_callao`: OFICINA, CALLAO-1, CALLAO-2.
+ */
 export interface StockTotalDB {
   id: number;
   codigo: string;
   nombre: string;
   cantidad_reg_calculo: number;
   unidad_medida_reg: string;
-  sm_3006: number | null;
-  sm_3131: number | null;
-  sm_412a: number | null;
-  sm_3133: number | null;
-  existencia_3006: number;
-  existencia_3131: number;
-  existencia_412a: number;
-  existencia_3133: number;
+  sm_oficina: number | null;
+  sm_callao1: number | null;
+  sm_callao2: number | null;
+  existencia_oficina: number;
+  existencia_callao1: number;
+  existencia_callao2: number;
   stock_global_minimo: number;
   disponibles: number;
   stock_detallado_cajas: number;
@@ -105,10 +106,9 @@ export interface AbastecimientoDB {
   nombre: string;
   cantidad: number;
   unidad_medida: string;
-  abastecer_3006: number;
-  abastecer_3131: number;
-  abastecer_412a: number;
-  abastecer_3133: number;
+  abastecer_oficina: number;
+  abastecer_callao1: number;
+  abastecer_callao2: number;
   abastecer_cajas: number;
   enviar: string;
 }
@@ -120,15 +120,15 @@ export interface HistorialAbastecimientoDB {
   fecha_registro: string;
 }
 
+/** Alineado con `abastecimiento_detalle_callao` (columna BD `cant_alamacen_callao_1` expuesta como cant_almacen_callao_1). */
 export interface DetalleAbastecimientoDB {
   codigo: string;
   nombre: string;
   cantidad: number;
   unidad_medida: string;
-  cant_tienda_3006: number;
-  cant_tienda_3131: number;
-  cant_tienda_412a: number;
-  cant_tienda_3133: number;
+  cant_almacen_oficina: number;
+  cant_almacen_callao_1: number;
+  cant_almacen_callao_2: number;
   abastecer_cajas: number;
   enviar: string;
 }
@@ -522,7 +522,7 @@ export async function getExistencias(): Promise<any[]> {
   return response.data || [];
 }
 
-// Stock Total
+// Stock Total — mismo contrato que `get_stock_total` en app/malvinas/Backend.py
 export async function getStockTotal(): Promise<StockTotalDB[]> {
   const response = await fetchAPI<StockTotalDB[]>('/api/stock-total');
   return response.data || [];
@@ -542,7 +542,7 @@ export interface ImportStockTotalResult {
     producto: string; // código
     operacion: string; // OTROS
     almacen_salida: string; // CALLAO
-    almacen_ingreso: string; // 3006/3131/412-A/3133
+    almacen_ingreso: string; // OFICINA / CALLAO-1 / CALLAO-2
     cantidad: number; // delta positivo
     unidad_medida: string;
     cantidad_anterior: number;
@@ -718,10 +718,11 @@ export async function guardarAbastecimiento(
     registrado_por: string;
     detalles: Array<{
       codigo: string;
-      cant_tienda_3006: number;
-      cant_tienda_3131: number;
-      cant_tienda_412a: number;
-      cant_tienda_3133: number;
+      cantidad_reg_calculo: number;
+      id_unidad_medida: number;
+      cant_almacen_oficina: number;
+      cant_almacen_callao_1: number;
+      cant_almacen_callao_2: number;
       abastecer_cajas: number;
       enviar: 'SI' | 'NO';
     }>;
@@ -779,7 +780,10 @@ export async function subirActasAbastecimiento(
   const formData = new FormData();
   
   // Agregar datos JSON como string
-  formData.append('data', JSON.stringify({ password_autorizacion: passwordAutorizacion }));
+  formData.append(
+    'data',
+    JSON.stringify({ password_autorizacion: (passwordAutorizacion || '').trim() }),
+  );
   
   // Agregar archivos
   if (archivos && archivos.length > 0) {
