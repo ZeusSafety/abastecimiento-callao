@@ -49,7 +49,7 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
                 {/* Title branding */}
                 <div className="flex items-center text-center">
                     <h2 className="font-extrabold tracking-tight text-[#002D5A] m-0" style={{ fontSize: '13px', letterSpacing: '0.05em' }}>
-                        SISTEMA DE ABASTECIMIENTO
+                        SISTEMA DE ABASTECIMIENTO CALLAO
                     </h2>
                 </div>
                 <div className="hidden lg:block">
