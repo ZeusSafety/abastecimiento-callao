@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Producto } from '../context/MalvinasContext';
+import { Producto } from '../context/CallaoContext';
 import { ChevronDown } from 'lucide-react';
 
 interface ProductoAutocompleteProps {

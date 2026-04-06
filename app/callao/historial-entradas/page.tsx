@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    useMalvinas,
+    useCallao,
     TIENDAS,
     OPERADORES,
     REGISTRADORES,
@@ -16,7 +16,7 @@ import {
     UnidadMedida,
     Producto,
     getOperacionColor,
-} from '../../context/MalvinasContext';
+} from '../../context/CallaoContext';
 import {
     Search,
     PackagePlus,
@@ -56,7 +56,7 @@ function ModalEntrada({
     editData?: RegistroEntrada | null;
     onAccept: (payload: { id: string; data: Partial<RegistroEntrada>; motivo: string }) => void;
 }) {
-    const { state, showToast } = useMalvinas();
+    const { state, showToast } = useCallao();
 
     const [form, setForm] = useState({
         productoId: editData?.productoId ?? '',
@@ -417,7 +417,7 @@ function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string }
 }
 
 export default function HistorialEntradasPage() {
-    const { state, refreshEntradas, refreshHistorialEntradas, showToast, updateEntrada } = useMalvinas();
+    const { state, refreshEntradas, refreshHistorialEntradas, showToast, updateEntrada } = useCallao();
     const [search, setSearch] = useState('');
     const [searchUnlocked, setSearchUnlocked] = useState(false);
     const [loading, setLoading] = useState(true);

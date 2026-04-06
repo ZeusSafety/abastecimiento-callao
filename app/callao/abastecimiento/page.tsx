@@ -2,14 +2,14 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-    useMalvinas,
+    useCallao,
     TIENDAS,
     TIENDAS_VISTA_INVENTARIO_CALLAO,
     Tienda,
     AbastecimientoRow,
     UnidadMedida,
     resolveIdUnidadMedidaReg,
-} from '../../context/MalvinasContext';
+} from '../../context/CallaoContext';
 import * as api from '../../services/api';
 import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download, Loader2, Upload, Trash2, FileImage, Lock } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
@@ -33,7 +33,7 @@ function ModalGuardar({
     capturaRef?: React.RefObject<HTMLDivElement | null>;
     onGuardado?: () => void;
 }) {
-    const { state, showToast, refreshAbastecimiento } = useMalvinas();
+    const { state, showToast, refreshAbastecimiento } = useCallao();
     const [nombre, setNombre] = useState('');
     const [registradoPor, setRegistradoPor] = useState('');
     const [localRows, setLocalRows] = useState<AbastecimientoRow[]>(rows);
@@ -237,7 +237,7 @@ function ModalGuardar({
                         { header: 'ENVIAR', dataKey: 'enviar' },
                     ];
                     const fecha = new Date().toISOString().split('T')[0];
-                    exportToPDF(datosPDF, columns, `Abastecimiento_Stock_SI_${fecha}`, 'ABASTECIMIENTO AUTOMÁTICO - STOCK (ENVIAR = SI)');
+                    exportToPDF(datosPDF, columns, `Abastecimiento_Stock_SI_${fecha}`, 'ABASTECIMIENTO CALLAO - STOCK (ENVIAR = SI)');
                     showToast('success', `PDF descargado con ${productosSI.length} producto(s)`);
                 }
             }
@@ -618,7 +618,7 @@ function ModalGuardar({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AbastecimientoPage() {
-    const { state, showToast, refreshProductos } = useMalvinas();
+    const { state, showToast, refreshProductos } = useCallao();
     const [search, setSearch] = useState('');
     const [filtroEnviar, setFiltroEnviar] = useState<'SI' | 'NO' | 'TODOS'>('SI');
     const [modalOpen, setModalOpen] = useState(false);
@@ -758,7 +758,7 @@ export default function AbastecimientoPage() {
             ];
 
             const fecha = new Date().toISOString().split('T')[0];
-            exportToPDF(datosPDF, columns, `Abastecimiento_Stock_SI_${fecha}`, 'ABASTECIMIENTO AUTOMÁTICO - STOCK (ENVIAR = SI)');
+            exportToPDF(datosPDF, columns, `Abastecimiento_Stock_SI_${fecha}`, 'ABASTECIMIENTO CALLAO - STOCK (ENVIAR = SI)');
             showToast('success', `PDF descargado con ${productosSI.length} producto(s)`);
         } else {
             // Si no se ha guardado, abrir modal de guardar reporte con flag para descargar PDF después
@@ -850,9 +850,9 @@ export default function AbastecimientoPage() {
                             </div>
                             <div>
                                 <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
-                                    Abastecimiento Automático
+                                    Abastecimiento Callao
                                 </h1>
-                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Cálculo de reposición basado en stock mínimo de Malvinas</p>
+                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Cálculo de reposición basado en stock mínimo de Callao</p>
                             </div>
                         </div>
                         <div className="header-actions flex items-center gap-4">
@@ -909,7 +909,7 @@ export default function AbastecimientoPage() {
                         >
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: 0.2 }}>
-                                    ABASTECIMIENTO AUTOMÁTICO - STOCK
+                                    ABASTECIMIENTO CALLAO - STOCK
                                 </div>
                                 <div style={{ fontSize: 12, opacity: 0.85 }}>
                                     Generado: {fechaGeneracion || 'Cargando...'}
@@ -1160,7 +1160,7 @@ export default function AbastecimientoPage() {
                                 >
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                         <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: 0.2 }}>
-                                            ABASTECIMIENTO AUTOMÁTICO - STOCK
+                                            ABASTECIMIENTO CALLAO - STOCK
                                         </div>
                                         <div style={{ fontSize: 12, opacity: 0.85 }}>
                                             Generado: {fechaGeneracion || 'Cargando...'}

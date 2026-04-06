@@ -45,8 +45,8 @@ export function etiquetaOrigenAlmacenSalidaEntrada(a: AlmacenCompleto): string {
   return a;
 }
 
-export const OPERADORES = ['Manuel', 'Victor', 'Jose', 'Jhonsom'];
-export const REGISTRADORES = ['Manuel', 'Jose', 'Kimberly', 'Hervin', 'Victor', 'Alvaro'];
+export const OPERADORES = ['MANUEL', 'VICTOR', 'JOSE', 'JHONSON', 'LEONEL', 'EDRAS', 'HERVIN', 'ALVARO'];
+export const REGISTRADORES = ['MANUEL', 'JOSE', 'LEONEL', 'EDRAS', 'HERVIN', 'VICTOR', 'ALVARO', 'JHONSON'];
 export const UNIDADES: UnidadMedida[] = ['DOCENAS', 'DECENAS', 'UNIDADES', 'CAJITAS', 'BOLSITAS'];
 export const OPS_ENTRADA = ['TRASLADO', 'DEVOLUCION', 'CAMBIO', 'MERMA', 'REPOSICION', 'OTROS'] as const;
 export const OPS_SALIDA = ['VENTA', 'TRASLADO', 'DEVOLUCION', 'CAMBIO', 'REPOSICION', 'MERMA', 'VERIFICACION', 'OTROS'] as const;
@@ -238,7 +238,7 @@ interface ToastItem {
   message: string;
 }
 
-interface MalvinasState {
+interface CallaoState {
   productos: Producto[];
   entradas: RegistroEntrada[];
   salidas: RegistroSalida[];
@@ -251,8 +251,8 @@ interface MalvinasState {
   error: string | null;
 }
 
-interface MalvinasContextType {
-  state: MalvinasState;
+interface CallaoContextType {
+  state: CallaoState;
   // Productos
   addProducto: (p: Omit<Producto, 'id'>) => Promise<void>;
   updateExistencia: (productoId: string, tienda: Tienda, delta: number) => void;
@@ -280,7 +280,7 @@ interface MalvinasContextType {
   markNotificationsAsRead: () => void;
 }
 
-const MalvinasContext = createContext<MalvinasContextType | null>(null);
+const CallaoContext = createContext<CallaoContextType | null>(null);
 
 function genId() {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -418,8 +418,8 @@ function convertirSalidaDB(salidaDB: api.SalidaDB, productos: Producto[]): Regis
   };
 }
 
-export function MalvinasProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<MalvinasState>({
+export function CallaoProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<CallaoState>({
     productos: [],
     entradas: [],
     salidas: [],
@@ -840,7 +840,7 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
   }, [state.productos, refreshAbastecimiento, addNotification, showToast]);
 
   return (
-    <MalvinasContext.Provider value={{
+    <CallaoContext.Provider value={{
       state,
       addProducto,
       updateExistencia,
@@ -862,12 +862,12 @@ export function MalvinasProvider({ children }: { children: ReactNode }) {
       markNotificationsAsRead,
     }}>
       {children}
-    </MalvinasContext.Provider>
+    </CallaoContext.Provider>
   );
 }
 
-export function useMalvinas() {
-  const ctx = useContext(MalvinasContext);
-  if (!ctx) throw new Error('useMalvinas must be used within MalvinasProvider');
+export function useCallao() {
+  const ctx = useContext(CallaoContext);
+  if (!ctx) throw new Error('useCallao must be used within CallaoProvider');
   return ctx;
 }

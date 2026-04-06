@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, Bell, PackagePlus, PackageMinus, RefreshCw, Layers, Check } from 'lucide-react';
-import { useMalvinas, NotificationItem } from '../context/MalvinasContext';
+import { useCallao, NotificationItem } from '../context/CallaoContext';
 
 interface NotificationModalProps {
     isOpen: boolean;
@@ -10,7 +10,7 @@ interface NotificationModalProps {
 }
 
 export default function NotificationModal({ isOpen, onClose }: NotificationModalProps) {
-    const { state, markNotificationsAsRead } = useMalvinas();
+    const { state, markNotificationsAsRead } = useCallao();
     const [activeTab, setActiveTab] = useState<'todos' | 'entrada' | 'salida' | 'cambio' | 'abastecimiento'>('todos');
 
     if (!isOpen) return null;
@@ -131,7 +131,7 @@ export default function NotificationModal({ isOpen, onClose }: NotificationModal
 
                 {/* Footer */}
                 <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 text-center">
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest italic opacity-60">Sistema de Abastecimiento Malvinas v1.0</p>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest italic opacity-60">Sistema de Abastecimiento Callao v1.0</p>
                 </div>
             </div>
         </div>

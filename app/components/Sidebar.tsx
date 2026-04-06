@@ -24,37 +24,37 @@ const navItems = [
     {
         group: 'PRINCIPAL',
         items: [
-            { id: 'dashboard', label: 'Stock Total', href: '/malvinas', icon: LayoutDashboard },
+            { id: 'dashboard', label: 'Stock Total', href: '/callao', icon: LayoutDashboard },
         ],
     },
     {
         group: 'MOVIMIENTOS',
         items: [
-            { id: 'entradas', label: 'Entradas', href: '/malvinas/entradas', icon: PackagePlus },
-            { id: 'salidas', label: 'Salidas', href: '/malvinas/salidas', icon: PackageMinus },
+            { id: 'entradas', label: 'Entradas', href: '/callao/entradas', icon: PackagePlus },
+            { id: 'salidas', label: 'Salidas', href: '/callao/salidas', icon: PackageMinus },
         ],
     },
     {
         group: 'HISTORIAL',
         items: [
-            { id: 'historial-entradas', label: 'Historial Entradas', href: '/malvinas/historial-entradas', icon: History },
-            { id: 'historial-salidas', label: 'Historial Salidas', href: '/malvinas/historial-salidas', icon: ClipboardList },
-            { id: 'cambios-entrada', label: 'Cambios Entrada', href: '/malvinas/cambios-entrada', icon: TrendingUp },
-            { id: 'cambios-salida', label: 'Cambios Salida', href: '/malvinas/cambios-salida', icon: TrendingUp },
+            { id: 'historial-entradas', label: 'Historial Entradas', href: '/callao/historial-entradas', icon: History },
+            { id: 'historial-salidas', label: 'Historial Salidas', href: '/callao/historial-salidas', icon: ClipboardList },
+            { id: 'cambios-entrada', label: 'Cambios Entrada', href: '/callao/cambios-entrada', icon: TrendingUp },
+            { id: 'cambios-salida', label: 'Cambios Salida', href: '/callao/cambios-salida', icon: TrendingUp },
         ],
     },
     {
         group: 'ABASTECIMIENTO',
         items: [
-            { id: 'abastecimiento', label: 'Abastecer', href: '/malvinas/abastecimiento', icon: BarChart2 },
-            { id: 'historial-carga', label: 'Historial por Carga', href: '/malvinas/historial-carga', icon: History },
-            { id: 'historial-general', label: 'Historial General', href: '/malvinas/historial-general', icon: ClipboardList },
+            { id: 'abastecimiento', label: 'Abastecer', href: '/callao/abastecimiento', icon: BarChart2 },
+            { id: 'historial-carga', label: 'Historial por Carga', href: '/callao/historial-carga', icon: History },
+            { id: 'historial-general', label: 'Historial General', href: '/callao/historial-general', icon: ClipboardList },
         ],
     },
     {
         group: 'CREDENCIAL',
         items: [
-            { id: 'gestion-credencial', label: 'Gestión de Credencial', href: '/malvinas/gestion-credencial', icon: Key },
+            { id: 'gestion-credencial', label: 'Gestión de Credencial', href: '/callao/gestion-credencial', icon: Key },
         ],
     },
 ];
@@ -65,7 +65,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
     const handleNav = (href: string) => {
         // Si se navega a otra ruta y estaba en gestión de credenciales, limpiar sesión
-        if (pathname === '/malvinas/gestion-credencial' && href !== '/malvinas/gestion-credencial') {
+        if (pathname === '/callao/gestion-credencial' && href !== '/callao/gestion-credencial') {
             sessionStorage.removeItem('credencial_autenticado');
         }
         router.push(href);
@@ -102,7 +102,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 {/* Logo Section */}
                 <div className="relative border-b border-gray-200 bg-white group">
                     <button
-                        onClick={() => handleNav('/malvinas')}
+                        onClick={() => handleNav('/callao')}
                         className="pt-2 pb-2 px-4 flex justify-center w-full bg-white hover:bg-white active:bg-white transition-colors duration-200"
                         aria-label="Ir al menú"
                     >
@@ -138,7 +138,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                             <ul className="space-y-1">
                                 {group.items.map((item) => {
                                     const Icon = item.icon;
-                                    const isActive = pathname === item.href || (item.href !== '/malvinas' && pathname.startsWith(item.href));
+                                    const isActive = pathname === item.href || (item.href !== '/callao' && pathname.startsWith(item.href));
                                     return (
                                         <li key={item.id}>
                                             <button

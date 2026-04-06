@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { MalvinasProvider } from '../context/MalvinasContext';
+import { CallaoProvider } from '../context/CallaoContext';
 import AppLayout from '../components/AppLayout';
 
 export const metadata: Metadata = {
@@ -7,12 +7,12 @@ export const metadata: Metadata = {
     description: 'Sistema de gestión de entradas, salidas y abastecimiento del Almacén Callao - Zeus Safety',
 };
 
-export default function MalvinasLayout({ children }: { children: React.ReactNode }) {
+export default function CallaoLayout({ children }: { children: React.ReactNode }) {
     return (
-        <MalvinasProvider>
+        <CallaoProvider>
             <AppLayout>
                 {children}
             </AppLayout>
-        </MalvinasProvider>
+        </CallaoProvider>
     );
 }

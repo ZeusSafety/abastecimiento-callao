@@ -37,7 +37,7 @@ export default function GestionCredencialPage() {
     // Limpiar sesión cuando se sale de la página
     useEffect(() => {
         // Verificar si aún estamos en la página de gestión de credenciales
-        if (pathname !== '/malvinas/gestion-credencial') {
+        if (pathname !== '/callao/gestion-credencial') {
             sessionStorage.removeItem('credencial_autenticado');
             setAutenticado(false);
         }

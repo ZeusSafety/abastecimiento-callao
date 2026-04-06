@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-    useMalvinas,
+    useCallao,
     TIENDAS,
     TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO,
     getCodigoFromTienda,
@@ -14,7 +14,7 @@ import {
     UnidadMedida,
     Producto,
     getOperacionColor,
-} from '../../context/MalvinasContext';
+} from '../../context/CallaoContext';
 import {
     Plus, Search, Edit3, X, Save, PackageMinus, ChevronDown, Loader2, Trash2, Upload, Lock
 } from 'lucide-react';
@@ -32,7 +32,7 @@ function ModalSalida({
     onClose: () => void;
     editData?: RegistroSalida | null;
 }) {
-    const { state, addSalida, updateSalida, showToast, refreshSalidas, refreshProductos } = useMalvinas();
+    const { state, addSalida, updateSalida, showToast, refreshSalidas, refreshProductos } = useCallao();
 
     const [form, setForm] = useState({
         productoId: editData?.productoId ?? '',
@@ -1126,7 +1126,7 @@ function ModalSalida({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SalidasPage() {
-    const { state, refreshSalidas } = useMalvinas();
+    const { state, refreshSalidas } = useCallao();
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroSalida | null>(null);
     const [search, setSearch] = useState('');

@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useMalvinas, TIENDAS_VISTA_INVENTARIO_CALLAO } from '../../context/MalvinasContext';
+import { useCallao, TIENDAS_VISTA_INVENTARIO_CALLAO } from '../../context/CallaoContext';
 import { Search, RefreshCw, Package, Columns2, AlertTriangle, ChevronDown, Calendar, Image as ImageIcon, X, Loader2, Upload, Trash2, Lock, Eye, EyeOff, Save, AlertCircle } from 'lucide-react';
 import * as api from '../../services/api';
 
 export default function HistorialCargaPage() {
-    const { state, cargarDetalleAbastecimiento, refreshAbastecimiento, showToast } = useMalvinas();
+    const { state, cargarDetalleAbastecimiento, refreshAbastecimiento, showToast } = useCallao();
     const [selectedId, setSelectedId] = useState<string>('');
     const [search, setSearch] = useState('');
     const [filtroEnviar, setFiltroEnviar] = useState<'SI' | 'NO' | 'TODOS'>('TODOS');
@@ -736,7 +736,7 @@ export default function HistorialCargaPage() {
                                 onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#002D5A'}
                             >
                                 <AlertCircle className="w-4 h-4" />
-                                Subida de Emergencia
+                                Subir + Actas
                             </button>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <button onClick={() => setModalActasOpen(false)} className="btn btn-secondary">
@@ -938,14 +938,14 @@ export default function HistorialCargaPage() {
                         </div>
 
                         <div className="modal-body">
-                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                                 <div className="flex items-start gap-3">
-                                    <Lock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                                    <Lock className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                                     <div>
-                                        <p className="text-sm font-semibold text-amber-900 mb-1">
+                                        <p className="text-sm font-semibold text-blue-900 mb-1">
                                             Contraseña de Autorización Requerida
                                         </p>
-                                        <p className="text-xs text-amber-700">
+                                        <p className="text-xs text-blue-500">
                                             {modoSubida === 'emergencia'
                                                 ? 'Para proceder con la subida de actas de emergencia, ingrese la contraseña de autorización.'
                                                 : 'Use la misma contraseña que en entradas/salidas (gestión credencial). Si configuró una específica para abastecimiento, use esa.'}
@@ -1028,7 +1028,7 @@ export default function HistorialCargaPage() {
                             <div>
                                 <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
                                     <AlertCircle className="w-4 h-4 inline-block mr-2" />
-                                    Subida de Emergencia - Actas
+                                    Subir + Actas
                                 </h6>
                                 <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
                                     Sube imágenes que se olvidaron subir anteriormente

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { useMalvinas, TIENDAS, TIENDAS_VISTA_INVENTARIO_CALLAO, Tienda, Producto } from '../context/MalvinasContext';
+import { useCallao, TIENDAS, TIENDAS_VISTA_INVENTARIO_CALLAO, Tienda, Producto } from '../context/CallaoContext';
 import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock, FileSpreadsheet, Upload } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
 import * as api from '../services/api';
@@ -27,11 +27,11 @@ function StockBadge({ value, min }: { value: number; min: number }) {
     return <span className="text-gray-900 font-medium">{value}</span>;
 }
 
-const STORAGE_KEY_SELECTED = 'malvinas_inventario_selected';
-const STORAGE_KEY_EDITING = 'malvinas_inventario_editing';
+const STORAGE_KEY_SELECTED = 'callao_inventario_selected';
+const STORAGE_KEY_EDITING = 'callao_inventario_editing';
 
 export default function StockTotalPage() {
-    const { state, refreshProductos, refreshEntradas, showToast } = useMalvinas();
+    const { state, refreshProductos, refreshEntradas, showToast } = useCallao();
     const [search, setSearch] = useState('');
     const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
     const [editingProducts, setEditingProducts] = useState<Map<string, EditingProduct>>(new Map());
@@ -886,7 +886,7 @@ export default function StockTotalPage() {
                             <div>
                                 <h2 className="text-xl font-bold text-gray-900">Importar Excel - Registro de entrada</h2>
                                 <p className="text-sm text-gray-500 mt-0.5">
-                                    Se registrarán ingresos con la operación elegida y el <strong>origen de salida</strong> indicado abajo (Malvinas, Oficina o Callao 1/2).
+                                    Se registrarán ingresos con la operación elegida y el <strong>origen de salida</strong> indicado abajo (Malvinas, Oficina o Callao 1 - 2).
                                 </p>
                                 {importNegativos.length > 0 && (
                                     <p className="text-xs text-blue-700 mt-2 font-semibold">

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useMalvinas, TIENDAS_VISTA_INVENTARIO_CALLAO, UnidadMedida } from '../../context/MalvinasContext';
+import { useCallao, TIENDAS_VISTA_INVENTARIO_CALLAO, UnidadMedida } from '../../context/CallaoContext';
 import { Search } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import * as api from '../../services/api';
@@ -21,7 +21,7 @@ interface HistorialGeneralRow {
 }
 
 export default function HistorialGeneralPage() {
-    const { state } = useMalvinas();
+    const { state } = useCallao();
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
     const [loading, setLoading] = useState(true);
@@ -101,7 +101,7 @@ export default function HistorialGeneralPage() {
                                 <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
                                     Historial General
                                 </h1>
-                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Consolidado de todos los movimientos de Malvinas</p>
+                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Consolidado de todos los movimientos de Callao</p>
                             </div>
                         </div>
                     </header>

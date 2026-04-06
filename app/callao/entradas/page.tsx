@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-    useMalvinas,
+    useCallao,
     TIENDAS,
     OPERADORES,
     REGISTRADORES,
@@ -19,7 +19,7 @@ import {
     UnidadMedida,
     Producto,
     getOperacionColor,
-} from '../../context/MalvinasContext';
+} from '../../context/CallaoContext';
 import {
     Plus,
     Search,
@@ -142,7 +142,7 @@ function ModalEntrada({
     onClose: () => void;
     editData?: RegistroEntrada | null;
 }) {
-    const { state, addEntrada, updateEntrada, showToast, refreshEntradas, refreshProductos } = useMalvinas();
+    const { state, addEntrada, updateEntrada, showToast, refreshEntradas, refreshProductos } = useCallao();
 
     const [form, setForm] = useState({
         productoId: editData?.productoId ?? '',
@@ -1215,7 +1215,7 @@ function ModalEntrada({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function EntradasPage() {
-    const { state, refreshEntradas, showToast } = useMalvinas();
+    const { state, refreshEntradas, showToast } = useCallao();
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroEntrada | null>(null);
     const [search, setSearch] = useState('');
