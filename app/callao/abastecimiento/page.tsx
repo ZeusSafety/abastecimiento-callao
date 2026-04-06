@@ -8,7 +8,7 @@ import {
     Tienda,
     AbastecimientoRow,
     UnidadMedida,
-    resolveIdUnidadMedidaReg,
+    resolveIdUnidadMedidaReg, 
 } from '../../context/CallaoContext';
 import * as api from '../../services/api';
 import { Save, Eraser, X, Search, RefreshCw, ChevronDown, Image as ImageIcon, Download, Loader2, Upload, Trash2, FileImage, Lock } from 'lucide-react';
