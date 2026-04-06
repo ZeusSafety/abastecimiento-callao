@@ -47,6 +47,14 @@ export function etiquetaOrigenAlmacenSalidaEntrada(a: AlmacenCompleto): string {
 
 export const OPERADORES = ['MANUEL', 'VICTOR', 'JOSE', 'JHONSON', 'LEONEL', 'EDRAS', 'HERVIN', 'ALVARO'];
 export const REGISTRADORES = ['MANUEL', 'JOSE', 'LEONEL', 'EDRAS', 'HERVIN', 'VICTOR', 'ALVARO', 'JHONSON'];
+
+/** Valor interno del `<select>` para "otra persona" (texto libre). */
+export const COMBO_OTROS_VALUE = '__OTROS__';
+
+export function resolvePersonaCombo(val: string, otro: string): string {
+  if (val === COMBO_OTROS_VALUE) return (otro || '').trim();
+  return val;
+}
 export const UNIDADES: UnidadMedida[] = ['DOCENAS', 'DECENAS', 'UNIDADES', 'CAJITAS', 'BOLSITAS'];
 export const OPS_ENTRADA = ['TRASLADO', 'DEVOLUCION', 'CAMBIO', 'MERMA', 'REPOSICION', 'OTROS'] as const;
 export const OPS_SALIDA = ['VENTA', 'TRASLADO', 'DEVOLUCION', 'CAMBIO', 'REPOSICION', 'MERMA', 'VERIFICACION', 'OTROS'] as const;

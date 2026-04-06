@@ -1036,10 +1036,10 @@ def update_entrada(request, headers, id_entrada):
         if not um_id:
             return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
 
-        # Capturar cantidad actual antes de editar (será la nueva cantidad_anterior).
-        cantidad_previa = mov_anterior.get('cantidad', 0)
+        # Filas en existencias antes del SP: evita NULL en cantidad_anterior (MySQL SELECT INTO sin fila).
+        _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
+        _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
 
-        # Llamar al SP
         params = [
             id_entrada, producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
             data.get('operador'), data.get('cantidad'), um_id,
@@ -1047,64 +1047,8 @@ def update_entrada(request, headers, id_entrada):
             motivo_cambio
         ]
         cursor.callproc('sp_editar_entrada_callao', params)
-        # Consumir posibles result sets del SP para evitar "commands out of sync".
         while cursor.nextset():
             pass
-
-        # Helpers para ajuste de existencias por tienda.
-        def _es_almacen(id_tienda):
-            cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea_callao WHERE id = %s", (id_tienda,))
-            t = cursor.fetchone()
-            return bool(t and t.get('es_almacen') == 1)
-
-        def _ajustar_existencia(id_producto, id_tienda, delta):
-            cursor.execute(
-                "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
-                (id_producto, id_tienda)
-            )
-            ex = cursor.fetchone()
-            if ex:
-                nueva = max(0, (ex.get('cantidad') or 0) + delta)
-                cursor.execute(
-                    "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
-                    (nueva, id_producto, id_tienda)
-                )
-            else:
-                # Si no existía, se crea con el delta (nunca negativo).
-                cursor.execute(
-                    "INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
-                    (id_producto, id_tienda, max(0, delta))
-                )
-
-        # Recalcular impacto de tienda de salida cuando la salida es tienda (no almacén):
-        # 1) Deshacer impacto anterior
-        id_producto_prev = mov_anterior['id_producto']
-        id_salida_prev = mov_anterior['id_tienda_salida']
-        cantidad_prev = mov_anterior['cantidad'] or 0
-        if not _es_almacen(id_salida_prev):
-            _ajustar_existencia(id_producto_prev, id_salida_prev, cantidad_prev)
-
-        # 2) Aplicar nuevo impacto
-        cantidad_nueva = int(data.get('cantidad') or 0)
-        if not _es_almacen(tienda_salida_id):
-            _ajustar_existencia(producto_id, tienda_salida_id, -cantidad_nueva)
-
-        # Guardar cantidad previa en la tabla de movimiento actualizada.
-        cursor.execute(
-            "UPDATE movimientos_entrada_callao SET cantidad_anterior = %s WHERE id = %s",
-            (cantidad_previa, id_entrada)
-        )
-        # Reflejar también cantidad previa en el último registro de cambios.
-        cursor.execute(
-            """
-            UPDATE cambios_entrada_callao
-            SET cantidad_anterior = %s, cantidad = %s
-            WHERE id_movimiento_entrada = %s
-            ORDER BY fecha_cambio DESC, id DESC
-            LIMIT 1
-            """,
-            (cantidad_previa, cantidad_nueva, id_entrada)
-        )
 
         conn.commit()
         return success_response(message="Entrada actualizada exitosamente", headers=headers)
@@ -1430,6 +1374,8 @@ def update_salida(request, headers, id_salida):
                 headers
             )
 
+        _asegurar_fila_existencia(cursor, producto_id, tienda_id)
+
         params = [
             id_salida, producto_id, tipo_op_id, data.get('nro_comprobante'),
             data.get('asesor'), data.get('cantidad'), um_id, tienda_id,
@@ -1439,23 +1385,6 @@ def update_salida(request, headers, id_salida):
         cursor.callproc('sp_editar_salida_callao', params)
         while cursor.nextset():
             pass
-
-        # Guardar cantidad previa en la tabla de movimiento actualizada.
-        cursor.execute(
-            "UPDATE movimientos_salida_callao SET cantidad_anterior = %s WHERE id = %s",
-            (cantidad_previa, id_salida)
-        )
-        # Reflejar también cantidad previa en el último registro de cambios.
-        cursor.execute(
-            """
-            UPDATE cambios_salida_callao
-            SET cantidad_anterior = %s, cantidad = %s
-            WHERE id_movimiento_salida = %s
-            ORDER BY fecha_cambio DESC, id DESC
-            LIMIT 1
-            """,
-            (cantidad_previa, cantidad_nueva, id_salida)
-        )
 
         conn.commit()
         return success_response(message="Salida actualizada exitosamente", headers=headers)
@@ -1673,6 +1602,7 @@ def importar_stock_total_excel(request, headers):
         productos_no_encontrados = []
         movimientos_sugeridos = []
         ajustes_negativos = []
+        filas_con_cambio_cant_reg_o_stock_min = 0
 
         # Encabezados ocupan 2 filas, data inicia desde fila 3
         for row_idx in range(3, ws.max_row + 1):
@@ -1684,7 +1614,7 @@ def importar_stock_total_excel(request, headers):
             codigo = str(codigo).strip()
             cursor.execute(
                 """
-                SELECT p.id, p.codigo, um_reg.nombre AS unidad_medida_reg
+                SELECT p.id, p.codigo, p.cantidad_reg_calculo, um_reg.nombre AS unidad_medida_reg
                 FROM productos_abastecimiento_callao p
                 JOIN unidades_medida_sea_callao um_reg ON p.id_unidad_medida_reg = um_reg.id
                 WHERE p.codigo = %s
@@ -1702,8 +1632,29 @@ def importar_stock_total_excel(request, headers):
             unidad_medida_reg = prod_row.get("unidad_medida_reg") or "UNIDADES"
             procesadas += 1
 
+            # Comparar CANT. (C) y STOCK MÍNIMO (D–F) vs BD para permitir importar solo configuración sin deltas de existencia
+            c_excel = _to_int(ws[f"C{row_idx}"].value)
+            cr_db_val = int(prod_row.get("cantidad_reg_calculo") or 0)
+            fila_difiere_config = c_excel != cr_db_val
+            for codigo_tienda_sm, col_sm in tiendas_col_stock_min.items():
+                val_excel_sm = _to_int(ws[f"{col_sm}{row_idx}"].value)
+                cursor.execute(
+                    """
+                    SELECT COALESCE(stock_minimo, 0) AS sm
+                    FROM stock_minimo_almacen_callao
+                    WHERE id_producto = %s AND id_tienda = %s
+                    """,
+                    (id_producto, tienda_id_por_codigo[codigo_tienda_sm]),
+                )
+                sm_row = cursor.fetchone()
+                sm_db = int(sm_row["sm"]) if sm_row else 0
+                if val_excel_sm != sm_db:
+                    fila_difiere_config = True
+            if fila_difiere_config:
+                filas_con_cambio_cant_reg_o_stock_min += 1
+
             # CANT. (columna C) -> cantidad_reg_calculo
-            cantidad_reg_calculo = _to_int(ws[f"C{row_idx}"].value)
+            cantidad_reg_calculo = c_excel
             if modo in ("aplicar", "aplicar_directo"):
                 cursor.execute(
                     "UPDATE productos_abastecimiento_callao SET cantidad_reg_calculo = %s WHERE id = %s",
@@ -1771,6 +1722,7 @@ def importar_stock_total_excel(request, headers):
                 "productos_no_encontrados_muestra": productos_no_encontrados,
                 "movimientos_entrada_sugeridos": movimientos_sugeridos,
                 "ajustes_negativos": ajustes_negativos,
+                "filas_con_cambio_cant_reg_o_stock_min": filas_con_cambio_cant_reg_o_stock_min,
             },
             message="Excel procesado correctamente",
             headers=headers
@@ -1932,8 +1884,8 @@ def guardar_abastecimiento(request, headers):
         return bad_request_error("No se recibieron datos de abastecimiento", headers)
     
     data = json.loads(form_data)
-    nombre_abastecimiento = data.get('nombre_abastecimiento')
-    registrado_por = data.get('registrado_por')
+    nombre_abastecimiento = (data.get('nombre_abastecimiento') or '').strip().upper()
+    registrado_por = (data.get('registrado_por') or '').strip().upper()
     detalles = data.get('detalles')
     password_cliente = data.get('password_autorizacion') # Contraseña enviada desde el front (ya no es requerida aquí)
     

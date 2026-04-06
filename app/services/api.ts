@@ -555,6 +555,8 @@ export interface ImportStockTotalResult {
     cantidad_excel: number;
     delta: number;
   }>;
+  /** Filas donde CANT. (C) o STOCK MÍN. (D–F) difieren de la BD (import solo configuración). */
+  filas_con_cambio_cant_reg_o_stock_min?: number;
 }
 
 export async function importStockTotalExcel(

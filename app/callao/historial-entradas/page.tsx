@@ -7,6 +7,8 @@ import {
     OPERADORES,
     REGISTRADORES,
     OPS_ENTRADA,
+    COMBO_OTROS_VALUE,
+    resolvePersonaCombo,
     ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO,
     TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO,
     etiquetaTiendaMovimientosCallao,
@@ -65,14 +67,26 @@ function ModalEntrada({
         operacionPersonalizada: '',
         almacenSalida: (editData?.almacenSalida ?? 'ALMACEN MALVINAS') as AlmacenCompleto,
         almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA OFICINA') as Tienda,
-        operador: editData?.operador ?? OPERADORES[0],
+        operador: OPERADORES[0],
+        operadorCustom: '',
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
-        entregado: editData?.entregado ?? OPERADORES[0],
-        registradoPor: editData?.registradoPor ?? REGISTRADORES[0],
+        entregado: OPERADORES[0],
+        entregadoCustom: '',
+        registradoPor: REGISTRADORES[0],
+        registradoCustom: '',
         observaciones: editData?.observaciones ?? '',
         motivoCambio: '',
     });
+
+    const mapPersonaCombo = (valor: string | undefined, lista: readonly string[]) => {
+        const v = (valor || '').trim();
+        if (!v) return { sel: lista[0], custom: '' };
+        const up = v.toUpperCase();
+        const found = lista.find(x => x === up);
+        if (found) return { sel: found, custom: '' };
+        return { sel: COMBO_OTROS_VALUE, custom: v };
+    };
 
     // Inicializar formulario cuando editData cambia
     useEffect(() => {
@@ -82,8 +96,10 @@ function ModalEntrada({
                 p.nombre === editData.producto ||
                 p.id === editData.productoId
             );
-            // Si la operación no está en la lista estándar, es una operación personalizada
             const esOperacionPersonalizada = !OPS_ENTRADA.includes(editData.operacion as any);
+            const op = mapPersonaCombo(editData.operador, OPERADORES);
+            const en = mapPersonaCombo(editData.entregado, OPERADORES);
+            const reg = mapPersonaCombo(editData.registradoPor, REGISTRADORES);
             setForm({
                 productoId: producto?.id || editData.productoId || '',
                 producto: editData.producto,
@@ -91,11 +107,14 @@ function ModalEntrada({
                 operacionPersonalizada: esOperacionPersonalizada ? editData.operacion : '',
                 almacenSalida: editData.almacenSalida as AlmacenCompleto,
                 almacenIngreso: editData.almacenIngreso as Tienda,
-                operador: editData.operador,
+                operador: op.sel,
+                operadorCustom: op.custom,
                 cantidad: editData.cantidad,
                 unidadMedida: producto?.unidadMedidaRegCalculo || editData.unidadMedida as UnidadMedida,
-                entregado: editData.entregado,
-                registradoPor: editData.registradoPor,
+                entregado: en.sel,
+                entregadoCustom: en.custom,
+                registradoPor: reg.sel,
+                registradoCustom: reg.custom,
                 observaciones: editData.observaciones,
                 motivoCambio: '',
             });
@@ -127,8 +146,19 @@ function ModalEntrada({
         if (!form.cantidad || form.cantidad <= 0) { showToast('error', 'Ingresa una cantidad válida'); return; }
         if (!form.motivoCambio.trim()) { showToast('error', 'Ingresa el motivo del cambio'); return; }
 
-        if (form.operacion === 'OTROS' && !form.operacionPersonalizada.trim()) {
-            showToast('error', 'Especifica el nombre de la operación');
+        const operador = resolvePersonaCombo(form.operador, form.operadorCustom);
+        const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
+        const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
+        if (form.operador === COMBO_OTROS_VALUE && !operador) {
+            showToast('error', 'Indica el nombre del operador (OTROS)');
+            return;
+        }
+        if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
+            showToast('error', 'Indica entregado (OTROS)');
+            return;
+        }
+        if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
+            showToast('error', 'Indica quién registra (OTROS)');
             return;
         }
 
@@ -137,14 +167,14 @@ function ModalEntrada({
             data: {
                 productoId: form.productoId,
                 producto: form.producto,
-                operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
+                operacion: form.operacion === 'OTROS' ? 'OTROS' : form.operacion,
                 almacenSalida: form.almacenSalida,
                 almacenIngreso: form.almacenIngreso,
-                operador: form.operador,
+                operador,
                 cantidad: Number(form.cantidad),
                 unidadMedida: form.unidadMedida,
-                entregado: form.entregado,
-                registradoPor: form.registradoPor,
+                entregado,
+                registradoPor,
                 observaciones: form.observaciones,
             },
             motivo: form.motivoCambio,
@@ -238,18 +268,6 @@ function ModalEntrada({
                                 {OPS_ENTRADA.map(op => <option key={op}>{op}</option>)}
                             </select>
                         </div>
-                        {form.operacion === 'OTROS' && (
-                            <div className="col-span-2">
-                                <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Especificar Operación *</label>
-                                <input
-                                    type="text"
-                                    value={form.operacionPersonalizada}
-                                    onChange={e => setForm(f => ({ ...f, operacionPersonalizada: e.target.value }))}
-                                    placeholder="Escribe el nombre de la operación..."
-                                    className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
-                                />
-                            </div>
-                        )}
                         <div>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Almacén Salida</label>
                             <select
@@ -287,15 +305,96 @@ function ModalEntrada({
                                 placeholder="0"
                             />
                         </div>
-                        <div>
+                        <div className="col-span-2">
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Operador</label>
                             <select
                                 value={form.operador}
-                                onChange={e => setForm(f => ({ ...f, operador: e.target.value }))}
+                                onChange={e =>
+                                    setForm(f => ({
+                                        ...f,
+                                        operador: e.target.value,
+                                        operadorCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.operadorCustom,
+                                    }))
+                                }
                                 className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
                             >
-                                {OPERADORES.map(o => <option key={o}>{o}</option>)}
+                                {OPERADORES.map(o => (
+                                    <option key={o} value={o}>
+                                        {o}
+                                    </option>
+                                ))}
+                                <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
                             </select>
+                            {form.operador === COMBO_OTROS_VALUE && (
+                                <input
+                                    type="text"
+                                    value={form.operadorCustom}
+                                    onChange={e => setForm(f => ({ ...f, operadorCustom: e.target.value }))}
+                                    className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs mt-2"
+                                    placeholder="Nombre del operador"
+                                />
+                            )}
+                        </div>
+
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Entregado</label>
+                            <select
+                                value={form.entregado}
+                                onChange={e =>
+                                    setForm(f => ({
+                                        ...f,
+                                        entregado: e.target.value,
+                                        entregadoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
+                                    }))
+                                }
+                                className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                            >
+                                {OPERADORES.map(o => (
+                                    <option key={o} value={o}>
+                                        {o}
+                                    </option>
+                                ))}
+                                <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
+                            </select>
+                            {form.entregado === COMBO_OTROS_VALUE && (
+                                <input
+                                    type="text"
+                                    value={form.entregadoCustom}
+                                    onChange={e => setForm(f => ({ ...f, entregadoCustom: e.target.value }))}
+                                    className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs mt-2"
+                                    placeholder="Nombre"
+                                />
+                            )}
+                        </div>
+                        <div>
+                            <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Registrado por</label>
+                            <select
+                                value={form.registradoPor}
+                                onChange={e =>
+                                    setForm(f => ({
+                                        ...f,
+                                        registradoPor: e.target.value,
+                                        registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
+                                    }))
+                                }
+                                className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
+                            >
+                                {REGISTRADORES.map(r => (
+                                    <option key={r} value={r}>
+                                        {r}
+                                    </option>
+                                ))}
+                                <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
+                            </select>
+                            {form.registradoPor === COMBO_OTROS_VALUE && (
+                                <input
+                                    type="text"
+                                    value={form.registradoCustom}
+                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value }))}
+                                    className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs mt-2"
+                                    placeholder="Nombre"
+                                />
+                            )}
                         </div>
 
                         <div className="col-span-2">

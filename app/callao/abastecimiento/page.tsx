@@ -300,7 +300,7 @@ function ModalGuardar({
                             <input
                                 type="text"
                                 value={nombre}
-                                onChange={e => setNombre(e.target.value)}
+                                onChange={e => setNombre(e.target.value.toUpperCase())}
                                 className="form-input"
                                 style={{ fontSize: 12 }}
                                 placeholder="Ej: Abastecimiento Semana 10"
@@ -311,7 +311,7 @@ function ModalGuardar({
                             <input
                                 type="text"
                                 value={registradoPor}
-                                onChange={e => setRegistradoPor(e.target.value)}
+                                onChange={e => setRegistradoPor(e.target.value.toUpperCase())}
                                 className="form-input"
                                 style={{ fontSize: 12 }}
                                 placeholder="Nombre de quien registra"

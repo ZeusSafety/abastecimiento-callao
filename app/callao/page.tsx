@@ -1,7 +1,17 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { useCallao, TIENDAS, TIENDAS_VISTA_INVENTARIO_CALLAO, Tienda, Producto } from '../context/CallaoContext';
+import {
+  useCallao,
+  TIENDAS,
+  TIENDAS_VISTA_INVENTARIO_CALLAO,
+  Tienda,
+  Producto,
+  OPERADORES,
+  REGISTRADORES,
+  COMBO_OTROS_VALUE,
+  resolvePersonaCombo,
+} from '../context/CallaoContext';
 import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock, FileSpreadsheet, Upload } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
 import * as api from '../services/api';
@@ -47,18 +57,22 @@ export default function StockTotalPage() {
     const [showImportModal, setShowImportModal] = useState(false);
     const [importMovs, setImportMovs] = useState<api.ImportStockTotalResult['movimientos_entrada_sugeridos']>([]);
     const [importNegativos, setImportNegativos] = useState<api.ImportStockTotalResult['ajustes_negativos']>([]);
+    const [importFilasConfig, setImportFilasConfig] = useState(0);
     const [isImportingPreview, setIsImportingPreview] = useState(false);
     const [isImportSaving, setIsImportSaving] = useState(false);
 
     const [importForm, setImportForm] = useState({
         operacion: 'OTROS',
         almacenSalida: 'MALVINAS',
-        operador: 'Manuel',
-        entregado: 'Manuel',
-        registradoPor: 'Manuel',
+        operador: OPERADORES[0],
+        operadorCustom: '',
+        entregado: OPERADORES[0],
+        entregadoCustom: '',
+        registradoPor: REGISTRADORES[0],
+        registradoCustom: '',
         observaciones: '',
     });
-    const [importActas, setImportActas] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [importActas, setImportActas] = useState<Array<{ id: string; file: File; nombre: string; preview: string }>>([]);
     const [showImportPasswordModal, setShowImportPasswordModal] = useState(false);
     const [importPassword, setImportPassword] = useState('');
 
@@ -417,10 +431,24 @@ export default function StockTotalPage() {
             setImportFile(file);
             setImportMovs(preview.movimientos_entrada_sugeridos || []);
             setImportNegativos(preview.ajustes_negativos || []);
+            const filasCfg = preview.filas_con_cambio_cant_reg_o_stock_min ?? 0;
+            setImportFilasConfig(filasCfg);
 
-            if ((preview.movimientos_entrada_sugeridos || []).length === 0) {
-                showToast('info', 'No se detectaron ingresos (deltas positivos) para registrar');
+            const hayMovs = (preview.movimientos_entrada_sugeridos || []).length > 0;
+            const haySoloConfig = !hayMovs && filasCfg > 0;
+
+            if (!hayMovs && !haySoloConfig) {
+                showToast(
+                    'info',
+                    'No hay cambios: ni deltas de existencia para ingresos ni diferencias en cantidad registrada / stock mínimo.',
+                );
                 return;
+            }
+            if (haySoloConfig) {
+                showToast(
+                    'info',
+                    `Se aplicará cantidad registrada y stock mínimo desde el Excel (${filasCfg} fila(s) con cambios). No hay movimientos de entrada automáticos.`,
+                );
             }
             setShowImportModal(true);
         } catch (error: any) {
@@ -436,6 +464,7 @@ export default function StockTotalPage() {
     const handleAddImportActas = (files: FileList | null) => {
         if (!files || files.length === 0) return;
         const nuevas = Array.from(files).map(file => ({
+            id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             file,
             nombre: file.name,
             preview: URL.createObjectURL(file),
@@ -457,45 +486,70 @@ export default function StockTotalPage() {
             showToast('error', 'No se encontró el archivo Excel seleccionado');
             return;
         }
-        if (importMovs.length === 0) {
-            showToast('error', 'No hay movimientos para registrar');
+        const soloConfig = importMovs.length === 0 && importFilasConfig > 0;
+        if (importMovs.length === 0 && !soloConfig) {
+            showToast('error', 'No hay movimientos ni cambios de configuración para aplicar');
             return;
+        }
+
+        if (!soloConfig) {
+            const operador = resolvePersonaCombo(importForm.operador, importForm.operadorCustom);
+            const entregado = resolvePersonaCombo(importForm.entregado, importForm.entregadoCustom);
+            const registrado = resolvePersonaCombo(importForm.registradoPor, importForm.registradoCustom);
+            if (importForm.operador === COMBO_OTROS_VALUE && !operador) {
+                showToast('error', 'Indica el nombre del operador (OTROS)');
+                return;
+            }
+            if (importForm.entregado === COMBO_OTROS_VALUE && !entregado) {
+                showToast('error', 'Indica quién entrega (OTROS)');
+                return;
+            }
+            if (importForm.registradoPor === COMBO_OTROS_VALUE && !registrado) {
+                showToast('error', 'Indica quién registra (OTROS)');
+                return;
+            }
         }
 
         setIsImportSaving(true);
         try {
-            // 1) Aplicar cambios de CANT. y Stock Mínimo (sin pisar existencias)
             await api.importStockTotalExcel(importFile, 'aplicar');
 
-            // 2) Registrar entradas masivas para ajustar existencias (OTROS, salida CALLAO)
-            const actasPayload = importActas.length > 0 ? importActas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined;
-            const entradasPayload = importMovs.map(m => ({
-                producto: m.producto,
-                operacion: importForm.operacion || 'OTROS',
-                almacen_salida: importForm.almacenSalida || 'MALVINAS',
-                almacen_ingreso: m.almacen_ingreso,
-                operador: importForm.operador,
-                cantidad: m.cantidad,
-                unidad_medida: m.unidad_medida,
-                entregado_por: importForm.entregado,
-                registrado_por: importForm.registradoPor,
-                observaciones: importForm.observaciones,
-            }));
+            if (soloConfig) {
+                await refreshProductos();
+                showToast('success', 'Cantidad registrada y stock mínimo actualizados desde el Excel.');
+            } else {
+                const actasPayload = importActas.length > 0 ? importActas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined;
+                const operador = resolvePersonaCombo(importForm.operador, importForm.operadorCustom);
+                const entregado = resolvePersonaCombo(importForm.entregado, importForm.entregadoCustom);
+                const registrado = resolvePersonaCombo(importForm.registradoPor, importForm.registradoCustom);
+                const entradasPayload = importMovs.map(m => ({
+                    producto: m.producto,
+                    operacion: importForm.operacion || 'OTROS',
+                    almacen_salida: importForm.almacenSalida || 'MALVINAS',
+                    almacen_ingreso: m.almacen_ingreso,
+                    operador,
+                    cantidad: m.cantidad,
+                    unidad_medida: m.unidad_medida,
+                    entregado_por: entregado,
+                    registrado_por: registrado,
+                    observaciones: importForm.observaciones,
+                }));
 
-            await api.createEntradasMasivo(entradasPayload, {
-                actas: actasPayload,
-                passwordAutorizacion: actasPayload ? undefined : passwordAutorizacion,
-            });
+                await api.createEntradasMasivo(entradasPayload, {
+                    actas: actasPayload,
+                    passwordAutorizacion: actasPayload ? undefined : passwordAutorizacion,
+                });
 
-            await Promise.all([refreshProductos(), refreshEntradas()]);
-            showToast('success', `Importación exitosa: ${importMovs.length} ingreso(s) registrado(s)`);
+                await Promise.all([refreshProductos(), refreshEntradas()]);
+                showToast('success', `Importación exitosa: ${importMovs.length} ingreso(s) registrado(s)`);
+            }
 
-            // limpiar estado/modal
             importActas.forEach(a => URL.revokeObjectURL(a.preview));
             setImportActas([]);
             setImportFile(null);
             setImportMovs([]);
             setImportNegativos([]);
+            setImportFilasConfig(0);
             setImportPassword('');
             setShowImportPasswordModal(false);
             setShowImportModal(false);
@@ -941,43 +995,91 @@ export default function StockTotalPage() {
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Operador</label>
                                     <select
                                         value={importForm.operador}
-                                        onChange={e => setImportForm(f => ({ ...f, operador: e.target.value }))}
+                                        onChange={e =>
+                                            setImportForm(f => ({
+                                                ...f,
+                                                operador: e.target.value,
+                                                operadorCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.operadorCustom,
+                                            }))
+                                        }
                                         className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
                                     >
-                                        <option value="MANUEL" >MANUEL</option>
-                                        <option value="VICTOR" >VICTOR</option>
-                                        <option value="JUAN" >JUAN</option>
-                                        <option value="JHONSON" >JHONSON</option>
-                                        <option value="" >OTROS</option>
+                                        {OPERADORES.map(o => (
+                                            <option key={o} value={o}>
+                                                {o}
+                                            </option>
+                                        ))}
+                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
                                     </select>
+                                    {importForm.operador === COMBO_OTROS_VALUE && (
+                                        <input
+                                            type="text"
+                                            value={importForm.operadorCustom}
+                                            onChange={e => setImportForm(f => ({ ...f, operadorCustom: e.target.value }))}
+                                            className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
+                                            placeholder="Nombre del operador"
+                                        />
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Entregado por</label>
                                     <select
                                         value={importForm.entregado}
-                                        onChange={e => setImportForm(f => ({ ...f, entregado: e.target.value }))}
+                                        onChange={e =>
+                                            setImportForm(f => ({
+                                                ...f,
+                                                entregado: e.target.value,
+                                                entregadoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
+                                            }))
+                                        }
                                         className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
                                     >
-                                        <option value="MANUEL" >MANUEL</option>
-                                        <option value="VICTOR" >VICTOR</option>
-                                        <option value="JUAN" >JUAN</option>
-                                        <option value="JHONSON" >JHONSON</option>
-                                        <option value="" >OTROS</option>
+                                        {OPERADORES.map(o => (
+                                            <option key={o} value={o}>
+                                                {o}
+                                            </option>
+                                        ))}
+                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
                                     </select>
+                                    {importForm.entregado === COMBO_OTROS_VALUE && (
+                                        <input
+                                            type="text"
+                                            value={importForm.entregadoCustom}
+                                            onChange={e => setImportForm(f => ({ ...f, entregadoCustom: e.target.value }))}
+                                            className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
+                                            placeholder="Nombre"
+                                        />
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Registrado por</label>
                                     <select
                                         value={importForm.registradoPor}
-                                        onChange={e => setImportForm(f => ({ ...f, registradoPor: e.target.value }))}
+                                        onChange={e =>
+                                            setImportForm(f => ({
+                                                ...f,
+                                                registradoPor: e.target.value,
+                                                registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
+                                            }))
+                                        }
                                         className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
                                     >
-                                        <option value="MANUEL" >MANUEL</option>
-                                        <option value="VICTOR" >VICTOR</option>
-                                        <option value="JUAN" >JUAN</option>
-                                        <option value="JHONSON" >JHONSON</option>
-                                        <option value="" >OTROS</option>
+                                        {REGISTRADORES.map(r => (
+                                            <option key={r} value={r}>
+                                                {r}
+                                            </option>
+                                        ))}
+                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
                                     </select>
+                                    {importForm.registradoPor === COMBO_OTROS_VALUE && (
+                                        <input
+                                            type="text"
+                                            value={importForm.registradoCustom}
+                                            onChange={e => setImportForm(f => ({ ...f, registradoCustom: e.target.value }))}
+                                            className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
+                                            placeholder="Nombre"
+                                        />
+                                    )}
                                 </div>
                                 <div className="lg:col-span-3">
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Observaciones</label>
@@ -1015,7 +1117,7 @@ export default function StockTotalPage() {
                                     <div className="px-4 py-3 border-b border-gray-200">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                             {importActas.map((a, idx) => (
-                                                <div key={`${a.nombre}-${idx}`} className="flex items-center gap-2">
+                                                <div key={a.id} className="flex items-center gap-2">
                                                     <input
                                                         value={a.nombre}
                                                         onChange={e => {
@@ -1071,6 +1173,11 @@ export default function StockTotalPage() {
                             </button>
                             <button
                                 onClick={() => {
+                                    const soloCfg = importMovs.length === 0 && importFilasConfig > 0;
+                                    if (soloCfg) {
+                                        confirmImportSave(undefined);
+                                        return;
+                                    }
                                     if (importActas.length === 0) {
                                         setShowImportPasswordModal(true);
                                         setImportPassword('');

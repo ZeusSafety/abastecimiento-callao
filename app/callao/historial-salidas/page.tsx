@@ -123,17 +123,12 @@ function ModalSalida({
         if (!form.productoId) { showToast('error', 'Selecciona un producto'); return; }
         if (!form.cantidad || form.cantidad <= 0) { showToast('error', 'Ingresa una cantidad válida'); return; }
         if (!form.motivoCambio.trim()) { showToast('error', 'Ingresa el motivo del cambio'); return; }
-        if (form.operacion === 'OTROS' && !form.operacionPersonalizada.trim()) {
-            showToast('error', 'Especifica el nombre de la operación');
-            return;
-        }
-
         onAccept({
             id: editData!.id,
             data: {
                 productoId: form.productoId,
                 producto: form.producto,
-                operacion: form.operacion === 'OTROS' ? form.operacionPersonalizada : form.operacion,
+                operacion: form.operacion === 'OTROS' ? 'OTROS' : form.operacion,
                 comprobante: form.comprobante,
                 asesor: form.asesor,
                 cantidad: Number(form.cantidad),
@@ -234,18 +229,6 @@ function ModalSalida({
                                 {OPS_SALIDA.map(op => <option key={op}>{op}</option>)}
                             </select>
                         </div>
-                        {form.operacion === 'OTROS' && (
-                            <div className="col-span-2">
-                                <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Especificar Operación *</label>
-                                <input
-                                    type="text"
-                                    value={form.operacionPersonalizada}
-                                    onChange={e => setForm(f => ({ ...f, operacionPersonalizada: e.target.value }))}
-                                    placeholder="Escribe el nombre de la operación..."
-                                    className="form-input w-full p-2 border border-gray-200 rounded-lg text-xs"
-                                />
-                            </div>
-                        )}
                         <div>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Almacén</label>
                             <select

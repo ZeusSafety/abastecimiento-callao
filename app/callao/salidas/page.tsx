@@ -7,7 +7,10 @@ import {
     TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO,
     getCodigoFromTienda,
     etiquetaTiendaMovimientosCallao,
+    OPERADORES,
     REGISTRADORES,
+    COMBO_OTROS_VALUE,
+    resolvePersonaCombo,
     OPS_SALIDA,
     RegistroSalida,
     Tienda,
@@ -45,8 +48,10 @@ function ModalSalida({
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
         almacen: (editData?.almacen ?? 'TIENDA OFICINA') as Tienda,
-        entregado: editData?.entregado ?? '',
+        entregado: OPERADORES[0],
+        entregadoCustom: '',
         registradoPor: editData?.registradoPor ?? REGISTRADORES[0],
+        registradoCustom: '',
         observaciones: editData?.observaciones ?? '',
         motivoCambio: '',
     });
@@ -92,13 +97,37 @@ function ModalSalida({
                 cantidad: 0,
                 unidadMedida: 'DOCENAS' as UnidadMedida,
                 almacen: 'TIENDA OFICINA',
-                entregado: '',
+                entregado: OPERADORES[0],
+                entregadoCustom: '',
                 registradoPor: REGISTRADORES[0],
+                registradoCustom: '',
                 observaciones: '',
                 motivoCambio: '',
             });
         }
     }, [isOpen, isEdit]);
+
+    const mapPersonaCombo = (valor: string | undefined, lista: readonly string[]) => {
+        const v = (valor || '').trim();
+        if (!v) return { sel: lista[0], custom: '' };
+        const up = v.toUpperCase();
+        const found = lista.find(x => x === up);
+        if (found) return { sel: found, custom: '' };
+        return { sel: COMBO_OTROS_VALUE, custom: v };
+    };
+
+    useEffect(() => {
+        if (!isEdit || !editData) return;
+        const en = mapPersonaCombo(editData.entregado, OPERADORES);
+        const reg = mapPersonaCombo(editData.registradoPor, REGISTRADORES);
+        setForm(f => ({
+            ...f,
+            entregado: en.sel,
+            entregadoCustom: en.custom,
+            registradoPor: reg.sel,
+            registradoCustom: reg.custom,
+        }));
+    }, [isEdit, editData]);
 
     // Inicializar fecha solo en el cliente
     useEffect(() => {
@@ -157,6 +186,17 @@ function ModalSalida({
             return; 
         }
 
+        const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
+        const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
+        if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
+            showToast('error', 'Indica entregado (OTROS)');
+            return;
+        }
+        if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
+            showToast('error', 'Indica quién registra (OTROS)');
+            return;
+        }
+
         const nuevoProducto = {
             productoId: form.productoId,
             producto: form.producto,
@@ -167,8 +207,8 @@ function ModalSalida({
             cantidad: Number(form.cantidad),
             unidadMedida: form.unidadMedida,
             almacen: form.almacen,
-            entregado: form.entregado,
-            registradoPor: form.registradoPor,
+            entregado,
+            registradoPor,
             observaciones: form.observaciones,
         };
 
@@ -357,6 +397,16 @@ function ModalSalida({
             }
 
             try {
+                const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
+                const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
+                if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
+                    showToast('error', 'Indica entregado (OTROS)');
+                    return;
+                }
+                if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
+                    showToast('error', 'Indica quién registra (OTROS)');
+                    return;
+                }
                 await updateSalida(editData!.id, {
                     productoId: form.productoId,
                     producto: form.producto,
@@ -366,8 +416,8 @@ function ModalSalida({
                     cantidad: Number(form.cantidad),
                     unidadMedida: form.unidadMedida,
                     almacen: form.almacen,
-                    entregado: form.entregado,
-                    registradoPor: form.registradoPor,
+                    entregado,
+                    registradoPor,
                     observaciones: form.observaciones,
                 }, form.motivoCambio);
                 await Promise.all([refreshSalidas(), refreshProductos()]);
@@ -609,14 +659,38 @@ function ModalSalida({
                         {/* Entregado */}
                         <div>
                             <label className="form-label">Entregado</label>
-                            <input
-                                type="text"
-                                value={form.entregado}
-                                onChange={e => setForm(f => ({ ...f, entregado: e.target.value.toUpperCase() }))}
-                                className="form-input"
-                                style={{ fontSize: 12 }}
-                                placeholder="Nombre de quien recibe"
-                            />
+                            <div className="relative">
+                                <select
+                                    value={form.entregado}
+                                    onChange={e =>
+                                        setForm(f => ({
+                                            ...f,
+                                            entregado: e.target.value,
+                                            entregadoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
+                                        }))
+                                    }
+                                    className="form-input"
+                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
+                                >
+                                    {OPERADORES.map(o => (
+                                        <option key={o} value={o}>
+                                            {o}
+                                        </option>
+                                    ))}
+                                    <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
+                                </select>
+                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            </div>
+                            {form.entregado === COMBO_OTROS_VALUE && (
+                                <input
+                                    type="text"
+                                    value={form.entregadoCustom}
+                                    onChange={e => setForm(f => ({ ...f, entregadoCustom: e.target.value }))}
+                                    className="form-input mt-2"
+                                    style={{ fontSize: 12 }}
+                                    placeholder="Nombre"
+                                />
+                            )}
                         </div>
 
                         {/* Registrado por */}
@@ -626,11 +700,22 @@ function ModalSalida({
                                 <div className="relative flex-1">
                                     <select
                                         value={form.registradoPor}
-                                        onChange={e => setForm(f => ({ ...f, registradoPor: e.target.value }))}
+                                        onChange={e =>
+                                            setForm(f => ({
+                                                ...f,
+                                                registradoPor: e.target.value,
+                                                registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
+                                            }))
+                                        }
                                         className="form-input"
                                         style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
                                     >
-                                        {REGISTRADORES.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
+                                        {REGISTRADORES.map(r => (
+                                            <option key={r} value={r}>
+                                                {r}
+                                            </option>
+                                        ))}
+                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
                                     </select>
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
@@ -649,6 +734,16 @@ function ModalSalida({
                                     )}
                                 </button>
                             </div>
+                            {form.registradoPor === COMBO_OTROS_VALUE && (
+                                <input
+                                    type="text"
+                                    value={form.registradoCustom}
+                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value }))}
+                                    className="form-input w-full mt-2"
+                                    style={{ fontSize: 12 }}
+                                    placeholder="Nombre"
+                                />
+                            )}
                         </div>
 
                         {/* Observaciones */}
