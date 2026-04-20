@@ -5,24 +5,28 @@ import * as api from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type UnidadMedida = 'DOCENAS' | 'DECENAS' | 'UNIDADES' | 'CAJITAS' | 'BOLSITAS';
-/** Códigos en BD: OFICINA, CALLAO-1, CALLAO-2 (`tiendas_gestion_sea_callao`). */
-export type Tienda = 'TIENDA OFICINA' | 'TIENDA CALLAO-1' | 'TIENDA CALLAO-2';
+/** Códigos en BD:OFICINA, OFICINA-DOCENAS, CALLAO 1-A, CALLAO 1-B, CALLAO 2. (`tiendas_gestion_sea_callao`). */
+export type Tienda = 'TIENDA OFICINA' | 'TIENDA OFICINA-DOCENAS' | 'TIENDA CALLAO-1-A' | 'TIENDA CALLAO-1-B' | 'TIENDA CALLAO-2';
 /** Incluye `ALMACEN CALLAO` solo por compatibilidad con histórico (API CALLAO). */
-export type AlmacenCompleto = 'ALMACEN CALLAO' | 'ALMACEN MALVINAS' | Tienda;
+export type AlmacenCompleto = 'IMPORTACION' | 'ALMACEN MALVINAS' | Tienda;
 
-export const TIENDAS: Tienda[] = ['TIENDA OFICINA', 'TIENDA CALLAO-1', 'TIENDA CALLAO-2'];
+export const TIENDAS: Tienda[] = ['TIENDA OFICINA', 'TIENDA OFICINA-DOCENAS', 'TIENDA CALLAO-1-A', 'TIENDA CALLAO-1-B', 'TIENDA CALLAO-2'];
 
-/** Tiendas mostradas en la tabla Inventario Callao (3 columnas: Stock mínimo y Existencia). */
+/** Tiendas mostradas en la tabla Abastecimiento Callao (5 columnas: Stock mínimo y Existencia). */
 export const TIENDAS_VISTA_INVENTARIO_CALLAO: ReadonlyArray<{ tienda: Tienda; etiqueta: string }> = [
   { tienda: 'TIENDA OFICINA', etiqueta: 'Oficina' },
-  { tienda: 'TIENDA CALLAO-1', etiqueta: 'Callao 1' },
+  { tienda: 'TIENDA OFICINA-DOCENAS', etiqueta: 'Oficina-Docenas' },
+  { tienda: 'TIENDA CALLAO-1-A', etiqueta: 'Callao 1-A' },
+  { tienda: 'TIENDA CALLAO-1-B', etiqueta: 'Callao 1-B' },
   { tienda: 'TIENDA CALLAO-2', etiqueta: 'Callao 2' },
 ];
 
-/** Destino (entrada) y almacén (salida) en modales: OFICINA, CALLAO 1, CALLAO 2. */
+/** Destino (entrada) y almacén (salida) en modales: OFICINA, OFICINA-DOCENAS, CALLAO 1-A, CALLAO 1-B, CALLAO 2. */
 export const TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO: ReadonlyArray<{ tienda: Tienda; label: string }> = [
   { tienda: 'TIENDA OFICINA', label: 'OFICINA' },
-  { tienda: 'TIENDA CALLAO-1', label: 'CALLAO 1' },
+  { tienda: 'TIENDA OFICINA-DOCENAS', label: 'OFICINA-DOCENAS' },
+  { tienda: 'TIENDA CALLAO-1-A', label: 'CALLAO 1-A' },
+  { tienda: 'TIENDA CALLAO-1-B', label: 'CALLAO 1-B' },
   { tienda: 'TIENDA CALLAO-2', label: 'CALLAO 2' },
 ];
 
@@ -34,14 +38,16 @@ export function etiquetaTiendaMovimientosCallao(t: Tienda): string {
 export const ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO: ReadonlyArray<{ value: AlmacenCompleto; label: string }> = [
   { value: 'ALMACEN MALVINAS', label: 'ALMACEN MALVINAS' },
   { value: 'TIENDA OFICINA', label: 'OFICINA' },
-  { value: 'TIENDA CALLAO-1', label: 'CALLAO 1' },
+  { value: 'TIENDA OFICINA-DOCENAS', label: 'OFICINA-DOCENAS' },
+  { value: 'TIENDA CALLAO-1-A', label: 'CALLAO 1-A' },
+  { value: 'TIENDA CALLAO-1-B', label: 'CALLAO 1-B' },
   { value: 'TIENDA CALLAO-2', label: 'CALLAO 2' },
 ];
 
 export function etiquetaOrigenAlmacenSalidaEntrada(a: AlmacenCompleto): string {
   const row = ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.find(o => o.value === a);
   if (row) return row.label;
-  if (a === 'ALMACEN CALLAO') return 'ALMACEN CALLAO';
+  if (a === 'IMPORTACION') return 'IMPORTACION';
   return a;
 }
 
@@ -56,8 +62,9 @@ export function resolvePersonaCombo(val: string, otro: string): string {
   return val;
 }
 export const UNIDADES: UnidadMedida[] = ['DOCENAS', 'DECENAS', 'UNIDADES', 'CAJITAS', 'BOLSITAS'];
-export const OPS_ENTRADA = ['TRASLADO', 'DEVOLUCION', 'CAMBIO', 'MERMA', 'REPOSICION', 'OTROS'] as const;
-export const OPS_SALIDA = ['VENTA', 'TRASLADO', 'DEVOLUCION', 'CAMBIO', 'REPOSICION', 'MERMA', 'VERIFICACION', 'OTROS'] as const;
+export const OPS_ENTRADA = ['ENTRADA', 'OTROS'] as const;
+export const OPS_SALIDA = ['SALIDA', 'VENTA', 'OTROS'] as const;
+export const OPS_TRASLADOS = ['TRASLADO', 'OTROS'] as const;
 
 // ─── Función para obtener colores de operaciones ──────────────────────────────
 export function getOperacionColor(operacion: string): { bg: string; text: string } {
@@ -65,17 +72,11 @@ export function getOperacionColor(operacion: string): { bg: string; text: string
     switch (op) {
         case 'TRASLADO':
             return { bg: 'bg-blue-50', text: 'text-blue-700' };
-        case 'DEVOLUCION':
-            return { bg: 'bg-purple-50', text: 'text-purple-700' };
-        case 'CAMBIO':
-            return { bg: 'bg-yellow-50', text: 'text-yellow-700' };
-        case 'MERMA':
-            return { bg: 'bg-red-50', text: 'text-red-700' };
-        case 'REPOSICION':
-            return { bg: 'bg-green-50', text: 'text-green-700' };
         case 'VENTA':
-            return { bg: 'bg-indigo-50', text: 'text-indigo-700' };
-        case 'VERIFICACION':
+            return { bg: 'bg-red-50', text: 'text-red-700' };
+        case 'ENTRADA':
+            return { bg: 'bg-green-50', text: 'text-green-700' };
+        case 'SALIDA':
             return { bg: 'bg-cyan-50', text: 'text-cyan-700' };
         case 'OTROS':
             return { bg: 'bg-gray-50', text: 'text-gray-700' };
@@ -104,13 +105,11 @@ const UNIDAD_MEDIDA_REVERSE_MAP: Record<UnidadMedida, number> = {
 // ─── Mapeo de Tiendas ────────────────────────────────────────────────────────
 function getTiendaFromCodigo(codigo: string): Tienda | null {
   const map: Record<string, Tienda> = {
-    OFICINA: 'TIENDA OFICINA',
-    'CALLAO-1': 'TIENDA CALLAO-1',
+    'OFICINA': 'TIENDA OFICINA',
+    'OFICINA-DOCENAS': 'TIENDA OFICINA-DOCENAS',
+    'CALLAO-1-A': 'TIENDA CALLAO-1-A',
+    'CALLAO-1-B': 'TIENDA CALLAO-1-B',
     'CALLAO-2': 'TIENDA CALLAO-2',
-    // Compatibilidad lectura histórica
-    '3006': 'TIENDA OFICINA',
-    '3131': 'TIENDA CALLAO-1',
-    '412-A': 'TIENDA CALLAO-2',
   };
   return map[codigo] || null;
 }
@@ -118,14 +117,16 @@ function getTiendaFromCodigo(codigo: string): Tienda | null {
 export function getCodigoFromTienda(tienda: Tienda): string {
   const map: Record<Tienda, string> = {
     'TIENDA OFICINA': 'OFICINA',
-    'TIENDA CALLAO-1': 'CALLAO-1',
+    'TIENDA OFICINA-DOCENAS': 'OFICINA-DOCENAS',
+    'TIENDA CALLAO-1-A': 'CALLAO-1-A',
+    'TIENDA CALLAO-1-B': 'CALLAO-1-B',
     'TIENDA CALLAO-2': 'CALLAO-2',
   };
   return map[tienda];
 }
 
 export function getCodigoAlmacenSalidaEntrada(a: AlmacenCompleto): string {
-  if (a === 'ALMACEN CALLAO') return 'CALLAO';
+  if (a === 'IMPORTACION') return 'IMPORTACION';
   if (a === 'ALMACEN MALVINAS') return 'MALVINAS';
   return getCodigoFromTienda(a as Tienda);
 }
@@ -133,7 +134,7 @@ export function getCodigoAlmacenSalidaEntrada(a: AlmacenCompleto): string {
 export function resolveAlmacenSalidaEntradaDesdeApi(codigo: string, nombre: string | null | undefined): AlmacenCompleto {
   const c = (codigo || '').trim().toUpperCase();
   if (c === 'MALVINAS') return 'ALMACEN MALVINAS';
-  if (c === 'CALLAO') return 'ALMACEN MALVINAS';
+  if (c === 'IMPORTACION') return 'ALMACEN MALVINAS';
   const t = getTiendaFromCodigo(c);
   if (t) return t;
   const nom = nombre || '';
@@ -308,12 +309,16 @@ function convertirProductoDB(productoDB: api.ProductoDB, stockTotal?: api.StockT
   // Obtener stock mínimo y existencia del stockTotal si está disponible
   let stockMinimo: Record<Tienda, number> = {
     'TIENDA OFICINA': 0,
-    'TIENDA CALLAO-1': 0,
+    'TIENDA OFICINA-DOCENAS': 0,
+    'TIENDA CALLAO-1-A': 0,
+    'TIENDA CALLAO-1-B': 0,
     'TIENDA CALLAO-2': 0,
   };
   let existencia: Record<Tienda, number> = {
     'TIENDA OFICINA': 0,
-    'TIENDA CALLAO-1': 0,
+    'TIENDA OFICINA-DOCENAS': 0,
+    'TIENDA CALLAO-1-A': 0,
+    'TIENDA CALLAO-1-B': 0,
     'TIENDA CALLAO-2': 0,
   };
 
@@ -321,12 +326,16 @@ function convertirProductoDB(productoDB: api.ProductoDB, stockTotal?: api.StockT
     const st = stockTotal;
     stockMinimo = {
       'TIENDA OFICINA': st.sm_oficina ?? 0,
-      'TIENDA CALLAO-1': st.sm_callao1 ?? 0,
+      'TIENDA OFICINA-DOCENAS': st.sm_oficina_docenas ?? 0,
+      'TIENDA CALLAO-1-A': st.sm_callao1_a ?? 0,
+      'TIENDA CALLAO-1-B': st.sm_callao1_b ?? 0,
       'TIENDA CALLAO-2': st.sm_callao2 ?? 0,
     };
     existencia = {
       'TIENDA OFICINA': st.existencia_oficina ?? 0,
-      'TIENDA CALLAO-1': st.existencia_callao1 ?? 0,
+      'TIENDA OFICINA-DOCENAS': st.existencia_oficina_docenas ?? 0,
+      'TIENDA CALLAO-1-A': st.existencia_callao1_a ?? 0,
+      'TIENDA CALLAO-1-B': st.existencia_callao1_b ?? 0,
       'TIENDA CALLAO-2': st.existencia_callao2 ?? 0,
     };
   }
@@ -793,7 +802,9 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
           unidadMedida: item.unidad_medida as UnidadMedida,
           tiendas: {
             'TIENDA OFICINA': item.cant_almacen_oficina ?? 0,
-            'TIENDA CALLAO-1': item.cant_almacen_callao_1 ?? 0,
+            'TIENDA OFICINA-DOCENAS': item.cant_almacen_oficina_docenas ?? 0,
+            'TIENDA CALLAO-1-A': item.cant_almacen_callao_1_a ?? 0,
+            'TIENDA CALLAO-1-B': item.cant_almacen_callao_1_b ?? 0,
             'TIENDA CALLAO-2': item.cant_almacen_callao_2 ?? 0,
           },
           abastecerCajas: item.abastecer_cajas,
@@ -824,7 +835,9 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
           cantidad_reg_calculo: producto.cantidadRegCalculo,
           id_unidad_medida: resolveIdUnidadMedidaReg(producto),
           cant_almacen_oficina: Math.max(0, item.tiendas['TIENDA OFICINA']),
-          cant_almacen_callao_1: Math.max(0, item.tiendas['TIENDA CALLAO-1']),
+          cant_almacen_oficina_docenas: Math.max(0, item.tiendas['TIENDA OFICINA-DOCENAS']),
+          cant_almacen_callao_1_a: Math.max(0, item.tiendas['TIENDA CALLAO-1-A']),
+          cant_almacen_callao_1_b: Math.max(0, item.tiendas['TIENDA CALLAO-1-B']),
           cant_almacen_callao_2: Math.max(0, item.tiendas['TIENDA CALLAO-2']),
           abastecer_cajas: item.abastecerCajas,
           enviar: item.enviar,

@@ -89,10 +89,14 @@ export interface StockTotalDB {
   cantidad_reg_calculo: number;
   unidad_medida_reg: string;
   sm_oficina: number | null;
-  sm_callao1: number | null;
+  sm_oficina_docenas: number | null;
+  sm_callao1_a: number | null;
+  sm_callao1_b: number | null;
   sm_callao2: number | null;
   existencia_oficina: number;
-  existencia_callao1: number;
+  existencia_oficina_docenas: number;
+  existencia_callao1_a: number;
+  existencia_callao1_b: number;
   existencia_callao2: number;
   stock_global_minimo: number;
   disponibles: number;
@@ -127,7 +131,9 @@ export interface DetalleAbastecimientoDB {
   cantidad: number;
   unidad_medida: string;
   cant_almacen_oficina: number;
-  cant_almacen_callao_1: number;
+  cant_almacen_oficina_docenas: number;
+  cant_almacen_callao_1_a: number;
+  cant_almacen_callao_1_b: number;
   cant_almacen_callao_2: number;
   abastecer_cajas: number;
   enviar: string;
@@ -723,7 +729,9 @@ export async function guardarAbastecimiento(
       cantidad_reg_calculo: number;
       id_unidad_medida: number;
       cant_almacen_oficina: number;
-      cant_almacen_callao_1: number;
+      cant_almacen_oficina_docenas: number;
+      cant_almacen_callao_1_a: number;
+      cant_almacen_callao_1_b: number;
       cant_almacen_callao_2: number;
       abastecer_cajas: number;
       enviar: 'SI' | 'NO';

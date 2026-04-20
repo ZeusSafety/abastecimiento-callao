@@ -406,7 +406,7 @@ def get_unidades_medida(request, headers):
 
 # --- MÓDULO TIPOS DE OPERACIÓN ---
 def get_tipos_operacion(tipo_operacion, headers):
-    """Obtiene los tipos de operación filtrados por tipo (ENTRADA/SALIDA)."""
+    """Obtiene los tipos de operación filtrados por tipo (ENTRADA/SALIDA/TRASLADO)."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -482,7 +482,7 @@ def update_producto(request, headers, producto_id):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        _codigos_tienda_stock = frozenset({'OFICINA', 'CALLAO-1', 'CALLAO-2'})
+        _codigos_tienda_stock = frozenset({'OFICINA', 'OFICINA-DOCENAS', 'CALLAO-1-A', 'CALLAO-1-B', 'CALLAO-2'})
 
         # Verificar que el producto existe
         cursor.execute("SELECT id FROM productos_abastecimiento_callao WHERE id = %s", (producto_id,))
@@ -580,7 +580,7 @@ def update_productos_masivo(request, headers):
     if len(productos) == 0:
         return bad_request_error("La lista 'productos' está vacía", headers)
 
-    _codigos_tienda_stock = frozenset({'OFICINA', 'CALLAO-1', 'CALLAO-2'})
+    _codigos_tienda_stock = frozenset({'OFICINA', 'OFICINA-DOCENAS', 'CALLAO-1-A', 'CALLAO-1-B', 'CALLAO-2'})
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1396,6 +1396,407 @@ def update_salida(request, headers, id_salida):
         cursor.close()
         conn.close()
 
+
+# --- MÓDULO TRASLADOS ---
+def get_traslados(request, headers):
+    """Obtiene el listado de movimientos de traslado."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Una consulta más amigable que muestre nombres en lugar de IDs
+        sql = """
+            SELECT 
+                mg.id, mg.fecha_registro, 
+                p.codigo as producto_codigo, p.nombre as producto_nombre,
+                tos.nombre as operacion,
+                ts.codigo as tienda_salida_codigo, ts.nombre as tienda_salida_nombre,
+                ti.codigo as tienda_ingreso_codigo, ti.nombre as tienda_ingreso_nombre,
+                mg.operador, mg.cantidad, um.nombre as unidad_medida,
+                mg.entregado_por, mg.registrado_por, mg.observaciones,
+                mg.fecha_actualizacion, mg.motivo_cambio,
+                COUNT(mea.id) as total_actas, 
+                GROUP_CONCAT(mea.url_imagen SEPARATOR ',') as actas_urls
+            FROM movimientos_traslado_callao mg
+            LEFT JOIN movimientos_actas_callao mea ON mg.id = mea.id_movimiento_traslado
+            JOIN productos_abastecimiento_callao p ON mg.id_producto = p.id
+            JOIN tipos_operacion_sea_callao tos ON mg.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea_callao ts ON mg.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea_callao ti ON mg.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea_callao um ON mg.id_unidad_medida = um.id
+            GROUP BY mg.id
+            ORDER BY mg.fecha_registro DESC
+        """
+        cursor.execute(sql)
+        traslados = cursor.fetchall()
+        return success_response(data=traslados, message="Traslados obtenidos correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_traslado(request, headers):
+    """Registra traslado con soporte de actas e imágenes."""
+    # 1. Obtener datos del FormData
+    form_data = request.form.get('data')
+    if not form_data:
+        return bad_request_error("Faltan datos en la petición", headers)
+    
+    data = json.loads(form_data)
+    files = request.files.getlist('actas')
+    password_cliente = data.get('password_autorizacion')
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # --- VALIDACIÓN DE CONTRASEÑA DINÁMICA ---
+        if not files or len(files) == 0:
+            # Para movimientos (entradas/salidas/tralado) usamos la clave dinámica del sistema.
+            pass_sistema = _obtener_contrasena_sistema(conn)
+            if not password_cliente or password_cliente != pass_sistema:
+                return (json.dumps({"message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
+
+
+        # Convertir nombres/códigos a IDs
+        producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
+        if not producto_id:
+            return bad_request_error("Producto no encontrado", headers)
+
+        tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(data.get('operacion'), 'TRASLADO', conn)
+        if not tipo_op_id:
+            return bad_request_error(f"Tipo de operación '{data.get('operacion')}' para TRASLADO no válido", headers)
+
+        tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_salida'), conn)
+        if not tienda_salida_id:
+            return bad_request_error(f"Almacén/Tienda de salida '{data.get('almacen_salida')}' no encontrado", headers)
+
+        tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_ingreso'), conn)
+        if not tienda_ingreso_id:
+            return bad_request_error(f"Tienda de ingreso '{data.get('almacen_ingreso')}' no encontrada", headers)
+
+        um_id = _get_id_unidad_medida_por_nombre(data.get('unidad_medida'), conn)
+        if not um_id:
+            return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
+
+        if not all([producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id, um_id]):
+            return bad_request_error("Uno o más parámetros (producto, tienda, etc.) son inválidos", headers)
+
+        # Verificar si la tienda de salida es un almacén o una tienda (reutilizar el mismo cursor)
+        cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea_callao WHERE id = %s", (tienda_salida_id,))
+        tienda_salida_info = cursor.fetchone()
+        es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
+
+        # Fila en existencias para tienda de INGRESO: sin ella el SP deja v_cant_anterior NULL (MySQL INTO sin filas).
+        _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
+
+        # Llamar al SP manualmente para mantener control de la transacción
+        params = [
+            producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
+            data.get('operador'), data.get('cantidad'), um_id,
+            data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
+        ]
+        try:
+            logging.info(f"Ejecutando SP: sp_registrar_traslado_callao con parámetros: {params}")
+            cursor.callproc('sp_registrar_traslado_callao', params)
+            result_set = cursor.fetchall()
+            _drenar_resultados_callproc(cursor)
+            nuevo_id = _resolver_id_movimiento_despues_sp(cursor, result_set)
+
+            if not nuevo_id:
+                raise Exception("No se pudo obtener id del movimiento (ni resultado del SP ni LAST_INSERT_ID)")
+
+            # cantidad_anterior la calcula el SP (stock en tienda ingreso antes del movimiento); no sobrescribir.
+
+            # Si la tienda de salida NO es un almacén (es una tienda), restar del stock
+            if not es_almacen_salida:
+                cantidad = data.get('cantidad', 0)
+                _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
+                cursor.execute(
+                    "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
+                    (producto_id, tienda_salida_id)
+                )
+                existencia_row = cursor.fetchone()
+
+                if existencia_row:
+                    nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
+                    cursor.execute(
+                        "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                        (nueva_cantidad, producto_id, tienda_salida_id)
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                        (producto_id, tienda_salida_id, 0)
+                    )
+
+            # --- GUARDAR ACTAS EN GCS Y BD ---
+            if files:
+                for file in files:
+                    url_publica = upload_to_gcs(file)
+                    cursor.execute("""
+                        INSERT INTO movimientos_actas_callao (id_movimiento_traslado, nombre_imagen, url_imagen) 
+                        VALUES (%s, %s, %s)
+                    """, (nuevo_id, file.filename, url_publica))
+
+            conn.commit()
+            return created_response(data={'id': nuevo_id}, message="Traslado registrado con actas", headers=headers)
+
+        except Exception as e:
+            conn.rollback()
+            logging.error(f"Error ejecutando traslado: {traceback.format_exc()}")
+            return server_error(f"Error al registrar traslado: {str(e)}", headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_traslados_masivo(request, headers):
+    """
+    Registra múltiples traslados en una sola transacción.
+    Ahora soporta actas globales por carga (todo un conjunto de actas para todos los ítems).
+    Estructura esperada:
+    {
+        "traslados": [...],
+        "actas": [{"nombre": "acta1.pdf", "archivo": file}],
+        "password_autorizacion": "xxxx" (opcional, solo si no hay actas)
+    }
+    """
+    # 1. Obtener datos JSON
+    form_data = request.form.get('data') if request.form.get('data') else None
+    if form_data:
+        data = json.loads(form_data)
+        traslados = data.get('traslados', [])
+        password_cliente = data.get('password_autorizacion')
+    else:
+        # Si viene por JSON puro (sin multipart)
+        data = request.get_json()
+        traslados = data.get('traslados', [])
+        password_cliente = data.get('password_autorizacion')
+
+    if not isinstance(traslados, list) or len(traslados) == 0:
+        return bad_request_error("El array 'traslados' es requerido y no puede estar vacío", headers)
+
+    # 2. Obtener archivos (actas globales)
+    files = request.files.getlist('actas') if request.files else []
+
+    # 3. Validar contraseña si no hay actas
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if not files or len(files) == 0:
+        pass_sistema = _obtener_contrasena_sistema(conn)
+        if not password_cliente or password_cliente != pass_sistema:
+            cursor.close()
+            conn.close()
+            return (json.dumps({"success": False, "message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
+    
+    ids_generados = []
+    errores = []
+    codigo_carga = _generar_codigo_carga()
+
+    try:
+        for idx, traslado_data in enumerate(traslados):
+            try:
+                # Convertir nombres/códigos a IDs
+                producto_id = _get_id_producto_por_codigo_o_nombre(traslado_data.get('producto'), conn)
+                if not producto_id:
+                    errores.append(f"Traslado {idx + 1}: Producto no encontrado")
+                    continue
+
+                tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(traslado_data.get('operacion'), 'TRASLADO', conn)
+                if not tipo_op_id:
+                    errores.append(f"Traslado {idx + 1}: Tipo de operación inválido")
+                    continue
+
+                tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(traslado_data.get('almacen_salida'), conn)
+                if not tienda_salida_id:
+                    errores.append(f"Traslado {idx + 1}: Almacén de salida no encontrado")
+                    continue
+
+                tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(traslado_data.get('almacen_ingreso'), conn)
+                if not tienda_ingreso_id:
+                    errores.append(f"Traslado {idx + 1}: Tienda de ingreso no encontrada")
+                    continue
+
+                um_id = _get_id_unidad_medida_por_nombre(traslado_data.get('unidad_medida'), conn)
+                if not um_id:
+                    errores.append(f"Traslado {idx + 1}: Unidad de medida no válida")
+                    continue
+
+                # Verificar si la tienda de salida es un almacén
+                cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea_callao WHERE id = %s", (tienda_salida_id,))
+                tienda_salida_info = cursor.fetchone()
+                es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
+
+                try:
+                    cantidad_val = int(traslado_data.get('cantidad') or 0)
+                except (TypeError, ValueError):
+                    cantidad_val = 0
+
+                _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
+
+                # Llamar al SP
+                params = [
+                    producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
+                    traslado_data.get('operador'), cantidad_val, um_id,
+                    traslado_data.get('entregado_por'), traslado_data.get('registrado_por'),
+                    traslado_data.get('observaciones'),
+                ]
+                cursor.callproc('sp_registrar_traslado_callao', params)
+                result_set = cursor.fetchall()
+                _drenar_resultados_callproc(cursor)
+                nuevo_id = _resolver_id_movimiento_despues_sp(cursor, result_set)
+
+                if not nuevo_id:
+                    errores.append(
+                        f"Traslado {idx + 1}: No se obtuvo id del movimiento (revise sp_registrar_traslado_callao o LAST_INSERT_ID)"
+                    )
+                    continue
+
+                # Restar stock si la tienda de salida no es almacén (el SP ya actualizó ingreso)
+                if not es_almacen_salida:
+                    cantidad = cantidad_val
+                    _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
+                    cursor.execute(
+                        "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
+                        (producto_id, tienda_salida_id)
+                    )
+                    existencia_row = cursor.fetchone()
+                    if existencia_row:
+                        nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
+                        cursor.execute(
+                            "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                            (nueva_cantidad, producto_id, tienda_salida_id)
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                            (producto_id, tienda_salida_id, 0)
+                        )
+
+                ids_generados.append(nuevo_id)
+
+            except Exception as e:
+                errores.append(f"Traslado {idx + 1}: {str(e)}")
+                logging.error(f"Error en traslado {idx + 1}: {traceback.format_exc()}")
+
+        # 4. Actas globales: codigo_carga solo en movimientos_actas_callao (no en me).
+        # Subimos cada archivo una vez; el primer movimiento recibe el INSERT real;
+        # el mismo url/nombre se replica en el resto de filas del lote para que la cascada agrupe por codigo_carga.
+        actas_subidas = []
+        id_representativo = next((i for i in ids_generados if i), None)
+        if files and codigo_carga and id_representativo:
+            for file in files:
+                if file.filename != '':
+                    url_publica = upload_to_gcs(file)
+                    if url_publica:
+                        actas_subidas.append((url_publica, file.filename))
+                        cursor.execute(
+                            """INSERT INTO movimientos_actas_callao 
+                               (id_movimiento_traslado, nombre_imagen, url_imagen, codigo_carga) 
+                               VALUES (%s, %s, %s, %s)""",
+                            (id_representativo, file.filename, url_publica, codigo_carga),
+                        )
+            for nid in ids_generados:
+                if not nid or nid == id_representativo:
+                    continue
+                for url_publica, fname in actas_subidas:
+                    cursor.execute(
+                        """INSERT INTO movimientos_actas_callao 
+                           (id_movimiento_traslado, nombre_imagen, url_imagen, codigo_carga) 
+                           VALUES (%s, %s, %s, %s)""",
+                        (nid, fname, url_publica, codigo_carga),
+                    )
+
+        if errores:
+            conn.rollback()
+            return bad_request_error(f"Errores: {'; '.join(errores)}", headers)
+        
+        conn.commit()
+        return created_response(
+            data={'ids': ids_generados, 'total': len(ids_generados), 'codigo_carga': codigo_carga},
+            message=f"{len(ids_generados)} traslado(s) registrada(s) exitosamente",
+            headers=headers
+        )
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error en create_traslados_masivo: {traceback.format_exc()}")
+        return server_error(f"Error: {str(e)}", headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+def update_traslado(request, headers, id_traslado):
+    """Edita un traslado existente usando el SP sp_editar_traslado_callao."""
+    data = request.get_json()
+    if not data:
+        return bad_request_error("Datos JSON inválidos", headers)
+
+    motivo_cambio = data.get('motivo_cambio')
+    if not motivo_cambio:
+        return bad_request_error("El campo 'motivo_cambio' es obligatorio para editar", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Obtener estado anterior del movimiento para recalcular impacto en stock.
+        cursor.execute(
+            """
+            SELECT id, id_producto, id_tienda_salida, id_tienda_ingreso, cantidad
+            FROM movimientos_traslado_callao
+            WHERE id = %s
+            """,
+            (id_traslado,)
+        )
+        mov_anterior = cursor.fetchone()
+        if not mov_anterior:
+            return not_found_error(f"Traslado con ID {id_traslado} no encontrado", headers)
+
+        # Convertir nombres/códigos a IDs (similar a create_traslado)
+        producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
+        if not producto_id:
+            return bad_request_error("Producto no encontrado", headers)
+
+        tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(data.get('operacion'), 'TRASLADO', conn)
+        if not tipo_op_id:
+            return bad_request_error(f"Tipo de operación '{data.get('operacion')}' para TRASLADO no válido", headers)
+
+        tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_salida'), conn)
+        if not tienda_salida_id:
+            return bad_request_error(f"Almacén/Tienda de salida '{data.get('almacen_salida')}' no encontrado", headers)
+
+        tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_ingreso'), conn)
+        if not tienda_ingreso_id:
+            return bad_request_error(f"Tienda de ingreso '{data.get('almacen_ingreso')}' no encontrada", headers)
+
+        um_id = _get_id_unidad_medida_por_nombre(data.get('unidad_medida'), conn)
+        if not um_id:
+            return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
+
+        # Filas en existencias antes del SP: evita NULL en cantidad_anterior (MySQL SELECT INTO sin fila).
+        _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
+        _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
+
+        params = [
+            id_traslado, producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
+            data.get('operador'), data.get('cantidad'), um_id,
+            data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
+            motivo_cambio
+        ]
+        cursor.callproc('sp_editar_traslado_callao', params)
+        while cursor.nextset():
+            pass
+
+        conn.commit()
+        return success_response(message="Traslado actualizado exitosamente", headers=headers)
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error al actualizar traslado: {traceback.format_exc()}")
+        return server_error(f"Error al actualizar traslado: {str(e)}", headers)
+    finally:
+        cursor.close()
+        conn.close()
+
 # --- MÓDULO EXISTENCIAS / STOCK TOTAL ---
 def get_existencias(request, headers):
     """Obtiene las existencias actuales por tienda."""
@@ -1422,40 +1823,32 @@ def get_existencias(request, headers):
 
 def get_stock_total(request, headers):
     """
-    Stock total — tiendas `OFICINA`, `CALLAO-1`, `CALLAO-2` (tabla tiendas_gestion_sea_callao).
+    Stock total — tiendas `OFICINA`, `OFICINA-DOCENAS`, `CALLAO-1-A`, `CALLAO-1-B`, `CALLAO-2` (tabla tiendas_gestion_sea_callao).
     Contrato JSON alineado con app/services/api.ts (StockTotalDB).
     """
     conn = get_connection()
     cursor = conn.cursor()
     try:
         sql_plano = """
-            SELECT
-            p.id,
-            p.codigo,
-            p.nombre,
-            p.cantidad_reg_calculo,
-            um_reg.nombre AS unidad_medida_reg,
-            sm_o.stock_minimo AS sm_oficina,
-            sm_c1.stock_minimo AS sm_callao1,
-            sm_c2.stock_minimo AS sm_callao2,
-            COALESCE(ex_o.cantidad, 0) AS existencia_oficina,
-            COALESCE(ex_c1.cantidad, 0) AS existencia_callao1,
-            COALESCE(ex_c2.cantidad, 0) AS existencia_callao2
+            SELECT 
+                p.id,
+                p.codigo,
+                p.nombre,
+                p.cantidad_reg_calculo,
+                um_reg.nombre AS unidad_medida_reg,
+                -- Existencias por tienda
+                COALESCE(ex_oficina.cantidad, 0)  AS existencia_oficina,
+                COALESCE(ex_oficina_docenas.cantidad, 0)  AS existencia_oficina_docenas,
+                COALESCE(ex_callao1a.cantidad, 0)  AS existencia_callao1a,
+                COALESCE(ex_callao1b.cantidad, 0)  AS existencia_callao1b,
+                COALESCE(ex_callao2.cantidad, 0)  AS existencia_callao2
             FROM productos_abastecimiento_callao p
             JOIN unidades_medida_sea_callao um_reg ON p.id_unidad_medida_reg = um_reg.id
-            LEFT JOIN stock_minimo_almacen_callao sm_o ON p.id = sm_o.id_producto
-              AND sm_o.id_tienda = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA' LIMIT 1)
-            LEFT JOIN stock_minimo_almacen_callao sm_c1 ON p.id = sm_c1.id_producto
-              AND sm_c1.id_tienda = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1' LIMIT 1)
-            LEFT JOIN stock_minimo_almacen_callao sm_c2 ON p.id = sm_c2.id_producto
-              AND sm_c2.id_tienda = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2' LIMIT 1)
-            LEFT JOIN existencias_almacen_callao ex_o ON p.id = ex_o.id_producto
-              AND ex_o.id_tienda = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA' LIMIT 1)
-            LEFT JOIN existencias_almacen_callao ex_c1 ON p.id = ex_c1.id_producto
-              AND ex_c1.id_tienda = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1' LIMIT 1)
-            LEFT JOIN existencias_almacen_callao ex_c2 ON p.id = ex_c2.id_producto
-              AND ex_c2.id_tienda = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2' LIMIT 1)
-            ORDER BY p.nombre;
+            LEFT JOIN existencias_almacen_callao ex_oficina  ON p.id = ex_oficina.id_producto  AND ex_oficina.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA')
+            LEFT JOIN existencias_almacen_callao ex_oficina_docenas  ON p.id = ex_oficina_docenas.id_producto  AND ex_oficina_docenas.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA-DOCENAS')
+            LEFT JOIN existencias_almacen_callao ex_callao1a  ON p.id = ex_callao1a.id_producto  AND ex_callao1a.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-A')
+            LEFT JOIN existencias_almacen_callao ex_callao1b  ON p.id = ex_callao1b.id_producto  AND ex_callao1b.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-B')
+            LEFT JOIN existencias_almacen_callao ex_callao2  ON p.id = ex_callao2.id_producto  AND ex_callao2.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2');
         """
         cursor.execute(sql_plano)
         resultados = cursor.fetchall()
@@ -1472,23 +1865,25 @@ def get_stock_total(request, headers):
                     return 0
 
         for row in resultados:
-            row['stock_global_minimo'] = (
-                _n(row.get('sm_oficina'))
-                + _n(row.get('sm_callao1'))
-                + _n(row.get('sm_callao2'))
-            )
             row['disponibles'] = (
                 _n(row.get('existencia_oficina'))
-                + _n(row.get('existencia_callao1'))
+                + _n(row.get('existencia_oficina_docenas'))
+                + _n(row.get('existencia_callao1a'))
+                + _n(row.get('existencia_callao1b'))
                 + _n(row.get('existencia_callao2'))
             )
 
-            cantidad_reg = row['cantidad_reg_calculo'] if row['cantidad_reg_calculo'] and row['cantidad_reg_calculo'] > 0 else 1
-            disponibles = row['disponibles']
+            # cajas = suma de oficina + callao1a + callao1b + callao2
+            row['cajas'] = (
+                _n(row.get('existencia_oficina'))
+                + _n(row.get('existencia_callao1a'))
+                + _n(row.get('existencia_callao1b'))
+                + _n(row.get('existencia_callao2'))
+            )
 
-            cajas = int(disponibles // cantidad_reg) if cantidad_reg else 0
-            row['stock_detallado_cajas'] = cajas
-            row['stock_detallado_medida'] = disponibles - (cajas * cantidad_reg)
+            # stock_detallado_medida = solo existencia_oficina_docenas
+            row['stock_detallado_medida'] = _n(row.get('existencia_oficina_docenas'))
+
             row['stock_detallado_unidad_medida'] = row['unidad_medida_reg']
 
         return success_response(data=resultados, message="Stock total obtenido correctamente", headers=headers)
@@ -1580,11 +1975,11 @@ def importar_stock_total_excel(request, headers):
     cursor = conn.cursor()
     try:
         # Cachear ids de tienda
-        cursor.execute("SELECT id, codigo FROM tiendas_gestion_sea_callao WHERE codigo IN ('OFICINA','CALLAO-1','CALLAO-2')")
+        cursor.execute("SELECT id, codigo FROM tiendas_gestion_sea_callao WHERE codigo IN ('OFICINA', 'OFICINA-DOCENAS', 'CALLAO-1-A', 'CALLAO-1-B', 'CALLAO-2')")
         tiendas_rows = cursor.fetchall() or []
         tienda_id_por_codigo = {r["codigo"]: r["id"] for r in tiendas_rows}
 
-        faltantes_tiendas = [c for c in ["OFICINA", "CALLAO-1", "CALLAO-2"] if c not in tienda_id_por_codigo]
+        faltantes_tiendas = [c for c in ["OFICINA", "OFICINA-DOCENAS", "CALLAO-1-A", "CALLAO-1-B", "CALLAO-2"] if c not in tienda_id_por_codigo]
         if faltantes_tiendas:
             return server_error(f"No existen tiendas en BD: {', '.join(faltantes_tiendas)}", headers)
 
@@ -1735,7 +2130,7 @@ def importar_stock_total_excel(request, headers):
         cursor.close()
         conn.close()
 
-# --- MÓDULO HISTORIAL DE CAMBIOS ---
+# --- MÓDULO HISTORIAL DE CAMBIOS ENTRADAS/SALIDAS/TRASLADOS ---
 def get_historial_entradas(request, headers):
     """Obtiene el historial de cambios de entradas (tabla cambios_entrada_callao)."""
     conn = get_connection()
@@ -1796,6 +2191,38 @@ def get_historial_salidas(request, headers):
         cursor.close()
         conn.close()
 
+def get_historial_traslados(request, headers):
+    """Obtiene el historial de cambios de traslados (tabla cambios_traslado_callao)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT 
+                ct.fecha_cambio as fecha,
+                p.codigo as producto_codigo, p.nombre as producto_nombre,
+                tos.nombre as operacion,
+                ts.codigo as tienda_salida_codigo,
+                ti.codigo as tienda_ingreso_codigo,
+                ct.operador, ct.cantidad, ct.cantidad_anterior, um.nombre as unidad_medida,
+                ct.entregado_por, ct.registrado_por, ct.observaciones,
+                ct.motivo_cambio,
+                ct.fecha_movimiento_orig
+            FROM cambios_traslado_callao ct
+            JOIN productos_abastecimiento_callao p ON ct.id_producto = p.id
+            JOIN tipos_operacion_sea_callao tos ON ct.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea_callao ts ON ct.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea_callao ti ON ct.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea_callao um ON ct.id_unidad_medida = um.id
+            ORDER BY ct.fecha_cambio DESC
+        """
+        cursor.execute(sql)
+        historial = cursor.fetchall()
+        return success_response(data=historial, message="Historial de traslados obtenido correctamente", headers=headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # --- MÓDULO ABASTECIMIENTO ---
 def calcular_abastecimiento(request, headers):
     """
@@ -1815,21 +2242,28 @@ def calcular_abastecimiento(request, headers):
                 um_reg.nombre AS unidad_medida_reg,
                 -- Stock mínimo por tienda
                 sm_oficina.stock_minimo  AS sm_oficina,
-                sm_callao1.stock_minimo  AS sm_callao1,
+                sm_oficina_docenas.stock_minimo  AS sm_oficina_docenas,
+                sm_callao1a.stock_minimo  AS sm_callao1_a,
+                sm_callao1b.stock_minimo  AS sm_callao1_b,
                 sm_callao2.stock_minimo  AS sm_callao2,
                 -- Existencias por tienda
                 COALESCE(ex_oficina.cantidad, 0)  AS existencia_oficina,
-                COALESCE(ex_callao1.cantidad, 0)  AS existencia_callao1,
+                COALESCE(ex_oficina_docenas.cantidad, 0)  AS existencia_oficina_docenas,
+                COALESCE(ex_callao1a.cantidad, 0)  AS existencia_callao1a,
+                COALESCE(ex_callao1b.cantidad, 0)  AS existencia_callao1b,
                 COALESCE(ex_callao2.cantidad, 0)  AS existencia_callao2
             FROM productos_abastecimiento_callao p
             JOIN unidades_medida_sea_callao um_reg ON p.id_unidad_medida_reg = um_reg.id
             LEFT JOIN stock_minimo_almacen_callao sm_oficina  ON p.id = sm_oficina.id_producto  AND sm_oficina.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA')
-            LEFT JOIN stock_minimo_almacen_callao sm_callao1  ON p.id = sm_callao1.id_producto  AND sm_callao1.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1')
+            LEFT JOIN stock_minimo_almacen_callao sm_oficina_docenas  ON p.id = sm_oficina_docenas.id_producto  AND sm_oficina_docenas.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA-DOCENAS')
+            LEFT JOIN stock_minimo_almacen_callao sm_callao1a  ON p.id = sm_callao1a.id_producto  AND sm_callao1a.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-A')
+            LEFT JOIN stock_minimo_almacen_callao sm_callao1b  ON p.id = sm_callao1b.id_producto  AND sm_callao1b.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-B')
             LEFT JOIN stock_minimo_almacen_callao sm_callao2  ON p.id = sm_callao2.id_producto  AND sm_callao2.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2')
             LEFT JOIN existencias_almacen_callao ex_oficina  ON p.id = ex_oficina.id_producto  AND ex_oficina.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA')
-            LEFT JOIN existencias_almacen_callao ex_callao1  ON p.id = ex_callao1.id_producto  AND ex_callao1.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1')
-            LEFT JOIN existencias_almacen_callao ex_callao2  ON p.id = ex_callao2.id_producto  AND ex_callao2.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2')
-            ORDER BY p.nombre;
+            LEFT JOIN existencias_almacen_callao ex_oficina_docenas  ON p.id = ex_oficina_docenas.id_producto  AND ex_oficina_docenas.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA-DOCENAS')
+            LEFT JOIN existencias_almacen_callao ex_callao1a  ON p.id = ex_callao1a.id_producto  AND ex_callao1a.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-A')
+            LEFT JOIN existencias_almacen_callao ex_callao1b  ON p.id = ex_callao1b.id_producto  AND ex_callao1b.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-B')
+            LEFT JOIN existencias_almacen_callao ex_callao2  ON p.id = ex_callao2.id_producto  AND ex_callao2.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2');
         """
         cursor.execute(sql)
         productos_base = cursor.fetchall()
@@ -1838,17 +2272,23 @@ def calcular_abastecimiento(request, headers):
         import math
         for row in productos_base:
             sm_o = row.get('sm_oficina') or 0
-            sm_c1 = row.get('sm_callao1') or 0
+            sm_od = row.get('sm_oficina_docenas') or 0
+            sm_c1a = row.get('sm_callao1_a') or 0
+            sm_c1b = row.get('sm_callao1_b') or 0
             sm_c2 = row.get('sm_callao2') or 0
             ex_o = row.get('existencia_oficina') or 0
-            ex_c1 = row.get('existencia_callao1') or 0
+            ex_od = row.get('existencia_oficina_docenas') or 0
+            ex_c1a = row.get('existencia_callao1_a') or 0
+            ex_c1b = row.get('existencia_callao1_b') or 0
             ex_c2 = row.get('existencia_callao2') or 0
 
             abast_oficina = max(0, int(sm_o) - int(ex_o))
-            abast_callao1 = max(0, int(sm_c1) - int(ex_c1))
+            abast_oficina_docenas = max(0, int(sm_od) - int(ex_od))
+            abast_callao1a = max(0, int(sm_c1a) - int(ex_c1a))
+            abast_callao1b = max(0, int(sm_c1b) - int(ex_c1b))
             abast_callao2 = max(0, int(sm_c2) - int(ex_c2))
 
-            total_abastecer_unidades = abast_oficina + abast_callao1 + abast_callao2
+            total_abastecer_unidades = abast_oficina + abast_oficina_docenas + abast_callao1a + abast_callao1b + abast_callao2
             cantidad_reg = row['cantidad_reg_calculo'] if row.get('cantidad_reg_calculo') and row['cantidad_reg_calculo'] > 0 else 1
             abastecer_cajas = math.ceil(total_abastecer_unidades / cantidad_reg) if cantidad_reg else 0
 
@@ -1860,7 +2300,9 @@ def calcular_abastecimiento(request, headers):
                 'cantidad': cantidad_reg,
                 'unidad_medida': row['unidad_medida_reg'],
                 'abastecer_oficina': abast_oficina,
-                'abastecer_callao1': abast_callao1,
+                'abastecer_oficina_docenas': abast_oficina_docenas,
+                'abastecer_callao1a': abast_callao1a,
+                'abastecer_callao1b': abast_callao1b,
                 'abastecer_callao2': abast_callao2,
                 'abastecer_cajas': abastecer_cajas,
                 'enviar': enviar
@@ -1912,9 +2354,9 @@ def guardar_abastecimiento(request, headers):
         sql_ins_detalle = """
             INSERT INTO abastecimiento_detalle_callao (
                 id_abastecimiento, id_producto, cantidad_reg_calculo, id_unidad_medida,
-                cant_almacen_oficina, cant_alamacen_callao_1, cant_almacen_callao_2,
+                cant_almacen_oficina, cant_almacen_oficina_docenas, cant_almacen_callao_1_a, cant_almacen_callao_1_b, cant_almacen_callao_2,
                 abastecer_cajas, enviar
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         for detalle in detalles:
             producto_id = _get_id_producto_por_codigo_o_nombre(detalle.get('codigo'), conn)
@@ -1934,7 +2376,9 @@ def guardar_abastecimiento(request, headers):
                     cant_reg,
                     id_um,
                     int(detalle.get('cant_almacen_oficina') or 0),
-                    int(detalle.get('cant_almacen_callao_1') or 0),
+                    int(detalle.get('cant_almacen_oficina_docenas') or 0),
+                    int(detalle.get('cant_almacen_callao_1_a') or 0),
+                    int(detalle.get('cant_almacen_callao_1_b') or 0),
                     int(detalle.get('cant_almacen_callao_2') or 0),
                     int(detalle.get('abastecer_cajas') or 0),
                     detalle.get('enviar', 'NO'),
@@ -1996,7 +2440,9 @@ def get_detalle_abastecimiento(request, headers, nombre_abastecimiento):
                 ad.cantidad_reg_calculo as cantidad,
                 um.nombre as unidad_medida,
                 ad.cant_almacen_oficina,
-                ad.cant_alamacen_callao_1 AS cant_almacen_callao_1,
+                ad.cant_almacen_oficina_docenas,
+                ad.cant_almacen_callao_1_a,
+                ad.cant_almacen_callao_1_b,
                 ad.cant_almacen_callao_2,
                 ad.abastecer_cajas, ad.enviar
             FROM abastecimiento_detalle_callao ad
@@ -2029,7 +2475,9 @@ def get_historial_abastecimiento_general(request, headers):
                 ad.cantidad_reg_calculo as cantidad,
                 um.nombre as unidad_medida,
                 ad.cant_almacen_oficina,
-                ad.cant_alamacen_callao_1 AS cant_almacen_callao_1,
+                ad.cant_almacen_oficina_docenas,
+                ad.cant_almacen_callao_1_a,
+                ad.cant_almacen_callao_1_b,
                 ad.cant_almacen_callao_2,
                 ad.abastecer_cajas, ad.enviar,
                 ac.nombre as nombre_abastecimiento,

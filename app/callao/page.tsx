@@ -572,7 +572,7 @@ export default function StockTotalPage() {
                             </div>
                             <div>
                                 <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
-                                    Inventario Callao
+                                    Abastecimiento Callao
                                 </h1>
                                 <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Vista general del stock y gestión por tienda</p>
                             </div>
@@ -623,7 +623,7 @@ export default function StockTotalPage() {
                             </div>
                             <div>
                                 <h3 className="font-bold text-gray-800 m-0" style={{ fontSize: 16 }}>
-                                    Inventario Detallado
+                                    Productos Detallados
                                 </h3>
                                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Control de Stock en Tiempo Real</p>
                             </div>
@@ -682,39 +682,30 @@ export default function StockTotalPage() {
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20]">Código</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] min-w-[200px]">Producto</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">Cant.</th>
-                                        <th colSpan={3} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
-                                            Stock Mínimo
-                                        </th>
-                                        <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">Stock Global</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">U. Medida</th>
-                                        <th colSpan={3} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
+                                        <th colSpan={5} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
                                             Existencia Almacén
                                         </th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center bg-[#001F3D]">Disponibles</th>
                                         <th colSpan={3} className="px-4 py-2 text-center bg-[#1a4a7a]">Stock Detallado</th>
                                     </tr>
                                     <tr className="bg-[#1a4a7a] text-white border-t border-[#ffffff20]">
-                                        {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
-                                            <th key={`min-${tienda}`} className="px-2 py-2 border-r border-[#ffffff20] text-center text-[9px]">
-                                                {etiqueta}
-                                            </th>
-                                        ))}
+
                                         {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda, etiqueta }) => (
                                             <th key={`ex-${tienda}`} className="px-2 py-2 border-r border-[#ffffff20] text-center text-[9px]">
                                                 {etiqueta}
                                             </th>
                                         ))}
                                         <th className="px-2 py-2 border-r border-[#ffffff20] text-center">Cajas</th>
-                                        <th className="px-2 py-2 border-r border-[#ffffff20] text-center">Med.</th>
-                                        <th className="px-2 py-2 text-center">U.Med</th>
+                                        <th className="px-2 py-2 border-r border-[#ffffff20] text-center">Doc,Dec,Uni Sueltas</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {isLoading ? (
-                                        <TableSkeleton rows={20} cols={15} />
+                                        <TableSkeleton rows={20} cols={12} />
                                     ) : filtered.length === 0 ? (
                                         <tr>
-                                            <td colSpan={15} className="px-4 py-12 text-center">
+                                            <td colSpan={12} className="px-4 py-12 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <Package className="w-12 h-12 text-gray-300" />
                                                     <p className="text-gray-400 text-sm font-medium">
@@ -771,25 +762,7 @@ export default function StockTotalPage() {
                                                             p.cantidadRegCalculo
                                                         )}
                                                     </td>
-                                                    {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => (
-                                                        <td key={`min-${t}`} className="px-2 py-3 text-center text-[11px]">
-                                                            {isEditing ? (
-                                                                <input
-                                                                    type="number"
-                                                                    value={editing.editing.stockMinimo[t] === 0 ? '' : editing.editing.stockMinimo[t]}
-                                                                    onChange={e => updateEditingValue(p.id, 'stockMinimo', t, Number(e.target.value) || 0)}
-                                                                    onClick={e => e.stopPropagation()}
-                                                                    className="w-full px-2 py-1 border-2 border-yellow-500 rounded text-[10px] text-gray-900 font-semibold text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                                    placeholder="0"
-                                                                />
-                                                            ) : (
-                                                                <span className="text-gray-400">
-                                                                    {p.stockMinimo[t] > 0 ? p.stockMinimo[t] : '-'}
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                    ))}
-                                                    <td className="px-4 py-3 text-center font-bold text-[11px]">{stockGlobalMin}</td>
+                                                    
                                                     <td className="px-4 py-3 text-center text-[11px]">
                                                         <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold">
                                                             {p.unidadMedidaRegCalculo}
@@ -817,9 +790,6 @@ export default function StockTotalPage() {
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]">{cajas}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: medida < 0 ? '#dc2626' : '#22c55e' }}>
                                                         {medida}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-center text-[9px] text-gray-400 font-medium whitespace-nowrap uppercase">
-                                                        {p.unidadMedidaRegCalculo}
                                                     </td>
                                                 </tr>
                                             );
