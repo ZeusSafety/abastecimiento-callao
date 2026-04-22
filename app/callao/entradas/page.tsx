@@ -152,14 +152,12 @@ function ModalEntrada({
         codigo: '', // Agregar código al estado del formulario
         operacion: editData?.operacion ?? OPS_ENTRADA[0],
         operacionPersonalizada: '',
-        almacenSalida: (editData?.almacenSalida ?? 'ALMACEN MALVINAS') as AlmacenCompleto,
+        almacenSalida: (editData?.almacenSalida ?? 'IMPORTACION') as AlmacenCompleto,
         almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA OFICINA') as Tienda,
         operador: OPERADORES[0],
         operadorCustom: '',
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
-        entregado: OPERADORES[0],
-        entregadoCustom: '',
         registradoPor: REGISTRADORES[0],
         registradoCustom: '',
         observaciones: editData?.observaciones ?? '',
@@ -178,7 +176,6 @@ function ModalEntrada({
         operador: string;
         cantidad: number;
         unidadMedida: UnidadMedida;
-        entregado: string;
         registradoPor: string;
         observaciones: string;
     }>>([]);
@@ -202,14 +199,12 @@ function ModalEntrada({
                 codigo: '',
                 operacion: OPS_ENTRADA[0],
                 operacionPersonalizada: '',
-                almacenSalida: 'ALMACEN MALVINAS',
+                almacenSalida: 'IMPORTACION',
                 almacenIngreso: 'TIENDA OFICINA',
                 operador: OPERADORES[0],
                 operadorCustom: '',
                 cantidad: 0,
                 unidadMedida: 'DOCENAS' as UnidadMedida,
-                entregado: OPERADORES[0],
-                entregadoCustom: '',
                 registradoPor: REGISTRADORES[0],
                 registradoCustom: '',
                 observaciones: '',
@@ -230,14 +225,11 @@ function ModalEntrada({
     useEffect(() => {
         if (!isEdit || !editData) return;
         const op = mapPersonaCombo(editData.operador, OPERADORES);
-        const en = mapPersonaCombo(editData.entregado, OPERADORES);
         const reg = mapPersonaCombo(editData.registradoPor, REGISTRADORES);
         setForm(f => ({
             ...f,
             operador: op.sel,
             operadorCustom: op.custom,
-            entregado: en.sel,
-            entregadoCustom: en.custom,
             registradoPor: reg.sel,
             registradoCustom: reg.custom,
         }));
@@ -302,14 +294,9 @@ function ModalEntrada({
         }
 
         const operador = resolvePersonaCombo(form.operador, form.operadorCustom);
-        const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
         const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
         if (form.operador === COMBO_OTROS_VALUE && !operador) {
             showToast('error', 'Indica el nombre del operador (OTROS)');
-            return;
-        }
-        if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
-            showToast('error', 'Indica entregado (OTROS)');
             return;
         }
         if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
@@ -327,7 +314,6 @@ function ModalEntrada({
             operador,
             cantidad: Number(form.cantidad),
             unidadMedida: form.unidadMedida,
-            entregado,
             registradoPor,
             observaciones: form.observaciones,
         };
@@ -449,7 +435,7 @@ function ModalEntrada({
                 operador: p.operador,
                 cantidad: p.cantidad,
                 unidad_medida: p.unidadMedida,
-                entregado_por: p.entregado,
+                entregado_por: '',
                 registrado_por: p.registradoPor,
                 observaciones: p.observaciones,
             };
@@ -519,14 +505,9 @@ function ModalEntrada({
 
             try {
                 const operador = resolvePersonaCombo(form.operador, form.operadorCustom);
-                const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
                 const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
                 if (form.operador === COMBO_OTROS_VALUE && !operador) {
                     showToast('error', 'Indica el nombre del operador (OTROS)');
-                    return;
-                }
-                if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
-                    showToast('error', 'Indica entregado (OTROS)');
                     return;
                 }
                 if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
@@ -542,7 +523,7 @@ function ModalEntrada({
                     operador,
                     cantidad: Number(form.cantidad),
                     unidadMedida: form.unidadMedida,
-                    entregado,
+                    entregado: '',
                     registradoPor,
                     observaciones: form.observaciones,
                 }, form.motivoCambio);
@@ -794,42 +775,7 @@ function ModalEntrada({
                             />
                         </div>
 
-                        {/* Entregado */}
-                        <div>
-                            <label className="form-label">Entregado</label>
-                            <div className="relative">
-                                <select
-                                    value={form.entregado}
-                                    onChange={e =>
-                                        setForm(f => ({
-                                            ...f,
-                                            entregado: e.target.value,
-                                            entregadoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
-                                        }))
-                                    }
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {OPERADORES.map(o => (
-                                        <option key={o} value={o}>
-                                            {o}
-                                        </option>
-                                    ))}
-                                    <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
-                            {form.entregado === COMBO_OTROS_VALUE && (
-                                <input
-                                    type="text"
-                                    value={form.entregadoCustom}
-                                    onChange={e => setForm(f => ({ ...f, entregadoCustom: e.target.value }))}
-                                    className="form-input mt-2"
-                                    style={{ fontSize: 12 }}
-                                    placeholder="Nombre"
-                                />
-                            )}
-                        </div>
+
 
                         {/* Registrado por */}
                         <div>

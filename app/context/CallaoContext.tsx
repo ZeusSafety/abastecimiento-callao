@@ -36,6 +36,7 @@ export function etiquetaTiendaMovimientosCallao(t: Tienda): string {
 
 /** Origen en "Registrar entrada": MALVINAS, OFICINA, CALLAO-1, CALLAO-2 (API). */
 export const ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO: ReadonlyArray<{ value: AlmacenCompleto; label: string }> = [
+  { value: 'IMPORTACION', label: 'IMPORTACION' },
   { value: 'ALMACEN MALVINAS', label: 'ALMACEN MALVINAS' },
   { value: 'TIENDA OFICINA', label: 'OFICINA' },
   { value: 'TIENDA OFICINA-DOCENAS', label: 'OFICINA-DOCENAS' },
@@ -134,7 +135,7 @@ export function getCodigoAlmacenSalidaEntrada(a: AlmacenCompleto): string {
 export function resolveAlmacenSalidaEntradaDesdeApi(codigo: string, nombre: string | null | undefined): AlmacenCompleto {
   const c = (codigo || '').trim().toUpperCase();
   if (c === 'MALVINAS') return 'ALMACEN MALVINAS';
-  if (c === 'IMPORTACION') return 'ALMACEN MALVINAS';
+  if (c === 'IMPORTACION') return 'IMPORTACION';
   const t = getTiendaFromCodigo(c);
   if (t) return t;
   const nom = nombre || '';

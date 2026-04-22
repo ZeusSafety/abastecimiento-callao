@@ -7,36 +7,31 @@ import { exportToExcel, exportToPDF } from '../../utils/export';
 
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
     if (!fechaStr) return { fecha: '-', hora: '' };
-    const raw = fechaStr.trim().replace(/\s+/g, ' ');
-    const dateMatch = raw.match(/^(\d{2}\/\d{2}\/\d{4})\s+(.+)$/);
-    if (dateMatch) {
-        return { fecha: dateMatch[1], hora: dateMatch[2] || '-' };
-    }
-
-    let d: Date;
-    if (fechaStr.includes('/')) {
-        const parts = fechaStr.split(' ');
-        const fechaPart = parts[0];
-        const horaPart = parts.slice(1).join(' ');
-        const [dia, mes, anio] = fechaPart.split('/');
-        d = new Date(`${anio}-${mes}-${dia} ${horaPart}`);
-    } else {
-        d = new Date(fechaStr);
-    }
-    if (isNaN(d.getTime())) return { fecha: fechaStr, hora: '-' };
-    const dia = d.getDate().toString().padStart(2, '0');
-    const mes = (d.getMonth() + 1).toString().padStart(2, '0');
-    const anio = d.getFullYear();
-    let horas = d.getHours();
-    const minutos = d.getMinutes().toString().padStart(2, '0');
-    const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
-    horas = horas % 12 || 12;
-    return { fecha: `${dia}/${mes}/${anio}`, hora: `${horas}:${minutos} ${periodo}` };
+    try {
+        let d: Date;
+        if (fechaStr.includes('/')) {
+            const parts = fechaStr.split(' ');
+            const [dia, mes, anio] = parts[0].split('/');
+            d = new Date(`${anio}-${mes}-${dia} ${parts.slice(1).join(' ')}`);
+        } else {
+            d = new Date(fechaStr);
+        }
+        if (isNaN(d.getTime())) return { fecha: fechaStr, hora: '-' };
+        const dia = d.getDate().toString().padStart(2, '0');
+        const mes = (d.getMonth() + 1).toString().padStart(2, '0');
+        const fechaFormateada = `${dia}/${mes}/${d.getFullYear()}`;
+        let horas = d.getHours();
+        const minutos = d.getMinutes().toString().padStart(2, '0');
+        const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
+        horas = horas % 12 || 12;
+        return { fecha: fechaFormateada, hora: `${horas}:${minutos} ${periodo}` };
+    } catch { return { fecha: fechaStr, hora: '-' }; }
 }
 
 export default function CambiosTrasladoPage() {
     const { state, refreshHistorialTraslados } = useCallao();
     const [search, setSearch] = useState('');
+    const [searchUnlocked, setSearchUnlocked] = useState(false);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const PER_PAGE = 20;
@@ -104,7 +99,6 @@ export default function CambiosTrasladoPage() {
             { header: 'Cantidad Anterior', key: 'cantidadAnterior' },
             { header: 'Cantidad Actual', key: 'cantidad' },
             { header: 'Unidad Medida', key: 'unidadMedida' },
-            { header: 'Entregado Por', key: 'entregado' },
             { header: 'Registrado Por', key: 'registradoPor' },
             { header: 'Observaciones', key: 'observaciones' },
             { header: 'Motivo', key: 'motivoCambio' },
@@ -124,7 +118,6 @@ export default function CambiosTrasladoPage() {
             { header: 'Cantidad Anterior', dataKey: 'cantidadAnterior' },
             { header: 'Cantidad Actual', dataKey: 'cantidad' },
             { header: 'Unidad Medida', dataKey: 'unidadMedida' },
-            { header: 'Entregado Por', dataKey: 'entregado' },
             { header: 'Registrado Por', dataKey: 'registradoPor' },
             { header: 'Observaciones', dataKey: 'observaciones' },
             { header: 'Motivo', dataKey: 'motivoCambio' },
@@ -137,38 +130,40 @@ export default function CambiosTrasladoPage() {
         <div id="view-cambios-traslado" className="animate-in fade-in duration-500 font-poppins">
             <div className="container mx-auto">
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 transition-all">
-                        <header className="flex justify-between items-center flex-wrap gap-4 mb-8">
-                            <div className="flex items-center space-x-3">
-                                <div className="w-11 h-11 bg-gradient-to-br from-[#002D5A] to-[#0056b3] rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-900/10 transition-transform hover:scale-110">
-                                    <ArrowRightLeft className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
-                                        Cambios de Traslado
-                                    </h1>
-                                    <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">
-                                        Historial de todos los registros de traslados que fueron modificados
-                                    </p>
-                                </div>
+                    {/* Header Principal */}
+                    <header className="flex justify-between items-center flex-wrap gap-4 mb-8">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-11 h-11 bg-gradient-to-br from-[#002D5A] to-[#0056b3] rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-900/10 transition-transform hover:scale-110">
+                                <ArrowRightLeft className="w-5 h-5" />
                             </div>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={handleExportPDF}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-red-600 hover:bg-red-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
-                                >
-                                    <FileDown className="w-3.5 h-3.5" />
-                                    <span>Descargar PDF</span>
-                                </button>
-                                <button
-                                    onClick={handleExportExcel}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-green-600 hover:bg-green-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
-                                >
-                                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                                    <span>Exportar Excel</span>
-                                </button>
+                            <div>
+                                <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
+                                    Cambios de Traslado
+                                </h1>
+                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">
+                                    Historial de todos los registros de traslados que fueron modificados
+                                </p>
                             </div>
-                        </header>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleExportPDF}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-red-600 hover:bg-red-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                            >
+                                <FileDown className="w-3.5 h-3.5" />
+                                <span>Descargar PDF</span>
+                            </button>
+                            <button
+                                onClick={handleExportExcel}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-green-600 hover:bg-green-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                            >
+                                <FileSpreadsheet className="w-3.5 h-3.5" />
+                                <span>Exportar Excel</span>
+                            </button>
+                        </div>
+                    </header>
 
+                    {/* Toolbar */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                         <div className="flex items-center gap-2">
                             <div className="p-2 bg-blue-50 rounded-lg">
@@ -183,6 +178,13 @@ export default function CambiosTrasladoPage() {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
                                     type="text"
+                                    name="buscar_cambios_traslados"
+                                    autoComplete="new-password"
+                                    data-lpignore="true"
+                                    spellCheck={false}
+                                    readOnly={!searchUnlocked}
+                                    onFocus={() => setSearchUnlocked(true)}
+                                    onPointerDown={() => setSearchUnlocked(true)}
                                     placeholder="Buscar..."
                                     value={search}
                                     onChange={e => { setSearch(e.target.value); setPage(1); }}
@@ -192,6 +194,7 @@ export default function CambiosTrasladoPage() {
                         </div>
                     </div>
 
+                    {/* Cascada Accordion */}
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xl">
                         <div className="divide-y divide-gray-100">
                             {loading ? (
@@ -223,11 +226,13 @@ export default function CambiosTrasladoPage() {
                                                     <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-gray-900">
                                                         <span className="inline-flex items-center gap-2 whitespace-nowrap">
                                                             <Calendar className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                            <span className="text-[10px] text-gray-500 uppercase tracking-widest">Fecha Cambio</span>
                                                             <span>{fecha}</span>
                                                         </span>
                                                         <span className="hidden sm:block w-px h-4 bg-gray-300" />
                                                         <span className="inline-flex items-center gap-2 whitespace-nowrap">
                                                             <Clock3 className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                            <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
                                                             <span>{hora || '-'}</span>
                                                         </span>
                                                     </div>
@@ -257,7 +262,7 @@ export default function CambiosTrasladoPage() {
                                                                         <th className="px-4 py-3 text-left font-bold">U. MEDIDA</th>
                                                                         <th className="px-4 py-3 text-left font-bold">OBS.</th>
                                                                         <th className="px-4 py-3 text-left font-bold">MOTIVO</th>
-                                                                        <th className="px-4 py-3 text-left font-bold">FECHA CAMBIO</th>
+                                                                        <th className="px-4 py-3 text-left font-bold">FECHA ORIG.</th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
@@ -279,6 +284,7 @@ export default function CambiosTrasladoPage() {
                                                                                 <button
                                                                                     onClick={() => setModalObservaciones({ isOpen: true, content: c.observaciones || '-' })}
                                                                                     className="inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors"
+                                                                                    title="Ver observaciones"
                                                                                 >
                                                                                     <Eye className="w-4 h-4" />
                                                                                 </button>
@@ -287,11 +293,12 @@ export default function CambiosTrasladoPage() {
                                                                                 <button
                                                                                     onClick={() => setModalMotivo({ isOpen: true, content: c.motivoCambio || '-' })}
                                                                                     className="inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-600 transition-colors"
+                                                                                    title="Ver motivo"
                                                                                 >
                                                                                     <Info className="w-4 h-4" />
                                                                                 </button>
                                                                             </td>
-                                                                            <td className="px-4 py-3 text-[10px] text-gray-600 whitespace-nowrap">{c.updatedAt || '-'}</td>
+                                                                            <td className="px-4 py-3 text-[10px] text-gray-600 whitespace-nowrap">{c.fecha || '-'}</td>
                                                                         </tr>
                                                                     ))}
                                                                 </tbody>
@@ -306,22 +313,54 @@ export default function CambiosTrasladoPage() {
                             )}
                         </div>
 
-                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-200">
-                            <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest">
-                                Página {page} de {pages}
-                            </span>
-                            <div className="flex gap-2">
-                                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 transition-all shadow-sm">«</button>
-                                <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages} className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-blue-50 transition-all shadow-sm">»</button>
+                        {/* Pagination Premium */}
+                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-100">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(1)}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    «
+                                </button>
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    ‹
+                                </button>
+                            </div>
+                            <div className="flex flex-col items-center">
+                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest">
+                                    Página {page} de {pages}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(p => Math.min(pages, p + 1))}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    ›
+                                </button>
+                                <button
+                                    onClick={() => setPage(pages)}
+                                    disabled={page === pages}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    »
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
+            {/* Modal Observaciones */}
             {modalObservaciones.isOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setModalObservaciones({ isOpen: false, content: '' })}>
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-blue-50">
                             <h2 className="text-xl font-bold text-gray-900">Observaciones</h2>
                             <button onClick={() => setModalObservaciones({ isOpen: false, content: '' })}><X className="w-5 h-5 text-gray-500" /></button>
@@ -336,9 +375,10 @@ export default function CambiosTrasladoPage() {
                 </div>
             )}
 
+            {/* Modal Motivo */}
             {modalMotivo.isOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setModalMotivo({ isOpen: false, content: '' })}>
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-amber-50">
                             <h2 className="text-xl font-bold text-gray-900">Motivo del Cambio</h2>
                             <button onClick={() => setModalMotivo({ isOpen: false, content: '' })}><X className="w-5 h-5 text-gray-500" /></button>

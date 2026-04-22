@@ -148,14 +148,12 @@ function ModalTraslado({
         codigo: '',
         operacion: editData?.operacion ?? OPS_TRASLADOS[0],
         operacionPersonalizada: '',
-        almacenSalida: (editData?.almacenSalida ?? 'ALMACEN MALVINAS') as AlmacenCompleto,
+        almacenSalida: (editData?.almacenSalida ?? 'IMPORTACION') as AlmacenCompleto,
         almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA OFICINA') as Tienda,
         operador: OPERADORES[0],
         operadorCustom: '',
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
-        entregado: OPERADORES[0],
-        entregadoCustom: '',
         registradoPor: REGISTRADORES[0],
         registradoCustom: '',
         observaciones: editData?.observaciones ?? '',
@@ -174,7 +172,6 @@ function ModalTraslado({
         operador: string;
         cantidad: number;
         unidadMedida: UnidadMedida;
-        entregado: string;
         registradoPor: string;
         observaciones: string;
     }>>([]);
@@ -196,14 +193,12 @@ function ModalTraslado({
                 codigo: '',
                 operacion: OPS_TRASLADOS[0],
                 operacionPersonalizada: '',
-                almacenSalida: 'ALMACEN MALVINAS',
+                almacenSalida: 'IMPORTACION',
                 almacenIngreso: 'TIENDA OFICINA',
                 operador: OPERADORES[0],
                 operadorCustom: '',
                 cantidad: 0,
                 unidadMedida: 'DOCENAS' as UnidadMedida,
-                entregado: OPERADORES[0],
-                entregadoCustom: '',
                 registradoPor: REGISTRADORES[0],
                 registradoCustom: '',
                 observaciones: '',
@@ -224,14 +219,11 @@ function ModalTraslado({
     useEffect(() => {
         if (!isEdit || !editData) return;
         const op = mapPersonaCombo(editData.operador, OPERADORES);
-        const en = mapPersonaCombo(editData.entregado, OPERADORES);
         const reg = mapPersonaCombo(editData.registradoPor, REGISTRADORES);
         setForm(f => ({
             ...f,
             operador: op.sel,
             operadorCustom: op.custom,
-            entregado: en.sel,
-            entregadoCustom: en.custom,
             registradoPor: reg.sel,
             registradoCustom: reg.custom,
         }));
@@ -292,14 +284,9 @@ function ModalTraslado({
         }
 
         const operador = resolvePersonaCombo(form.operador, form.operadorCustom);
-        const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
         const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
         if (form.operador === COMBO_OTROS_VALUE && !operador) {
             showToast('error', 'Indica el nombre del operador (OTROS)');
-            return;
-        }
-        if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
-            showToast('error', 'Indica entregado (OTROS)');
             return;
         }
         if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
@@ -317,7 +304,6 @@ function ModalTraslado({
             operador,
             cantidad: Number(form.cantidad),
             unidadMedida: form.unidadMedida,
-            entregado,
             registradoPor,
             observaciones: form.observaciones,
         };
@@ -425,7 +411,7 @@ function ModalTraslado({
                 operador: p.operador,
                 cantidad: p.cantidad,
                 unidad_medida: p.unidadMedida,
-                entregado_por: p.entregado,
+                entregado_por: '',
                 registrado_por: p.registradoPor,
                 observaciones: p.observaciones,
             };
@@ -493,14 +479,9 @@ function ModalTraslado({
 
             try {
                 const operador = resolvePersonaCombo(form.operador, form.operadorCustom);
-                const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
                 const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
                 if (form.operador === COMBO_OTROS_VALUE && !operador) {
                     showToast('error', 'Indica el nombre del operador (OTROS)');
-                    return;
-                }
-                if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
-                    showToast('error', 'Indica entregado (OTROS)');
                     return;
                 }
                 if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
@@ -516,7 +497,7 @@ function ModalTraslado({
                     operador,
                     cantidad: Number(form.cantidad),
                     unidadMedida: form.unidadMedida,
-                    entregado,
+                    entregado: '',
                     registradoPor,
                     observaciones: form.observaciones,
                 }, form.motivoCambio);
@@ -751,42 +732,6 @@ function ModalTraslado({
                         </div>
 
                         <div>
-                            <label className="form-label">Entregado Por</label>
-                            <div className="relative">
-                                <select
-                                    value={form.entregado}
-                                    onChange={e =>
-                                        setForm(f => ({
-                                            ...f,
-                                            entregado: e.target.value,
-                                            entregadoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
-                                        }))
-                                    }
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {OPERADORES.map(o => (
-                                        <option key={o} value={o}>
-                                            {o}
-                                        </option>
-                                    ))}
-                                    <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
-                            {form.entregado === COMBO_OTROS_VALUE && (
-                                <input
-                                    type="text"
-                                    value={form.entregadoCustom}
-                                    onChange={e => setForm(f => ({ ...f, entregadoCustom: e.target.value }))}
-                                    className="form-input mt-2"
-                                    style={{ fontSize: 12 }}
-                                    placeholder="Nombre"
-                                />
-                            )}
-                        </div>
-
-                        <div>
                             <label className="form-label">Registrado Por</label>
                             <div className="relative">
                                 <select
@@ -822,13 +767,15 @@ function ModalTraslado({
                             )}
                         </div>
 
-                        <div className={isEdit ? 'col-span-2' : ''}>
+                        {/* Observaciones — ancho completo */}
+                        <div className="col-span-2">
                             <label className="form-label">Observaciones</label>
                             <textarea
                                 value={form.observaciones}
                                 onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
-                                className="form-input h-[38px] min-h-[38px]"
-                                style={{ fontSize: 12, paddingTop: 8 }}
+                                className="form-input"
+                                rows={3}
+                                style={{ resize: 'vertical', fontSize: 12 }}
                                 placeholder="Ej: Traslado urgente, mercadería frágil..."
                             />
                         </div>
@@ -846,14 +793,17 @@ function ModalTraslado({
                             </div>
                         )}
 
+                        {/* Botón Agregar Producto — fila propia, ancho completo */}
                         {!isEdit && (
-                            <div className="flex items-end">
+                            <div className="col-span-2">
                                 <button
+                                    type="button"
                                     onClick={handleAgregarProducto}
-                                    className="w-full flex items-center justify-center gap-2 h-[38px] bg-[#E9F1FF] hover:bg-blue-100 text-[#002D5A] rounded-xl font-bold text-xs transition-all active:scale-95 border-2 border-dashed border-blue-300"
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-green-700 bg-green-50/50 hover:bg-green-100 border border-green-200 rounded-lg transition-all duration-200 group"
+                                    style={{ fontSize: 12 }}
                                 >
-                                    <Plus className="w-4 h-4" />
-                                    AGREGAR PRODUCTO
+                                    <Plus className="w-4 h-4 text-green-600 group-hover:scale-110 transition-transform" />
+                                    <span className="font-bold">Agregar Producto a la Lista</span>
                                 </button>
                             </div>
                         )}
@@ -883,7 +833,6 @@ function ModalTraslado({
                                             <th className="px-4 py-2 text-left font-bold">INGRESO</th>
                                             <th className="px-4 py-2 text-left font-bold">OPERADOR</th>
                                             <th className="px-4 py-2 text-center font-bold">CANTIDAD</th>
-                                            <th className="px-4 py-2 text-left font-bold">ENTREGADO</th>
                                             <th className="px-4 py-2 text-center font-bold">ACCIONES</th>
                                         </tr>
                                     </thead>
@@ -962,16 +911,6 @@ function ModalTraslado({
                                                     ) : (
                                                         `${p.cantidad} ${p.unidadMedida}`
                                                     )}
-                                                </td>
-                                                <td className="px-4 py-2 text-gray-700">
-                                                    {editingIndex === i ? (
-                                                        <input
-                                                            type="text"
-                                                            value={p.entregado}
-                                                            onChange={e => handleActualizarProducto(i, 'entregado', e.target.value)}
-                                                            className="w-full p-1 text-[11px] border rounded"
-                                                        />
-                                                    ) : p.entregado}
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     <div className="flex items-center justify-center gap-1">

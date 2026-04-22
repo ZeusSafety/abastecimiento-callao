@@ -47,6 +47,29 @@ import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { exportToExcel, exportToPDF } from '../../utils/export';
 import * as api from '../../services/api';
 
+function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
+    if (!fechaStr) return { fecha: '-', hora: '' };
+    try {
+        let fecha: Date;
+        if (fechaStr.includes('/')) {
+            const parts = fechaStr.split(' ');
+            const [dia, mes, anio] = parts[0].split('/');
+            fecha = new Date(`${anio}-${mes}-${dia} ${parts.slice(1).join(' ')}`);
+        } else {
+            fecha = new Date(fechaStr);
+        }
+        if (isNaN(fecha.getTime())) return { fecha: fechaStr, hora: '' };
+        const dia = fecha.getDate().toString().padStart(2, '0');
+        const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
+        const fechaFormateada = `${dia}/${mes}/${fecha.getFullYear()}`;
+        let horas = fecha.getHours();
+        const minutos = fecha.getMinutes().toString().padStart(2, '0');
+        const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
+        horas = horas % 12 || 12;
+        return { fecha: fechaFormateada, hora: `${horas}:${minutos} ${periodo}` };
+    } catch { return { fecha: fechaStr, hora: '' }; }
+}
+
 // ─── Modal Registro Traslado (Edición) ───────────────────
 function ModalTraslado({
     isOpen,
@@ -319,6 +342,7 @@ function ModalTraslado({
 export default function HistorialTrasladoPage() {
     const { state, refreshTraslados, refreshHistorialTraslados, showToast, updateTraslado } = useCallao();
     const [search, setSearch] = useState('');
+    const [searchUnlocked, setSearchUnlocked] = useState(false);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const PER_PAGE = 30;
@@ -336,6 +360,9 @@ export default function HistorialTrasladoPage() {
 
     const [cargas, setCargas] = useState<api.TrasladoCascadaDB[]>([]);
     const [loadingCargas, setLoadingCargas] = useState(true);
+    const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
+    const [actasSeleccionadas, setActasSeleccionadas] = useState<api.ActaMovimientoDB[]>([]);
+    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
     const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
 
     const refreshCargas = async () => {
@@ -443,10 +470,67 @@ export default function HistorialTrasladoPage() {
         }
     };
 
+    const handleExportExcel = () => {
+        const rows = cargas.flatMap(c => c.detalles.map(d => ({
+            fecha: d.fecha_registro,
+            producto: d.producto_nombre,
+            operacion: d.operacion,
+            almacenSalida: d.tienda_salida_codigo,
+            almacenIngreso: d.tienda_ingreso_codigo,
+            operador: d.operador,
+            cantidad: d.cantidad,
+            unidadMedida: d.unidad_medida,
+            registradoPor: d.registrado_por,
+            observaciones: d.observaciones,
+        })));
+        const columns = [
+            { header: 'Fecha', key: 'fecha' },
+            { header: 'Producto', key: 'producto' },
+            { header: 'Operación', key: 'operacion' },
+            { header: 'Almacén Salida', key: 'almacenSalida' },
+            { header: 'Almacén Ingreso', key: 'almacenIngreso' },
+            { header: 'Operador', key: 'operador' },
+            { header: 'Cantidad', key: 'cantidad' },
+            { header: 'Unidad Medida', key: 'unidadMedida' },
+            { header: 'Registrado Por', key: 'registradoPor' },
+            { header: 'Observaciones', key: 'observaciones' },
+        ];
+        exportToExcel(rows, columns, `Historial_Traslados_${new Date().toISOString().split('T')[0]}`);
+    };
+
+    const handleExportPDF = () => {
+        const rows = cargas.flatMap(c => c.detalles.map(d => ({
+            fecha: d.fecha_registro,
+            producto: d.producto_nombre,
+            operacion: d.operacion,
+            almacenSalida: d.tienda_salida_codigo,
+            almacenIngreso: d.tienda_ingreso_codigo,
+            operador: d.operador,
+            cantidad: d.cantidad,
+            unidadMedida: d.unidad_medida,
+            registradoPor: d.registrado_por,
+            observaciones: d.observaciones,
+        })));
+        const columns = [
+            { header: 'Fecha', dataKey: 'fecha' },
+            { header: 'Producto', dataKey: 'producto' },
+            { header: 'Operación', dataKey: 'operacion' },
+            { header: 'Almacén Salida', dataKey: 'almacenSalida' },
+            { header: 'Almacén Ingreso', dataKey: 'almacenIngreso' },
+            { header: 'Operador', dataKey: 'operador' },
+            { header: 'Cantidad', dataKey: 'cantidad' },
+            { header: 'Unidad Medida', dataKey: 'unidadMedida' },
+            { header: 'Registrado Por', dataKey: 'registradoPor' },
+            { header: 'Observaciones', dataKey: 'observaciones' },
+        ];
+        exportToPDF(rows, columns, `Historial_Traslados_${new Date().toISOString().split('T')[0]}`, 'Historial de Traslados');
+    };
+
     return (
         <div id="view-historial-traslado" className="animate-in fade-in duration-500 font-poppins">
             <div className="container mx-auto">
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 transition-all">
+                    {/* Header Principal */}
                     <header className="flex justify-between items-center flex-wrap gap-4 mb-8">
                         <div className="flex items-center space-x-3">
                             <div className="w-11 h-11 bg-gradient-to-br from-[#002D5A] to-[#0056b3] rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-900/10 transition-transform hover:scale-110">
@@ -454,15 +538,30 @@ export default function HistorialTrasladoPage() {
                             </div>
                             <div>
                                 <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
-                                    Historial Traslado
+                                    Historial de Traslados
                                 </h1>
-                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">
-                                    Consulta los movimientos de traslado agrupados por carga
-                                </p>
+                                <p className="text-[11px] text-gray-400 mt-0.5 font-medium italic opacity-80">Consulta los movimientos de traslado agrupados por carga</p>
                             </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleExportPDF}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-red-600 hover:bg-red-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                            >
+                                <FileDown className="w-3.5 h-3.5" />
+                                <span>Descargar PDF</span>
+                            </button>
+                            <button
+                                onClick={handleExportExcel}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-md text-[10px] bg-green-600 hover:bg-green-700 text-white hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                            >
+                                <FileSpreadsheet className="w-3.5 h-3.5" />
+                                <span>Exportar Excel</span>
+                            </button>
                         </div>
                     </header>
 
+                    {/* Toolbar */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                         <div className="flex items-center gap-2">
                             <div className="p-2 bg-blue-50 rounded-lg">
@@ -477,6 +576,13 @@ export default function HistorialTrasladoPage() {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
                                     type="text"
+                                    name="buscar_historial_traslados"
+                                    autoComplete="new-password"
+                                    data-lpignore="true"
+                                    spellCheck={false}
+                                    readOnly={!searchUnlocked}
+                                    onFocus={() => setSearchUnlocked(true)}
+                                    onPointerDown={() => setSearchUnlocked(true)}
                                     placeholder="Buscar..."
                                     value={search}
                                     onChange={e => { setSearch(e.target.value); setPage(1); }}
@@ -497,8 +603,11 @@ export default function HistorialTrasladoPage() {
                                 <div className="p-10 text-center text-gray-500">No se encontraron registros.</div>
                             ) : (
                                 paginatedCargas.map((carga, idx) => {
+                                    const detalleRep = carga.detalles[0];
                                     const cargaKey = `${carga.codigo_carga || 'sin-codigo'}-${idx}`;
                                     const isOpen = expandedCodigos.has(cargaKey);
+                                    const { fecha, hora } = formatFechaDosLineas(carga.fecha_primera);
+                                    const itemsTotales = carga.detalles.length;
                                     const pendientes = carga.detalles.filter(d => pendingUpdates[String(d.id)]);
                                     
                                     return (
@@ -515,12 +624,23 @@ export default function HistorialTrasladoPage() {
                                                     <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
                                                         {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                                     </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[11px] font-bold text-gray-900 uppercase">Carga: {carga.codigo_carga || 'SIN CÓDIGO'}</span>
-                                                        <span className="text-[10px] text-gray-500">{carga.fecha_primera}</span>
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-gray-900">
+                                                            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                                                                <Calendar className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                                <span className="text-[10px] text-gray-500 uppercase tracking-widest">Fecha</span>
+                                                                <span>{fecha}</span>
+                                                            </span>
+                                                            <span className="hidden sm:block w-px h-4 bg-gray-300" />
+                                                            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                                                                <Clock3 className="w-3.5 h-3.5 text-[#002D5A]" />
+                                                                <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
+                                                                <span>{hora || '-'}</span>
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-4">
+                                                <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
                                                     {pendientes.length > 0 && (
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); aplicarActualizacionCarga(carga); }}
@@ -530,15 +650,65 @@ export default function HistorialTrasladoPage() {
                                                             APLICAR {pendientes.length} CAMBIOS
                                                         </button>
                                                     )}
-                                                    <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
-                                                        {carga.detalles.length} ITEMS
-                                                    </div>
+                                                    <span className="inline-flex items-center gap-2">
+                                                        <PackagePlus className="w-4 h-4 text-[#002D5A]" />
+                                                        <span className="font-bold text-gray-900">{itemsTotales}</span> productos
+                                                    </span>
+                                                    <span className="inline-flex items-center gap-2">
+                                                        <FileImage className="w-4 h-4 text-[#002D5A]" />
+                                                        <span className="font-bold text-gray-900">{carga.actas.length}</span> actas
+                                                    </span>
                                                 </div>
                                             </div>
 
                                             {isOpen && (
                                                 <div className="pb-5">
-                                                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                                    <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                                                        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-4">
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full xl:flex-1">
+                                                                <div className="w-full sm:w-[180px]">
+                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
+                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
+                                                                        {detalleRep?.registrado_por || '-'}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="w-full sm:w-[180px]">
+                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">OPERADOR</div>
+                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
+                                                                        {detalleRep?.operador || carga.operador || '-'}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="w-full xl:w-auto flex flex-wrap items-center justify-end gap-2">
+                                                                <div className="inline-flex items-center gap-1 text-[10px] text-gray-500 whitespace-nowrap">
+                                                                    <span>Actas:</span>
+                                                                    <span className="text-gray-900 font-bold">{carga.actas.length}</span>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setActasSeleccionadas(carga.actas);
+                                                                        setModalVerActasOpen(true);
+                                                                    }}
+                                                                    disabled={carga.actas.length === 0}
+                                                                    className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 whitespace-nowrap"
+                                                                >
+                                                                    <FileImage className="w-3.5 h-3.5" />
+                                                                    <span>Ver actas</span>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => aplicarActualizacionCarga(carga)}
+                                                                    disabled={updatingCodigo === (carga.codigo_carga || '__sin_codigo__')}
+                                                                    className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                                                                >
+                                                                    {updatingCodigo === (carga.codigo_carga || '__sin_codigo__') && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                                                    {updatingCodigo !== (carga.codigo_carga || '__sin_codigo__') && <Save className="w-3.5 h-3.5" />}
+                                                                    <span>{updatingCodigo === (carga.codigo_carga || '__sin_codigo__') ? 'Actualizando...' : 'Actualizar registro'}</span>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="border border-gray-200 rounded-xl overflow-hidden">
                                                         <div className="overflow-x-auto">
                                                             <table className="w-full text-sm">
                                                                 <thead className="bg-[#002D5A] text-white">
@@ -623,6 +793,7 @@ export default function HistorialTrasladoPage() {
                                                                     })}
                                                                 </tbody>
                                                             </table>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -633,11 +804,44 @@ export default function HistorialTrasladoPage() {
                             )}
                         </div>
 
-                        <div className="bg-gray-50 px-6 py-4 flex items-center justify-between border-t border-gray-100">
-                            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Página {page} de {pagesCargas}</span>
-                            <div className="flex gap-2">
-                                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-white border rounded text-xs disabled:opacity-50 hover:bg-gray-50 transition-colors font-bold uppercase">Anterior</button>
-                                <button onClick={() => setPage(p => Math.min(pagesCargas, p + 1))} disabled={page === pagesCargas} className="px-3 py-1 bg-white border rounded text-xs disabled:opacity-50 hover:bg-gray-50 transition-colors font-bold uppercase">Siguiente</button>
+                        {/* Pagination premium */}
+                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 flex items-center justify-between border-t border-gray-100">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(1)}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    «
+                                </button>
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    ‹
+                                </button>
+                            </div>
+                            <div className="flex flex-col items-center">
+                                <span className="text-[11px] text-gray-700 font-bold uppercase tracking-widest">
+                                    Página {page} de {pagesCargas}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(p => Math.min(pagesCargas, p + 1))}
+                                    disabled={page === pagesCargas}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    ›
+                                </button>
+                                <button
+                                    onClick={() => setPage(pagesCargas)}
+                                    disabled={page === pagesCargas}
+                                    className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    »
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -646,11 +850,59 @@ export default function HistorialTrasladoPage() {
 
             <ModalTraslado isOpen={modalOpen} onClose={() => setModalOpen(false)} editData={editData} onAccept={queueUpdate} />
 
+            {/* Modal Ver Actas */}
+            {modalVerActasOpen && (
+                <div 
+                    className="modal-backdrop z-[30001] animate-in fade-in duration-200" 
+                    onClick={e => e.target === e.currentTarget && setModalVerActasOpen(false)}
+                >
+                    <div className="modal-box" style={{ maxWidth: 1100, width: '95vw', maxHeight: '90vh', overflow: 'auto' }}>
+                        <div className="modal-header border-b pb-4 mb-6">
+                            <div>
+                                <h6 className="text-lg font-black text-[#002D5A] m-0 uppercase">Actas de Traslado</h6>
+                                <p className="text-[11px] text-gray-500 m-0 font-bold tracking-widest">{actasSeleccionadas.length} ACTA(S) ENCONTRADA(S)</p>
+                            </div>
+                            <button onClick={() => setModalVerActasOpen(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                                <X className="w-6 h-6 text-gray-400" />
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-2">
+                            {actasSeleccionadas.map((acta, i) => (
+                                <div key={i} className="group relative bg-gray-50 rounded-2xl p-4 border-2 border-transparent hover:border-blue-200 transition-all cursor-pointer shadow-sm hover:shadow-md" onClick={() => setLightboxUrl(acta.url_imagen)}>
+                                    <div className="aspect-[4/3] rounded-xl overflow-hidden mb-3 bg-gray-200 relative">
+                                        <img src={acta.url_imagen} alt={acta.nombre_imagen} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                            <Eye className="w-10 h-10 text-white" />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-[12px] font-black text-gray-800 m-0 truncate pr-4">{acta.nombre_imagen}</p>
+                                        <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-sm">
+                                            <ImageIcon className="w-4 h-4 text-gray-400" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Lightbox */}
+            {lightboxUrl && (
+                <div className="fixed inset-0 z-[40000] bg-black/90 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
+                    <button className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all shadow-2xl">
+                        <X className="w-8 h-8" />
+                    </button>
+                    <img src={lightboxUrl} alt="Vista previa" className="max-w-full max-h-full object-contain shadow-2xl animate-in zoom-in-95 duration-300" />
+                </div>
+            )}
+
             {modalObsOpen && (
                 <div className="modal-backdrop z-[9999]" onClick={() => setModalObsOpen(false)}>
                     <div className="modal-box max-w-lg bg-white rounded-2xl p-6 shadow-2xl">
                         <div className="flex items-center justify-between mb-4 border-b pb-3">
-                            <h3 className="text-lg font-black text-[#002D5A] m-0">OBSERVACIONES</h3>
+                            <h3 className="text-lg font-black text-[#002D5A] m-0 uppercase">OBSERVACIONES</h3>
                             <button onClick={() => setModalObsOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
                         </div>
                         <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{observacionesSeleccionadas}</p>

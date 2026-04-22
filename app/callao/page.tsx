@@ -60,6 +60,7 @@ export default function StockTotalPage() {
     const [importFilasConfig, setImportFilasConfig] = useState(0);
     const [isImportingPreview, setIsImportingPreview] = useState(false);
     const [isImportSaving, setIsImportSaving] = useState(false);
+    const [replicaValue, setReplicaValue] = useState('');
 
     const [importForm, setImportForm] = useState({
         operacion: 'OTROS',
@@ -335,14 +336,17 @@ export default function StockTotalPage() {
             'STOCK MINIMO',
             '',
             '',
+            '',
+            '',
             'STOCK GLOBAL',
             'U. MEDIDA',
             'EXISTENCIA ALMACEN',
             '',
             '',
+            '',
+            '',
             'DISPONIBLES',
             'STOCK DETALLADO',
-            '',
             '',
         ];
 
@@ -351,13 +355,12 @@ export default function StockTotalPage() {
             '',
             '',
             ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
-            '',
-            '',
-            ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
-            '',
-            'CAJAS',
-            'MED.',
+            'TOTAL',
             'U.MED',
+            ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
+            'TOTAL',
+            'CAJAS',
+            'DOC,DEC,UNI SUELTAS',
         ];
 
         const rows = filtered.map(p => {
@@ -374,21 +377,20 @@ export default function StockTotalPage() {
             );
             // Cajas se trunca hacia abajo (2.90 -> 2).
             const cajas = cantidadReg > 0 ? Math.floor(disponibles / cantidadReg) : 0;
-            // Medida = disponibles - (cajas * cant.)
-            const medida = disponibles - (cajas * cantidadReg);
+            // Medida ahora usa el valor de réplica si existe
+            const medidaValor = replicaValue || (disponibles - (cajas * cantidadReg));
 
             return [
-                p.codigo,
-                p.nombre,
-                cantidadReg,
-                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => stockMin[tienda] || 0),
-                stockGlobalMin,
-                p.unidadMedidaRegCalculo,
-                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0),
-                disponibles,
-                cajas,
-                medida,
-                p.unidadMedidaRegCalculo,
+                p.codigo, // 0
+                p.nombre, // 1
+                cantidadReg, // 2
+                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => stockMin[tienda] || 0), // 3,4,5,6,7
+                stockGlobalMin, // 8
+                p.unidadMedidaRegCalculo, // 9
+                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0), // 10,11,12,13,14
+                disponibles, // 15
+                cajas, // 16
+                medidaValor, // 17
             ];
         });
 
@@ -397,20 +399,20 @@ export default function StockTotalPage() {
             { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } }, // CODIGO
             { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // PRODUCTO
             { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // CANT.
-            { s: { r: 0, c: 3 }, e: { r: 0, c: 5 } }, // STOCK MINIMO
-            { s: { r: 0, c: 6 }, e: { r: 1, c: 6 } }, // STOCK GLOBAL
-            { s: { r: 0, c: 7 }, e: { r: 1, c: 7 } }, // U. MEDIDA
-            { s: { r: 0, c: 8 }, e: { r: 0, c: 10 } }, // EXISTENCIA ALMACEN
-            { s: { r: 0, c: 11 }, e: { r: 1, c: 11 } }, // DISPONIBLES
-            { s: { r: 0, c: 12 }, e: { r: 0, c: 14 } }, // STOCK DETALLADO
+            { s: { r: 0, c: 3 }, e: { r: 0, c: 7 } }, // STOCK MINIMO (5 stores)
+            { s: { r: 0, c: 8 }, e: { r: 1, c: 8 } }, // STOCK GLOBAL
+            { s: { r: 0, c: 9 }, e: { r: 1, c: 9 } }, // U. MEDIDA
+            { s: { r: 0, c: 10 }, e: { r: 0, c: 14 } }, // EXISTENCIA ALMACEN (5 stores)
+            { s: { r: 0, c: 15 }, e: { r: 1, c: 15 } }, // DISPONIBLES
+            { s: { r: 0, c: 16 }, e: { r: 0, c: 17 } }, // STOCK DETALLADO (2 cols)
         ];
         ws['!cols'] = [
             { wch: 12 }, { wch: 34 }, { wch: 8 },
-            { wch: 10 }, { wch: 10 }, { wch: 10 },
+            { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
             { wch: 12 }, { wch: 12 },
-            { wch: 10 }, { wch: 10 }, { wch: 10 },
+            { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
             { wch: 12 },
-            { wch: 8 }, { wch: 8 }, { wch: 10 },
+            { wch: 10 }, { wch: 20 },
         ];
 
         const wb = XLSX.utils.book_new();
@@ -664,7 +666,12 @@ export default function StockTotalPage() {
                                 </span>
                             </button>
                             <button
-                                onClick={() => setSearch('')}
+                                onClick={() => {
+                                    setSearch('');
+                                    refreshProductos();
+                                    refreshEntradas();
+                                    showToast('info', 'Datos actualizados');
+                                }}
                                 className="px-5 py-2.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:text-[#002D5A] transition-all flex items-center gap-2 shadow-sm active:scale-95"
                             >
                                 <RefreshCw className="w-4 h-4" />
@@ -687,7 +694,7 @@ export default function StockTotalPage() {
                                             Existencia Almacén
                                         </th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center bg-[#001F3D]">Disponibles</th>
-                                        <th colSpan={3} className="px-4 py-2 text-center bg-[#1a4a7a]">Stock Detallado</th>
+                                        <th colSpan={2} className="px-4 py-2 text-center bg-[#1a4a7a]">Stock Detallado</th>
                                     </tr>
                                     <tr className="bg-[#1a4a7a] text-white border-t border-[#ffffff20]">
 
@@ -715,7 +722,7 @@ export default function StockTotalPage() {
                                             </td>
                                         </tr>
                                     ) : (
-                                        filtered.map(p => {
+                                        filtered.map((p, idx) => {
                                             const isSelected = selectedProducts.has(p.id);
                                             const editing = editingProducts.get(p.id);
                                             const isEditing = !!editing;
@@ -788,8 +795,19 @@ export default function StockTotalPage() {
                                                     })}
                                                     <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{disponibles}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]">{cajas}</td>
-                                                    <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: medida < 0 ? '#dc2626' : '#22c55e' }}>
-                                                        {medida}
+                                                    <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: '#22c55e' }}>
+                                                        {idx === 0 ? (
+                                                            <input
+                                                                type="text"
+                                                                value={replicaValue}
+                                                                onChange={e => setReplicaValue(e.target.value)}
+                                                                onClick={e => e.stopPropagation()}
+                                                                className="w-full bg-transparent text-center border-b border-green-200 focus:border-green-500 outline-none text-[11px] font-bold"
+                                                                placeholder="-"
+                                                            />
+                                                        ) : (
+                                                            replicaValue || (disponibles - (cajas * cantidadReg))
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
