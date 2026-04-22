@@ -12,6 +12,7 @@ import {
     ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO,
     TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO,
     etiquetaTiendaMovimientosCallao,
+    resolveAlmacenSalidaEntradaDesdeApi,
     RegistroTraslado,
     Tienda,
     AlmacenCompleto,
@@ -46,6 +47,16 @@ import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { exportToExcel, exportToPDF } from '../../utils/export';
 import * as api from '../../services/api';
+
+function resolverTiendaDesdeCodigoONombre(valor: string | null | undefined): Tienda {
+    const v = (valor || '').trim();
+    if (!v) return 'TIENDA OFICINA';
+    const up = v.toUpperCase();
+    const byCodigo = TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.find(x => x.label.toUpperCase() === up);
+    if (byCodigo) return byCodigo.tienda;
+    if (TIENDAS.includes(v as Tienda)) return v as Tienda;
+    return 'TIENDA OFICINA';
+}
 
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
     if (!fechaStr) return { fecha: '-', hora: '' };
@@ -128,8 +139,8 @@ function ModalTraslado({
                 producto: editData.producto,
                 operacion: esOperacionPersonalizada ? 'OTROS' : editData.operacion,
                 operacionPersonalizada: esOperacionPersonalizada ? editData.operacion : '',
-                almacenSalida: editData.almacenSalida as AlmacenCompleto,
-                almacenIngreso: editData.almacenIngreso as Tienda,
+                almacenSalida: resolveAlmacenSalidaEntradaDesdeApi(editData.almacenSalida, editData.almacenSalida) as AlmacenCompleto,
+                almacenIngreso: resolverTiendaDesdeCodigoONombre(editData.almacenIngreso),
                 operador: op.sel,
                 operadorCustom: op.custom,
                 cantidad: editData.cantidad,
@@ -351,6 +362,8 @@ export default function HistorialTrasladoPage() {
     const [editData, setEditData] = useState<RegistroTraslado | null>(null);
     const [pendingUpdates, setPendingUpdates] = useState<Record<string, { data: Partial<RegistroTraslado>; motivo: string }>>({});
     const [updatingCodigo, setUpdatingCodigo] = useState<string | null>(null);
+    const [modalConfirmacionOpen, setModalConfirmacionOpen] = useState(false);
+    const [cargaConfirmacion, setCargaConfirmacion] = useState<api.TrasladoCascadaDB | null>(null);
     const [modalPasswordOpen, setModalPasswordOpen] = useState(false);
     const [passwordAutorizacion, setPasswordAutorizacion] = useState('');
     const [cargaPendientePassword, setCargaPendientePassword] = useState<api.TrasladoCascadaDB | null>(null);
@@ -413,6 +426,15 @@ export default function HistorialTrasladoPage() {
     const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
     const pagesCargas = Math.max(1, Math.ceil(filteredCargas.length / PER_PAGE));
 
+    // Mantener acordeones abiertos por defecto (igual que otros módulos)
+    useEffect(() => {
+        const keys = paginatedCargas.map((carga, idx) => `${carga.codigo_carga || 'sin-codigo'}-${idx}`);
+        setExpandedCodigos(prev => {
+            if (prev.size === keys.length && keys.every(k => prev.has(k))) return prev;
+            return new Set(keys);
+        });
+    }, [paginatedCargas]);
+
     const openEdit = (t: RegistroTraslado) => {
         setEditData(t);
         setModalOpen(true);
@@ -420,6 +442,9 @@ export default function HistorialTrasladoPage() {
 
     const queueUpdate = (payload: { id: string; data: Partial<RegistroTraslado>; motivo: string }) => {
         setPendingUpdates(prev => ({ ...prev, [payload.id]: { data: payload.data, motivo: payload.motivo } }));
+        const carga = cargas.find(c => c.detalles.some(d => String(d.id) === payload.id)) || null;
+        setCargaConfirmacion(carga);
+        setModalConfirmacionOpen(true);
     };
 
     const ejecutarActualizacionCarga = async (carga: api.TrasladoCascadaDB, pendientes: string[]) => {
@@ -733,8 +758,8 @@ export default function HistorialTrasladoPage() {
                                                                             productoId: '',
                                                                             producto: d.producto_nombre || '',
                                                                             operacion: d.operacion || '',
-                                                                            almacenSalida: d.tienda_salida_codigo as AlmacenCompleto,
-                                                                            almacenIngreso: d.tienda_ingreso_codigo as Tienda,
+                                                                            almacenSalida: resolveAlmacenSalidaEntradaDesdeApi(d.tienda_salida_codigo, d.tienda_salida_nombre) as AlmacenCompleto,
+                                                                            almacenIngreso: resolverTiendaDesdeCodigoONombre(d.tienda_ingreso_codigo || d.tienda_ingreso_nombre),
                                                                             operador: d.operador || '',
                                                                             cantidad: d.cantidad || 0,
                                                                             unidadMedida: d.unidad_medida as UnidadMedida,
@@ -913,25 +938,86 @@ export default function HistorialTrasladoPage() {
                 </div>
             )}
 
-            {modalPasswordOpen && (
-                <div className="modal-backdrop z-[10000]" onClick={() => setModalPasswordOpen(false)}>
-                    <div className="modal-box max-w-md bg-white rounded-3xl p-8 text-center shadow-2xl animate-in zoom-in-95 duration-300">
-                        <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 mx-auto mb-4">
-                            <Lock className="w-8 h-8" />
+            {modalConfirmacionOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalConfirmacionOpen(false)}>
+                    <div className="modal-box p-0 max-w-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-[#002D5A] to-[#003d7a] px-6 py-4">
+                            <h3 className="text-white font-bold text-sm uppercase tracking-wide">Confirmar Cambios</h3>
                         </div>
-                        <h3 className="text-xl font-black text-gray-900 mb-2">AUTORIZACIÓN</h3>
-                        <p className="text-xs text-gray-500 font-bold mb-6 px-4 uppercase tracking-widest">Se requiere contraseña para aplicar cambios en una carga sin actas</p>
-                        <input 
-                            type="password" 
-                            value={passwordAutorizacion} 
-                            onChange={e => setPasswordAutorizacion(e.target.value)} 
-                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-4 py-3 text-center text-lg font-bold tracking-widest focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none mb-6" 
-                            placeholder="••••••" 
-                            autoFocus 
-                        />
-                        <div className="flex flex-col gap-2">
-                            <button onClick={handleConfirmarPassword} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-xs transition-all active:scale-95">CONFIRMAR CAMBIOS</button>
-                            <button onClick={() => setModalPasswordOpen(false)} className="w-full py-3 text-[10px] font-black text-gray-400 hover:text-gray-600 uppercase tracking-widest transition-all">Cancelar</button>
+                        <div className="p-6">
+                            <p className="text-sm text-gray-700 leading-relaxed">
+                                El cambio ha sido preparado con exito. Para aplicar los cambios de forma permanente en la base de datos, por favor presione el boton de actualizacion.
+                            </p>
+                        </div>
+                        <div className="px-6 pb-6 flex justify-end gap-2">
+                            <button
+                                onClick={() => setModalConfirmacionOpen(false)}
+                                className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                            >
+                                Cerrar
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (!cargaConfirmacion) {
+                                        showToast('error', 'No se encontro la carga para actualizar');
+                                        return;
+                                    }
+                                    await aplicarActualizacionCarga(cargaConfirmacion);
+                                    setModalConfirmacionOpen(false);
+                                    setCargaConfirmacion(null);
+                                }}
+                                disabled={updatingCodigo === (cargaConfirmacion?.codigo_carga || '__sin_codigo__')}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#002D5A] hover:bg-[#001f3d] disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                                <Save className="w-4 h-4" />
+                                {updatingCodigo === (cargaConfirmacion?.codigo_carga || '__sin_codigo__') ? 'Actualizando...' : 'Actualizar registro'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {modalPasswordOpen && (
+                <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalPasswordOpen(false)}>
+                    <div className="modal-box p-0 max-w-md overflow-hidden">
+                        <div className="bg-gradient-to-r from-[#002D5A] to-[#003d7a] px-6 py-4 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                                <Lock className="w-4 h-4 text-white" />
+                            </div>
+                            <h3 className="text-white font-bold uppercase text-sm tracking-wide">Autorización requerida</h3>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <p className="text-sm text-gray-700">
+                                Esta actualización no tiene actas. Ingresa la contraseña de autorización.
+                            </p>
+                            <input
+                                type="password"
+                                value={passwordAutorizacion}
+                                onChange={e => setPasswordAutorizacion(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && void handleConfirmarPassword()}
+                                className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                placeholder="Contraseña"
+                                autoComplete="off"
+                                autoFocus
+                            />
+                        </div>
+                        <div className="px-6 pb-6 flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setModalPasswordOpen(false);
+                                    setPasswordAutorizacion('');
+                                }}
+                                className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => void handleConfirmarPassword()}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#002D5A] hover:bg-[#001f3d]"
+                            >
+                                <Lock className="w-4 h-4" />
+                                Confirmar cambios
+                            </button>
                         </div>
                     </div>
                 </div>

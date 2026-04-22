@@ -25,7 +25,6 @@ import {
 import {
     Plus,
     Search,
-    Edit3,
     X,
     Save,
     PackagePlus,
@@ -37,7 +36,6 @@ import {
     Lock,
     FileImage,
     Eye,
-    Check,
     XCircle,
     Image as ImageIcon,
     Calendar,
@@ -462,6 +460,13 @@ function ModalTraslado({
         await ejecutarGuardadoTraslados(passwordAutorizacion);
     };
 
+    useEffect(() => {
+        if (modalPasswordOpen) {
+            // Siempre abrir el modal de autorización con campo limpio.
+            setPasswordAutorizacion('');
+        }
+    }, [modalPasswordOpen]);
+
     const handleSubmit = async () => {
         if (isEdit) {
             if (!form.productoId || form.productoId === '') { 
@@ -512,6 +517,7 @@ function ModalTraslado({
             }
 
             if (actas.length === 0) {
+                setPasswordAutorizacion('');
                 setModalPasswordOpen(true);
                 return;
             }
@@ -733,27 +739,45 @@ function ModalTraslado({
 
                         <div>
                             <label className="form-label">Registrado Por</label>
-                            <div className="relative">
-                                <select
-                                    value={form.registradoPor}
-                                    onChange={e =>
-                                        setForm(f => ({
-                                            ...f,
-                                            registradoPor: e.target.value,
-                                            registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
-                                        }))
-                                    }
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {REGISTRADORES.map(r => (
-                                        <option key={r} value={r}>
-                                            {r}
-                                        </option>
-                                    ))}
-                                    <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <div className="flex items-end gap-2">
+                                <div className="relative flex-1">
+                                    <select
+                                        value={form.registradoPor}
+                                        onChange={e =>
+                                            setForm(f => ({
+                                                ...f,
+                                                registradoPor: e.target.value,
+                                                registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
+                                            }))
+                                        }
+                                        className="form-input"
+                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
+                                    >
+                                        {REGISTRADORES.map(r => (
+                                            <option key={r} value={r}>
+                                                {r}
+                                            </option>
+                                        ))}
+                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
+                                    </select>
+                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                </div>
+                                {!isEdit && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setModalActasOpen(true)}
+                                        className="flex items-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm"
+                                        style={{ whiteSpace: 'nowrap' }}
+                                    >
+                                        <Upload className="w-4 h-4" />
+                                        <span>Subir Acta</span>
+                                        {actas.length > 0 && (
+                                            <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                                {actas.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                )}
                             </div>
                             {form.registradoPor === COMBO_OTROS_VALUE && (
                                 <input
@@ -809,131 +833,169 @@ function ModalTraslado({
                         )}
                     </div>
 
-                    {!isEdit && productosAgregados.length > 0 && (
-                        <div className="mt-6 border-2 border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
-                                <h6 className="text-[11px] font-black text-gray-500 uppercase tracking-widest m-0">Productos Agregados ({productosAgregados.length})</h6>
-                                <div className="flex gap-4">
-                                    <button 
-                                        onClick={() => setModalActasOpen(true)}
-                                        className={`flex items-center gap-2 text-[10px] font-bold px-3 py-1 rounded-full transition-all ${actas.length > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
-                                    >
-                                        <FileImage className="w-3.5 h-3.5" />
-                                        {actas.length > 0 ? `${actas.length} ACTAS SELECCIONADAS` : 'ADJUNTAR ACTAS (OPCIONAL)'}
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="max-h-[300px] overflow-y-auto">
-                                <table className="w-full text-xs">
+                    {!isEdit && (
+                        <div className="col-span-2 mt-4">
+                            <label className="form-label mb-2">Productos Agregados</label>
+                            <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                <div className="overflow-x-auto max-h-[300px]">
+                                    <table className="w-full text-sm">
                                     <thead className="bg-[#002D5A] text-white sticky top-0 z-10">
                                         <tr className="text-[9px] uppercase tracking-tighter">
-                                            <th className="px-4 py-2 text-left font-bold">PRODUCTO</th>
-                                            <th className="px-4 py-2 text-left font-bold">OPERACIÓN</th>
-                                            <th className="px-4 py-2 text-left font-bold">SALIDA</th>
-                                            <th className="px-4 py-2 text-left font-bold">INGRESO</th>
-                                            <th className="px-4 py-2 text-left font-bold">OPERADOR</th>
-                                            <th className="px-4 py-2 text-center font-bold">CANTIDAD</th>
-                                            <th className="px-4 py-2 text-center font-bold">ACCIONES</th>
+                                            <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Producto</th>
+                                            <th className="px-3 py-2 text-left text-[9px] font-bold uppercase" style={{ minWidth: '100px' }}>Código</th>
+                                            <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Operación</th>
+                                            <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Almacén Salida</th>
+                                            <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Ingreso</th>
+                                            <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Operador</th>
+                                            <th className="px-2 py-2 text-center text-[9px] font-bold uppercase" style={{ width: '60px' }}>Cant.</th>
+                                            <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">U.M</th>
+                                            <th className="px-3 py-2 text-center text-[9px] font-bold uppercase">Acción</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-100 bg-white">
-                                        {productosAgregados.map((p, i) => (
-                                            <tr key={i} className={`hover:bg-blue-50/50 transition-colors ${editingIndex === i ? 'bg-blue-50 ring-2 ring-blue-500 ring-inset' : ''}`}>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {productosAgregados.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={9} className="px-4 py-8 text-center text-gray-400 text-xs">
+                                                    No hay productos agregados. Completa el formulario y presiona "Agregar Producto a la Lista"
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                        productosAgregados.map((p, i) => (
+                                            <tr
+                                                key={i}
+                                                onClick={() => handleEditarProducto(i)}
+                                                title="Haz clic para editar esta fila"
+                                                className={`hover:bg-gray-50 cursor-pointer ${editingIndex === i ? 'bg-yellow-50 border-l-4 border-yellow-500' : ''}`}
+                                            >
                                                 <td className="px-4 py-2">
                                                     {editingIndex === i ? (
                                                         <ProductoAutocomplete
                                                             productos={state.productos}
                                                             value={p.productoId}
                                                             onChange={(id, prod) => handleProductoChangeInTable(i, id, prod)}
-                                                            placeholder="Cambiar..."
+                                                            placeholder="Buscar producto..."
                                                         />
                                                     ) : (
-                                                        <div className="font-bold text-gray-900">{p.producto} <span className="text-gray-400 font-medium block text-[10px]">{p.codigo}</span></div>
+                                                        <span className="text-[10px] font-medium text-gray-900">{p.producto}</span>
                                                     )}
+                                                </td>
+                                                <td className="px-3 py-2" style={{ minWidth: '100px' }}>
+                                                    <span className="text-[10px] text-gray-700 uppercase font-medium">{p.codigo || '-'}</span>
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     {editingIndex === i ? (
-                                                        <select
-                                                            value={p.operacion}
-                                                            onChange={e => handleActualizarProducto(i, 'operacion', e.target.value)}
-                                                            className="w-full p-1 text-[11px] border rounded"
-                                                        >
-                                                            {OPS_TRASLADOS.map(op => <option key={op}>{op}</option>)}
-                                                        </select>
+                                                        <div className="relative">
+                                                            <select
+                                                                value={p.operacion}
+                                                                onChange={e => handleActualizarProducto(i, 'operacion', e.target.value)}
+                                                                onClick={e => e.stopPropagation()}
+                                                                className="form-input text-[9px] py-1 px-2"
+                                                                style={{ paddingRight: 20, appearance: 'none' }}
+                                                            >
+                                                                {OPS_TRASLADOS.map(op => <option key={op}>{op}</option>)}
+                                                            </select>
+                                                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                        </div>
                                                     ) : (
                                                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${getOperacionColor(p.operacion).bg} ${getOperacionColor(p.operacion).text}`}>{p.operacion}</span>
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     {editingIndex === i ? (
-                                                        <select
-                                                            value={p.almacenSalida}
-                                                            onChange={e => handleActualizarProducto(i, 'almacenSalida', e.target.value)}
-                                                            className="w-full p-1 text-[11px] border rounded"
-                                                        >
-                                                            {ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                                        </select>
+                                                        <div className="relative">
+                                                            <select
+                                                                value={p.almacenSalida}
+                                                                onChange={e => handleActualizarProducto(i, 'almacenSalida', e.target.value)}
+                                                                onClick={e => e.stopPropagation()}
+                                                                className="form-input text-[9px] py-1 px-2"
+                                                                style={{ paddingRight: 20, appearance: 'none' }}
+                                                            >
+                                                                {ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                            </select>
+                                                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                        </div>
                                                     ) : (
-                                                        <span className="text-gray-600 font-medium">{etiquetaOrigenAlmacenSalidaEntrada(p.almacenSalida)}</span>
+                                                        <span className="text-[10px] text-gray-700">{etiquetaOrigenAlmacenSalidaEntrada(p.almacenSalida)}</span>
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     {editingIndex === i ? (
-                                                        <select
-                                                            value={p.almacenIngreso}
-                                                            onChange={e => handleActualizarProducto(i, 'almacenIngreso', e.target.value)}
-                                                            className="w-full p-1 text-[11px] border rounded"
-                                                        >
-                                                            {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(o => <option key={o.tienda} value={o.tienda}>{o.label}</option>)}
-                                                        </select>
+                                                        <div className="relative">
+                                                            <select
+                                                                value={p.almacenIngreso}
+                                                                onChange={e => handleActualizarProducto(i, 'almacenIngreso', e.target.value)}
+                                                                onClick={e => e.stopPropagation()}
+                                                                className="form-input text-[9px] py-1 px-2"
+                                                                style={{ paddingRight: 20, appearance: 'none' }}
+                                                            >
+                                                                {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(o => <option key={o.tienda} value={o.tienda}>{o.label}</option>)}
+                                                            </select>
+                                                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                        </div>
                                                     ) : (
-                                                        <span className="text-gray-600 font-medium">{etiquetaTiendaMovimientosCallao(p.almacenIngreso)}</span>
+                                                        <span className="text-[10px] text-gray-700">{etiquetaTiendaMovimientosCallao(p.almacenIngreso)}</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-2 text-gray-700">
+                                                <td className="px-4 py-2 text-[10px] text-gray-700">
                                                     {editingIndex === i ? (
                                                         <input
                                                             type="text"
                                                             value={p.operador}
                                                             onChange={e => handleActualizarProducto(i, 'operador', e.target.value)}
+                                                            onClick={e => e.stopPropagation()}
                                                             className="w-full p-1 text-[11px] border rounded"
                                                         />
                                                     ) : p.operador}
                                                 </td>
-                                                <td className="px-4 py-2 text-center font-black text-[#002D5A]">
+                                                <td className="px-2 py-2 text-center text-[10px]" style={{ width: '60px' }}>
                                                     {editingIndex === i ? (
                                                         <input
                                                             type="number"
+                                                            min="0"
                                                             value={p.cantidad}
                                                             onChange={e => handleActualizarProducto(i, 'cantidad', Number(e.target.value))}
-                                                            className="w-16 p-1 text-[11px] border rounded text-center"
+                                                            onClick={e => e.stopPropagation()}
+                                                            className="form-input text-[10px] py-1 px-1 w-full text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            style={{ fontSize: 10 }}
                                                         />
                                                     ) : (
-                                                        `${p.cantidad} ${p.unidadMedida}`
+                                                        <span className="text-[10px] font-bold text-gray-900">{p.cantidad}</span>
                                                     )}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <span className="text-[10px] text-gray-700">{p.unidadMedida}</span>
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     <div className="flex items-center justify-center gap-1">
+                                                        {editingIndex === i ? (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setEditingIndex(null);
+                                                                }}
+                                                                className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                                                title="Guardar"
+                                                            >
+                                                                <Save className="w-4 h-4" />
+                                                            </button>
+                                                        ) : null}
                                                         <button
-                                                            onClick={() => handleEditarProducto(i)}
-                                                            className={`p-1.5 rounded-lg transition-colors ${editingIndex === i ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
-                                                            title={editingIndex === i ? "Guardar cambios en fila" : "Editar fila"}
-                                                        >
-                                                            {editingIndex === i ? <Check className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleEliminarProducto(i)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleEliminarProducto(i);
+                                                            }}
                                                             className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
                                                             title="Eliminar de la lista"
                                                         >
-                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            <Trash2 className="w-4 h-4" />
                                                         </button>
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ))}
+                                        )))}
                                     </tbody>
-                                </table>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1038,41 +1100,82 @@ function ModalTraslado({
         )}
 
         {modalPasswordOpen && (
-            <div className="modal-backdrop z-[10002] bg-black/80 backdrop-blur-md" onClick={e => e.target === e.currentTarget && setModalPasswordOpen(false)}>
-                <div className="modal-box max-w-md bg-white rounded-[2rem] p-8 text-center shadow-2xl animate-in zoom-in-95 duration-300">
-                    <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center text-amber-500 mx-auto mb-6 shadow-inner ring-4 ring-amber-50/50">
-                        <Lock className="w-10 h-10" />
-                    </div>
-                    <h3 className="text-2xl font-black text-gray-900 mb-2 leading-tight">AUTORIZACIÓN REQUERIDA</h3>
-                    <p className="text-gray-500 text-sm font-medium mb-8 leading-relaxed px-4">
-                        Para registrar un traslado sin imágenes de respaldo (actas), se requiere la contraseña de autorización.
-                    </p>
-                    
-                    <div className="relative mb-8 px-4">
-                        <input 
-                            type="password"
-                            value={passwordAutorizacion}
-                            onChange={e => setPasswordAutorizacion(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleConfirmarPassword()}
-                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-6 py-4 text-center text-xl font-bold tracking-[0.5em] focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all placeholder:tracking-normal placeholder:text-gray-300"
-                            placeholder="······"
-                            autoFocus
-                        />
+            <div
+                className="modal-backdrop"
+                style={{ zIndex: 20010 }}
+                onClick={e => e.target === e.currentTarget && setModalPasswordOpen(false)}
+            >
+                <div className="modal-box" style={{ maxWidth: 520, width: '90vw', zIndex: 20011 }}>
+                    <div className="modal-header">
+                        <div>
+                            <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                Confirmación Requerida
+                            </h6>
+                            <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                No se han adjuntado actas. Para proceder con el guardado, ingrese la contraseña de autorización
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setModalPasswordOpen(false);
+                                setPasswordAutorizacion('');
+                            }}
+                            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            <X className="w-5 h-5 text-gray-500" />
+                        </button>
                     </div>
 
-                    <div className="flex flex-col gap-3 px-4">
-                        <button 
-                            onClick={handleConfirmarPassword}
+                    <div className="modal-body">
+                        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                            <Lock className="w-5 h-5 text-[#002D5A] flex-shrink-0" />
+                            <div>
+                                <p className="text-sm font-semibold text-[#002D5A] mb-1">Contraseña de autorización requerida</p>
+                                <p className="text-xs text-blue-700">
+                                    Se valida contra la contraseña dinámica del sistema.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="form-label">Contraseña de autorización *</label>
+                            <input
+                                type="password"
+                                name="pass_autorizacion_traslado"
+                                autoComplete="off"
+                                data-lpignore="true"
+                                inputMode="text"
+                                value={passwordAutorizacion}
+                                onChange={e => setPasswordAutorizacion(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleConfirmarPassword()}
+                                className="form-input"
+                                style={{ fontSize: 12 }}
+                                placeholder="Ingrese contraseña"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+
+                    <div className="modal-footer">
+                        <button
+                            onClick={() => {
+                                setModalPasswordOpen(false);
+                                setPasswordAutorizacion('');
+                            }}
+                            className="btn btn-secondary"
                             disabled={isSaving}
-                            className="w-full h-14 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black text-sm shadow-lg shadow-amber-500/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            {isSaving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'CONFIRMAR Y GUARDAR'}
-                        </button>
-                        <button 
-                            onClick={() => setModalPasswordOpen(false)}
-                            className="w-full py-4 text-xs font-black text-gray-400 hover:text-gray-600 transition-all uppercase tracking-widest"
                         >
                             Cancelar
+                        </button>
+                        <button
+                            onClick={handleConfirmarPassword}
+                            className="btn"
+                            style={{ backgroundColor: '#002D5A', color: 'white' }}
+                            onMouseOver={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#002D5A')}
+                            disabled={isSaving || !passwordAutorizacion.trim()}
+                        >
+                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aceptar'}
                         </button>
                     </div>
                 </div>

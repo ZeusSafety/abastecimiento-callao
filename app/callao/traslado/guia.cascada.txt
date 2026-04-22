@@ -90,149 +90,32 @@ def bad_request_error(message="Solicitud incorrecta", headers=None):
 # FUNCIONES AUXILIARES
 # ============================================================
 def _get_id_tienda_por_nombre_o_codigo(nombre_o_codigo, conn):
-    """
-    Resuelve id_tienda por código o nombre (insensible a mayúsculas).
-    Alias MALVINAS / ALMACEN MALVINAS y CALLAO / ALMACEN CALLAO por catálogos o datos históricos.
-    """
-    if nombre_o_codigo is None:
-        return None
-    raw = str(nombre_o_codigo).strip()
-    if not raw:
-        return None
-
-    u = raw.upper()
-    variants = []
-    seen = set()
-
-    def add(v):
-        if not v:
-            return
-        s = str(v).strip()
-        if not s:
-            return
-        key = s.upper()
-        if key not in seen:
-            seen.add(key)
-            variants.append(s)
-
-    add(raw)
-    if u in ('CALLAO', 'ALMACEN CALLAO'):
-        for x in ('MALVINAS', 'CALLAO', 'ALMACEN MALVINAS', 'ALMACEN CALLAO'):
-            add(x)
-    elif u == 'MALVINAS':
-        for x in ('MALVINAS', 'ALMACEN MALVINAS', 'CALLAO', 'ALMACEN CALLAO'):
-            add(x)
-    elif u == 'ALMACEN MALVINAS':
-        for x in ('ALMACEN MALVINAS', 'MALVINAS', 'CALLAO'):
-            add(x)
-    elif u == '3006':
-        add('OFICINA')
-    elif u == '3131':
-        add('CALLAO-1')
-    elif u == '412-A':
-        add('CALLAO-2')
-
+    """Obtiene el ID de una tienda por su nombre exacto o código."""
     cursor = conn.cursor()
-    try:
-        sql_ci = (
-            "SELECT id FROM tiendas_gestion_sea_callao "
-            "WHERE UPPER(TRIM(COALESCE(codigo,''))) = UPPER(TRIM(%s)) "
-            "   OR UPPER(TRIM(COALESCE(nombre,''))) = UPPER(TRIM(%s)) "
-            "LIMIT 1"
-        )
-        for v in variants:
-            cursor.execute(sql_ci, (v, v))
-            row = cursor.fetchone()
-            if row:
-                return row['id']
-        return None
-    finally:
-        cursor.close()
-
-def _get_id_unidad_medida_por_nombre(nombre_um, conn):
-    """Obtiene el ID de una unidad de medida por su nombre (insensible a mayúsculas)."""
-    if not nombre_um:
-        return None
-    nm = str(nombre_um).strip()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT id FROM unidades_medida_sea_callao WHERE UPPER(TRIM(nombre)) = UPPER(TRIM(%s)) LIMIT 1",
-            (nm,),
-        )
-        row = cursor.fetchone()
-        return row['id'] if row else None
-    finally:
-        cursor.close()
-
-def _get_id_tipo_operacion_por_nombre_y_tipo(nombre_operacion, tipo, conn):
-    """Obtiene el ID de un tipo de operación por su nombre y tipo (ENTRADA/SALIDA)."""
-    cursor = conn.cursor()
-    sql = "SELECT id FROM tipos_operacion_sea_callao WHERE nombre = %s AND tipo = %s"
-    cursor.execute(sql, (nombre_operacion.upper(), tipo))
+    # Buscar primero por código exacto, luego por nombre exacto
+    sql = "SELECT id FROM tiendas_gestion_sea WHERE codigo = %s OR nombre = %s"
+    cursor.execute(sql, (nombre_o_codigo, nombre_o_codigo))
     result = cursor.fetchone()
     cursor.close()
     return result['id'] if result else None
 
+def _get_id_unidad_medida_por_nombre(nombre_um, conn):
+    """Obtiene el ID de una unidad de medida por su nombre."""
+    cursor = conn.cursor()
+    sql = "SELECT id FROM unidades_medida_sea WHERE nombre = %s"
+    cursor.execute(sql, (nombre_um,))
+    result = cursor.fetchone()
+    cursor.close()
+    return result['id'] if result else None
 
-def _drenar_resultados_callproc(cursor):
-    """
-    Tras cursor.callproc(), PyMySQL puede dejar result sets sin leer.
-    Si no se consumen, el siguiente execute en el mismo cursor falla (p. ej. en lotes masivos).
-    """
-    try:
-        while cursor.nextset():
-            pass
-    except Exception:
-        pass
-
-
-def _extraer_id_movimiento_generado(result_set):
-    """Obtiene el id devuelto por sp_registrar_entrada_callao / sp_registrar_salida_callao (DictCursor)."""
-    if not result_set:
-        return None
-    row = result_set[0]
-    if not isinstance(row, dict):
-        return None
-    for key in ("id_movimiento_generado", "ID_MOVIMIENTO_GENERADO"):
-        if key in row and row[key] is not None:
-            return row[key]
-    if len(row) == 1:
-        v = next(iter(row.values()))
-        return v if v is not None else None
-    return None
-
-
-def _resolver_id_movimiento_despues_sp(cursor, result_set):
-    """
-    Si el SP no hace SELECT final con id_movimiento_generado (muy habitual), fetchall() viene vacío.
-    Tras drenar resultados del callproc, LAST_INSERT_ID() devuelve el AUTO_INCREMENT del INSERT del SP en esta conexión.
-    Llamar solo después de fetchall() + _drenar_resultados_callproc(cursor).
-    """
-    nid = _extraer_id_movimiento_generado(result_set)
-    if nid is not None:
-        try:
-            i = int(nid)
-            if i > 0:
-                return i
-        except (TypeError, ValueError):
-            pass
-    try:
-        cursor.execute("SELECT LAST_INSERT_ID() AS lid")
-        row = cursor.fetchone()
-        if row:
-            for v in row.values():
-                if v is not None:
-                    try:
-                        i = int(v)
-                        if i > 0:
-                            return i
-                    except (TypeError, ValueError):
-                        pass
-    except Exception as e:
-        logging.warning("LAST_INSERT_ID tras SP: %s", e)
-    return None
-
+def _get_id_tipo_operacion_por_nombre_y_tipo(nombre_operacion, tipo, conn):
+    """Obtiene el ID de un tipo de operación por su nombre y tipo (ENTRADA/SALIDA)."""
+    cursor = conn.cursor()
+    sql = "SELECT id FROM tipos_operacion_sea WHERE nombre = %s AND tipo = %s"
+    cursor.execute(sql, (nombre_operacion.upper(), tipo))
+    result = cursor.fetchone()
+    cursor.close()
+    return result['id'] if result else None
 
 def _generar_codigo_carga():
     """Genera un código único para agrupar cargas masivas."""
@@ -240,138 +123,11 @@ def _generar_codigo_carga():
     random_suffix = str(uuid.uuid4())[:8].upper()
     return f"CG{timestamp}{random_suffix}"
 
-
-def _tabla_tiene_columna(cursor, nombre_tabla, nombre_columna):
-    """Valida si una tabla posee una columna (compatibilidad con despliegues antiguos)."""
-    cursor.execute(
-        """
-        SELECT 1
-        FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = %s
-          AND COLUMN_NAME = %s
-        LIMIT 1
-        """,
-        (nombre_tabla, nombre_columna),
-    )
-    return cursor.fetchone() is not None
-
-
-def _asignar_codigo_carga_entrada_si_existe_columna(cursor, id_movimiento, codigo_carga):
-    """Persiste codigo_carga en movimientos_entrada_callao cuando la columna existe."""
-    if not codigo_carga or not id_movimiento:
-        return
-    if not _tabla_tiene_columna(cursor, 'movimientos_entrada_callao', 'codigo_carga'):
-        return
-    cursor.execute(
-        "UPDATE movimientos_entrada_callao SET codigo_carga = %s WHERE id = %s",
-        (codigo_carga, id_movimiento),
-    )
-
-
-def _asignar_codigo_carga_salida_si_existe_columna(cursor, id_movimiento, codigo_carga):
-    """Persiste codigo_carga en movimientos_salida_callao cuando la columna existe."""
-    if not codigo_carga or not id_movimiento:
-        return
-    if not _tabla_tiene_columna(cursor, 'movimientos_salida_callao', 'codigo_carga'):
-        return
-    cursor.execute(
-        "UPDATE movimientos_salida_callao SET codigo_carga = %s WHERE id = %s",
-        (codigo_carga, id_movimiento),
-    )
-
-
-def _asignar_codigo_carga_traslado_si_existe_columna(cursor, id_movimiento, codigo_carga):
-    """Persiste codigo_carga en movimientos_traslado_callao cuando la columna existe."""
-    if not codigo_carga or not id_movimiento:
-        return
-    if not _tabla_tiene_columna(cursor, 'movimientos_traslado_callao', 'codigo_carga'):
-        return
-    cursor.execute(
-        "UPDATE movimientos_traslado_callao SET codigo_carga = %s WHERE id = %s",
-        (codigo_carga, id_movimiento),
-    )
-
-
-def _asegurar_columna_codigo_carga(cursor, nombre_tabla, nombre_indice):
-    """Asegura columna codigo_carga para agrupar operaciones masivas en cascada."""
-    if _tabla_tiene_columna(cursor, nombre_tabla, 'codigo_carga'):
-        return
-    cursor.execute(
-        f"ALTER TABLE {nombre_tabla} ADD COLUMN codigo_carga VARCHAR(50) NULL"
-    )
-    cursor.execute(
-        f"CREATE INDEX {nombre_indice} ON {nombre_tabla} (codigo_carga)"
-    )
-
-
-def _password_efectiva_actas_abastecimiento(cursor):
-    """
-    Contraseña válida para subir actas vinculadas a un abastecimiento guardado.
-    Prioridad: pass_abastecimiento_sin_acta (si existe y no está vacía);
-    si no, pass_movimiento_sin_acta (la misma que entradas/salidas y gestión credencial).
-    """
-    cursor.execute(
-        "SELECT valor FROM configuracion_sistema_callao WHERE clave = 'pass_abastecimiento_sin_acta'"
-    )
-    row = cursor.fetchone()
-    v = (row.get('valor') or "").strip() if row else ""
-    if v:
-        return v
-    cursor.execute(
-        "SELECT valor FROM configuracion_sistema_callao WHERE clave = 'pass_movimiento_sin_acta'"
-    )
-    row2 = cursor.fetchone()
-    return (row2.get("valor") or "").strip() if row2 else ""
-
-
-def _codigo_carga_desde_actas_entrada(cursor, id_entrada):
-    """Último codigo_carga en actas de la entrada; si no hay, genera uno nuevo."""
-    cursor.execute(
-        """SELECT codigo_carga FROM movimientos_actas_callao
-           WHERE id_movimiento_entrada = %s AND codigo_carga IS NOT NULL
-             AND CHAR_LENGTH(TRIM(codigo_carga)) > 0
-           ORDER BY fecha_subida DESC LIMIT 1""",
-        (id_entrada,),
-    )
-    row = cursor.fetchone()
-    if row and row.get('codigo_carga'):
-        return row['codigo_carga']
-    return _generar_codigo_carga()
-
-def _codigo_carga_desde_actas_salida(cursor, id_salida):
-    """Último codigo_carga en actas de la salida; si no hay, genera uno nuevo."""
-    cursor.execute(
-        """SELECT codigo_carga FROM movimientos_actas_callao
-           WHERE id_movimiento_salida = %s AND codigo_carga IS NOT NULL
-             AND CHAR_LENGTH(TRIM(codigo_carga)) > 0
-           ORDER BY fecha_subida DESC LIMIT 1""",
-        (id_salida,),
-    )
-    row = cursor.fetchone()
-    if row and row.get('codigo_carga'):
-        return row['codigo_carga']
-    return _generar_codigo_carga()
-
-def _codigo_carga_desde_actas_traslado(cursor, id_traslado):
-    """Último codigo_carga en actas del traslado; si no hay, genera uno nuevo."""
-    cursor.execute(
-        """SELECT codigo_carga FROM movimientos_actas_callao
-           WHERE id_movimiento_traslado = %s AND codigo_carga IS NOT NULL
-             AND CHAR_LENGTH(TRIM(codigo_carga)) > 0
-           ORDER BY fecha_subida DESC LIMIT 1""",
-        (id_traslado,),
-    )
-    row = cursor.fetchone()
-    if row and row.get('codigo_carga'):
-        return row['codigo_carga']
-    return _generar_codigo_carga()
-
 def _obtener_contrasena_sistema(conn):
     """Obtiene la contraseña actual del sistema de configuración."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT valor FROM configuracion_sistema_callao WHERE clave = 'pass_movimiento_sin_acta'")
+        cursor.execute("SELECT valor FROM configuracion_sistema WHERE clave = 'pass_movimiento_sin_acta'")
         result = cursor.fetchone()
         return result['valor'] if result else None
     finally:
@@ -381,7 +137,7 @@ def _actualizar_contrasena_sistema(conn, nueva_contrasena, actualizado_por):
     """Actualiza la contraseña del sistema."""
     cursor = conn.cursor()
     try:
-        sql = "UPDATE configuracion_sistema_callao SET valor = %s, actualizado_por = %s WHERE clave = 'pass_movimiento_sin_acta'"
+        sql = "UPDATE configuracion_sistema SET valor = %s, actualizado_por = %s WHERE clave = 'pass_movimiento_sin_acta'"
         cursor.execute(sql, (nueva_contrasena, actualizado_por))
         conn.commit()
         return True
@@ -394,7 +150,7 @@ def _actualizar_contrasena_sistema(conn, nueva_contrasena, actualizado_por):
 def _get_id_producto_por_codigo_o_nombre(codigo_o_nombre, conn):
     """Obtiene el ID de un producto por su código o nombre exacto."""
     cursor = conn.cursor()
-    sql = "SELECT id FROM productos_abastecimiento_callao WHERE codigo = %s OR nombre = %s"
+    sql = "SELECT id FROM productos_abastecimiento WHERE codigo = %s OR nombre = %s"
     cursor.execute(sql, (codigo_o_nombre, codigo_o_nombre))
     result = cursor.fetchone()
     cursor.close()
@@ -405,31 +161,13 @@ def _get_existencia_producto_tienda(id_producto: int, id_tienda: int, conn) -> i
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
+            "SELECT cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
             (id_producto, id_tienda)
         )
         row = cursor.fetchone()
         return row['cantidad'] if row and row['cantidad'] is not None else 0
     finally:
         cursor.close()
-
-
-def _asegurar_fila_existencia(cursor, id_producto, id_tienda):
-    """
-    Crea (id_producto, id_tienda) en existencias con cantidad 0 si no existe.
-
-    sp_registrar_entrada_callao / sp_registrar_salida_callao hacen:
-        SELECT IFNULL(cantidad, 0) INTO v_cant_anterior FROM existencias_almacen_callao WHERE ...
-    En MySQL, si **no hay fila**, SELECT...INTO **no asigna** y v_cant_anterior queda NULL →
-    INSERT movimientos_* falla con: Column 'cantidad_anterior' cannot be null (1048).
-    """
-    cursor.execute(
-        """INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad)
-           VALUES (%s, %s, 0)
-           ON DUPLICATE KEY UPDATE cantidad = cantidad""",
-        (id_producto, id_tienda),
-    )
-
 
 def _ejecutar_sp_con_transaccion(conn, sp_call, params):
     """Ejecuta un Stored Procedure y maneja commit/rollback."""
@@ -462,7 +200,7 @@ def get_tiendas(request, headers):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id, codigo, nombre, es_almacen FROM tiendas_gestion_sea_callao WHERE activo = 1")
+        cursor.execute("SELECT id, codigo, nombre, es_almacen FROM tiendas_gestion_sea WHERE activo = 1")
         tiendas = cursor.fetchall()
         return success_response(data=tiendas, message="Tiendas obtenidas correctamente", headers=headers)
     finally:
@@ -475,7 +213,7 @@ def get_unidades_medida(request, headers):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id, nombre FROM unidades_medida_sea_callao")
+        cursor.execute("SELECT id, nombre FROM unidades_medida_sea")
         unidades = cursor.fetchall()
         return success_response(data=unidades, message="Unidades obtenidas correctamente", headers=headers)
     finally:
@@ -484,11 +222,11 @@ def get_unidades_medida(request, headers):
 
 # --- MÓDULO TIPOS DE OPERACIÓN ---
 def get_tipos_operacion(tipo_operacion, headers):
-    """Obtiene los tipos de operación filtrados por tipo (ENTRADA/SALIDA/TRASLADO)."""
+    """Obtiene los tipos de operación filtrados por tipo (ENTRADA/SALIDA)."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        sql = "SELECT id, nombre FROM tipos_operacion_sea_callao WHERE tipo = %s"
+        sql = "SELECT id, nombre FROM tipos_operacion_sea WHERE tipo = %s"
         cursor.execute(sql, (tipo_operacion,))
         tipos = cursor.fetchall()
         return success_response(data=tipos, message="Tipos de operación obtenidos correctamente", headers=headers)
@@ -504,9 +242,9 @@ def get_productos(request, headers):
     try:
         activo = request.args.get('activo', '1')
         if activo == '1':
-            cursor.execute("SELECT * FROM productos_abastecimiento_callao WHERE activo = 1")
+            cursor.execute("SELECT * FROM productos_abastecimiento WHERE activo = 1")
         else:
-            cursor.execute("SELECT * FROM productos_abastecimiento_callao")
+            cursor.execute("SELECT * FROM productos_abastecimiento")
         productos = cursor.fetchall()
         return success_response(data=productos, message="Productos obtenidos correctamente", headers=headers)
     finally:
@@ -534,7 +272,7 @@ def create_producto(request, headers):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        sql = """INSERT INTO productos_abastecimiento_callao 
+        sql = """INSERT INTO productos_abastecimiento 
                  (codigo, nombre, cantidad_en_caja, id_unidad_medida_info, cantidad_unidades_caja, cantidad_reg_calculo, id_unidad_medida_reg)
                  VALUES (%s, %s, %s, %s, %s, %s, %s)"""
         cursor.execute(sql, (codigo, nombre, cantidad_en_caja, id_unidad_medida_info, cantidad_unidades_caja, cantidad_reg_calculo, id_unidad_medida_reg))
@@ -552,7 +290,7 @@ def create_producto(request, headers):
         conn.close()
 
 def update_producto(request, headers, producto_id):
-    """Actualiza un producto: cantidad_reg_calculo, stock_minimo y existencia por tienda - almacen."""
+    """Actualiza un producto: cantidad_reg_calculo, stock_minimo y existencia por tienda."""
     data = request.get_json()
     if not data:
         return bad_request_error("Datos JSON inválidos", headers)
@@ -560,17 +298,23 @@ def update_producto(request, headers, producto_id):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        _codigos_tienda_stock = frozenset({'OFICINA', 'OFICINA-DOCENAS', 'CALLAO-1-A', 'CALLAO-1-B', 'CALLAO-2'})
+        # Mapeo de códigos de tienda válidos
+        tiendas_map = {
+            '3006': '3006',
+            '3131': '3131',
+            '412-A': '412-A',
+            '3133': '3133'
+        }
 
         # Verificar que el producto existe
-        cursor.execute("SELECT id FROM productos_abastecimiento_callao WHERE id = %s", (producto_id,))
+        cursor.execute("SELECT id FROM productos_abastecimiento WHERE id = %s", (producto_id,))
         if not cursor.fetchone():
             return not_found_error(f"Producto con ID {producto_id} no encontrado", headers)
 
         # Actualizar cantidad_reg_calculo si viene en los datos
         if 'cantidad_reg_calculo' in data:
             cursor.execute(
-                "UPDATE productos_abastecimiento_callao SET cantidad_reg_calculo = %s WHERE id = %s",
+                "UPDATE productos_abastecimiento SET cantidad_reg_calculo = %s WHERE id = %s",
                 (data['cantidad_reg_calculo'], producto_id)
             )
 
@@ -579,28 +323,28 @@ def update_producto(request, headers, producto_id):
             stock_minimo = data['stock_minimo']
             
             for codigo_tienda, valor in stock_minimo.items():
-                if codigo_tienda in _codigos_tienda_stock:
+                if codigo_tienda in tiendas_map:
                     # Obtener ID de tienda
-                    cursor.execute("SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = %s", (codigo_tienda,))
+                    cursor.execute("SELECT id FROM tiendas_gestion_sea WHERE codigo = %s", (codigo_tienda,))
                     tienda_row = cursor.fetchone()
                     if tienda_row:
                         id_tienda = tienda_row['id']
                         # Verificar si existe registro
                         cursor.execute(
-                            "SELECT id FROM stock_minimo_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
+                            "SELECT id FROM stock_minimo_tienda WHERE id_producto = %s AND id_tienda = %s",
                             (producto_id, id_tienda)
                         )
                         existe = cursor.fetchone()
                         if existe:
                             # Actualizar
                             cursor.execute(
-                                "UPDATE stock_minimo_almacen_callao SET stock_minimo = %s WHERE id_producto = %s AND id_tienda = %s",
+                                "UPDATE stock_minimo_tienda SET stock_minimo = %s WHERE id_producto = %s AND id_tienda = %s",
                                 (valor or 0, producto_id, id_tienda)
                             )
                         else:
                             # Insertar
                             cursor.execute(
-                                "INSERT INTO stock_minimo_almacen_callao (id_producto, id_tienda, stock_minimo) VALUES (%s, %s, %s)",
+                                "INSERT INTO stock_minimo_tienda (id_producto, id_tienda, stock_minimo) VALUES (%s, %s, %s)",
                                 (producto_id, id_tienda, valor or 0)
                             )
 
@@ -608,28 +352,28 @@ def update_producto(request, headers, producto_id):
         if 'existencia' in data:
             existencia = data['existencia']
             for codigo_tienda, valor in existencia.items():
-                if codigo_tienda in _codigos_tienda_stock:
+                if codigo_tienda in tiendas_map:
                     # Obtener ID de tienda
-                    cursor.execute("SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = %s", (codigo_tienda,))
+                    cursor.execute("SELECT id FROM tiendas_gestion_sea WHERE codigo = %s", (codigo_tienda,))
                     tienda_row = cursor.fetchone()
                     if tienda_row:
                         id_tienda = tienda_row['id']
                         # Verificar si existe registro
                         cursor.execute(
-                            "SELECT id FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
+                            "SELECT id FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
                             (producto_id, id_tienda)
                         )
                         existe = cursor.fetchone()
                         if existe:
                             # Actualizar
                             cursor.execute(
-                                "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                                "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
                                 (valor or 0, producto_id, id_tienda)
                             )
                         else:
                             # Insertar
                             cursor.execute(
-                                "INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                                "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
                                 (producto_id, id_tienda, valor or 0)
                             )
 
@@ -658,7 +402,13 @@ def update_productos_masivo(request, headers):
     if len(productos) == 0:
         return bad_request_error("La lista 'productos' está vacía", headers)
 
-    _codigos_tienda_stock = frozenset({'OFICINA', 'OFICINA-DOCENAS', 'CALLAO-1-A', 'CALLAO-1-B', 'CALLAO-2'})
+    # Mapeo de códigos de tienda válidos
+    tiendas_map = {
+        '3006': '3006',
+        '3131': '3131',
+        '412-A': '412-A',
+        '3133': '3133'
+    }
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -679,7 +429,7 @@ def update_productos_masivo(request, headers):
             producto_id = int(producto_id)
 
             # Verificar que el producto existe
-            cursor.execute("SELECT id FROM productos_abastecimiento_callao WHERE id = %s", (producto_id,))
+            cursor.execute("SELECT id FROM productos_abastecimiento WHERE id = %s", (producto_id,))
             if not cursor.fetchone():
                 errores.append(f"Item #{idx + 1}: producto con ID {producto_id} no encontrado")
                 continue
@@ -687,33 +437,33 @@ def update_productos_masivo(request, headers):
             # cantidad_reg_calculo
             if 'cantidad_reg_calculo' in item:
                 cursor.execute(
-                    "UPDATE productos_abastecimiento_callao SET cantidad_reg_calculo = %s WHERE id = %s",
+                    "UPDATE productos_abastecimiento SET cantidad_reg_calculo = %s WHERE id = %s",
                     (item.get('cantidad_reg_calculo'), producto_id)
                 )
 
             # stock_minimo
             if 'stock_minimo' in item and isinstance(item.get('stock_minimo'), dict):
                 for codigo_tienda, valor in item['stock_minimo'].items():
-                    if codigo_tienda in _codigos_tienda_stock:
-                        cursor.execute("SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = %s", (codigo_tienda,))
+                    if codigo_tienda in tiendas_map:
+                        cursor.execute("SELECT id FROM tiendas_gestion_sea WHERE codigo = %s", (codigo_tienda,))
                         tienda_row = cursor.fetchone()
                         if not tienda_row:
                             continue
                         id_tienda = tienda_row['id']
 
                         cursor.execute(
-                            "SELECT id FROM stock_minimo_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
+                            "SELECT id FROM stock_minimo_tienda WHERE id_producto = %s AND id_tienda = %s",
                             (producto_id, id_tienda)
                         )
                         existe = cursor.fetchone()
                         if existe:
                             cursor.execute(
-                                "UPDATE stock_minimo_almacen_callao SET stock_minimo = %s WHERE id_producto = %s AND id_tienda = %s",
+                                "UPDATE stock_minimo_tienda SET stock_minimo = %s WHERE id_producto = %s AND id_tienda = %s",
                                 (valor or 0, producto_id, id_tienda)
                             )
                         else:
                             cursor.execute(
-                                "INSERT INTO stock_minimo_almacen_callao (id_producto, id_tienda, stock_minimo) VALUES (%s, %s, %s)",
+                                "INSERT INTO stock_minimo_tienda (id_producto, id_tienda, stock_minimo) VALUES (%s, %s, %s)",
                                 (producto_id, id_tienda, valor or 0)
                             )
 
@@ -757,13 +507,13 @@ def get_entradas(request, headers):
                 me.fecha_actualizacion, me.motivo_cambio,
                 COUNT(mea.id) as total_actas,
                 GROUP_CONCAT(mea.url_imagen SEPARATOR ',') as actas_urls
-            FROM movimientos_entrada_callao me
-            LEFT JOIN movimientos_actas_callao mea ON me.id = mea.id_movimiento_entrada
-            JOIN productos_abastecimiento_callao p ON me.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON me.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao ts ON me.id_tienda_salida = ts.id
-            JOIN tiendas_gestion_sea_callao ti ON me.id_tienda_ingreso = ti.id
-            JOIN unidades_medida_sea_callao um ON me.id_unidad_medida = um.id
+            FROM movimientos_entrada me
+            LEFT JOIN movimientos_actas mea ON me.id = mea.id_movimiento_entrada
+            JOIN productos_abastecimiento p ON me.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON me.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea ts ON me.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea ti ON me.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea um ON me.id_unidad_medida = um.id
             GROUP BY me.id
             ORDER BY me.fecha_registro DESC
         """
@@ -821,13 +571,11 @@ def create_entrada(request, headers):
         if not all([producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id, um_id]):
             return bad_request_error("Uno o más parámetros (producto, tienda, etc.) son inválidos", headers)
 
-        # Verificar si la tienda de salida es un almacén o una tienda (reutilizar el mismo cursor)
-        cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea_callao WHERE id = %s", (tienda_salida_id,))
+        # Verificar si la tienda de salida es un almacén o una tienda
+        cursor = conn.cursor()
+        cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea WHERE id = %s", (tienda_salida_id,))
         tienda_salida_info = cursor.fetchone()
         es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
-
-        # Fila en existencias para tienda de INGRESO: sin ella el SP deja v_cant_anterior NULL (MySQL INTO sin filas).
-        _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
 
         # Llamar al SP manualmente para mantener control de la transacción
         params = [
@@ -836,23 +584,25 @@ def create_entrada(request, headers):
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
         ]
         try:
-            logging.info(f"Ejecutando SP: sp_registrar_entrada_callao con parámetros: {params}")
-            cursor.callproc('sp_registrar_entrada_callao', params)
+            logging.info(f"Ejecutando SP: sp_registrar_entrada con parámetros: {params}")
+            cursor.callproc('sp_registrar_entrada', params)
             result_set = cursor.fetchall()
-            _drenar_resultados_callproc(cursor)
-            nuevo_id = _resolver_id_movimiento_despues_sp(cursor, result_set)
+            nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
 
             if not nuevo_id:
-                raise Exception("No se pudo obtener id del movimiento (ni resultado del SP ni LAST_INSERT_ID)")
+                raise Exception("No se pudo obtener id_movimiento_generado en sp_registrar_entrada")
 
-            # cantidad_anterior la calcula el SP (stock en tienda ingreso antes del movimiento); no sobrescribir.
+            # En registros nuevos, cantidad_anterior inicia con el mismo valor de cantidad.
+            cursor.execute(
+                "UPDATE movimientos_entrada SET cantidad_anterior = cantidad WHERE id = %s",
+                (nuevo_id,)
+            )
 
             # Si la tienda de salida NO es un almacén (es una tienda), restar del stock
             if not es_almacen_salida:
                 cantidad = data.get('cantidad', 0)
-                _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
                 cursor.execute(
-                    "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
+                    "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
                     (producto_id, tienda_salida_id)
                 )
                 existencia_row = cursor.fetchone()
@@ -860,12 +610,12 @@ def create_entrada(request, headers):
                 if existencia_row:
                     nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
                     cursor.execute(
-                        "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                        "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
                         (nueva_cantidad, producto_id, tienda_salida_id)
                     )
                 else:
                     cursor.execute(
-                        "INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                        "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
                         (producto_id, tienda_salida_id, 0)
                     )
 
@@ -874,7 +624,7 @@ def create_entrada(request, headers):
                 for file in files:
                     url_publica = upload_to_gcs(file)
                     cursor.execute("""
-                        INSERT INTO movimientos_actas_callao (id_movimiento_entrada, nombre_imagen, url_imagen) 
+                        INSERT INTO movimientos_actas (id_movimiento_entrada, nombre_imagen, url_imagen) 
                         VALUES (%s, %s, %s)
                     """, (nuevo_id, file.filename, url_publica))
 
@@ -934,7 +684,6 @@ def create_entradas_masivo(request, headers):
     codigo_carga = _generar_codigo_carga()
 
     try:
-        _asegurar_columna_codigo_carga(cursor, 'movimientos_entrada_callao', 'idx_me_codigo_carga_callao')
         for idx, entrada_data in enumerate(entradas):
             try:
                 # Convertir nombres/códigos a IDs
@@ -953,115 +702,81 @@ def create_entradas_masivo(request, headers):
                     errores.append(f"Entrada {idx + 1}: Almacén de salida no encontrado")
                     continue
 
+                tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(entrada_data.get('almacen_ingreso'), conn)
+                if not tienda_ingreso_id:
+                    errores.append(f"Entrada {idx + 1}: Tienda de ingreso no encontrada")
+                    continue
+
                 um_id = _get_id_unidad_medida_por_nombre(entrada_data.get('unidad_medida'), conn)
                 if not um_id:
                     errores.append(f"Entrada {idx + 1}: Unidad de medida no válida")
                     continue
 
                 # Verificar si la tienda de salida es un almacén
-                cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea_callao WHERE id = %s", (tienda_salida_id,))
+                cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea WHERE id = %s", (tienda_salida_id,))
                 tienda_salida_info = cursor.fetchone()
                 es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
 
-                try:
-                    cantidad_val = int(entrada_data.get('cantidad') or 0)
-                except (TypeError, ValueError):
-                    cantidad_val = 0
+                # Llamar al SP
+                params = [
+                    producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
+                    entrada_data.get('operador'), entrada_data.get('cantidad'), um_id,
+                    entrada_data.get('entregado_por'), entrada_data.get('registrado_por'), 
+                    entrada_data.get('observaciones')
+                ]
+                cursor.callproc('sp_registrar_entrada', params)
+                result_set = cursor.fetchall()
+                nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
 
-                # Soporta entrada_data.almacen_ingreso (string) o entrada_data.almacenes_ingreso (array).
-                destinos_raw = entrada_data.get('almacenes_ingreso')
-                if destinos_raw is None:
-                    destinos_raw = [entrada_data.get('almacen_ingreso')]
-                elif not isinstance(destinos_raw, list):
-                    destinos_raw = [destinos_raw]
+                # Actualizar código_carga en la entrada
+                if nuevo_id:
+                    cursor.execute(
+                        "UPDATE movimientos_entrada SET codigo_carga = %s, cantidad_anterior = cantidad WHERE id = %s",
+                        (codigo_carga, nuevo_id)
+                    )
 
-                destinos = [d for d in destinos_raw if d and str(d).strip()]
-                if not destinos:
-                    errores.append(f"Entrada {idx + 1}: Tienda(s) de ingreso no informada(s)")
-                    continue
-
-                for destino in destinos:
-                    tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(destino, conn)
-                    if not tienda_ingreso_id:
-                        errores.append(f"Entrada {idx + 1}: Tienda de ingreso '{destino}' no encontrada")
-                        continue
-
-                    _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
-
-                    # Llamar al SP por cada destino (upsert stock por sede)
-                    params = [
-                        producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
-                        entrada_data.get('operador'), cantidad_val, um_id,
-                        entrada_data.get('entregado_por'), entrada_data.get('registrado_por'),
-                        entrada_data.get('observaciones'),
-                    ]
-                    cursor.callproc('sp_registrar_entrada_callao', params)
-                    result_set = cursor.fetchall()
-                    _drenar_resultados_callproc(cursor)
-                    nuevo_id = _resolver_id_movimiento_despues_sp(cursor, result_set)
-
-                    if not nuevo_id:
-                        errores.append(
-                            f"Entrada {idx + 1}: No se obtuvo id del movimiento (revise sp_registrar_entrada_callao o LAST_INSERT_ID)"
-                        )
-                        continue
-
-                    _asignar_codigo_carga_entrada_si_existe_columna(cursor, nuevo_id, codigo_carga)
-
-                    # Restar stock si la tienda de salida no es almacén (el SP ya actualizó ingreso)
-                    if not es_almacen_salida:
-                        cantidad = cantidad_val
-                        _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
+                # Restar stock si la tienda de salida no es almacén
+                if not es_almacen_salida and nuevo_id:
+                    cantidad = entrada_data.get('cantidad', 0)
+                    cursor.execute(
+                        "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+                        (producto_id, tienda_salida_id)
+                    )
+                    existencia_row = cursor.fetchone()
+                    if existencia_row:
+                        nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
                         cursor.execute(
-                            "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
-                            (producto_id, tienda_salida_id)
+                            "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                            (nueva_cantidad, producto_id, tienda_salida_id)
                         )
-                        existencia_row = cursor.fetchone()
-                        if existencia_row:
-                            nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
-                            cursor.execute(
-                                "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
-                                (nueva_cantidad, producto_id, tienda_salida_id)
-                            )
-                        else:
-                            cursor.execute(
-                                "INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
-                                (producto_id, tienda_salida_id, 0)
-                            )
-
-                    ids_generados.append(nuevo_id)
-
+                    else:
+                        cursor.execute(
+                            "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                            (producto_id, tienda_salida_id, 0)
+                        )
+                
+                ids_generados.append(nuevo_id)
+                
             except Exception as e:
                 errores.append(f"Entrada {idx + 1}: {str(e)}")
                 logging.error(f"Error en entrada {idx + 1}: {traceback.format_exc()}")
 
-        # 4. Actas globales: codigo_carga solo en movimientos_actas_callao (no en me).
-        # Subimos cada archivo una vez; el primer movimiento recibe el INSERT real;
-        # el mismo url/nombre se replica en el resto de filas del lote para que la cascada agrupe por codigo_carga.
-        actas_subidas = []
-        id_representativo = next((i for i in ids_generados if i), None)
-        if files and codigo_carga and id_representativo:
-            for file in files:
-                if file.filename != '':
-                    url_publica = upload_to_gcs(file)
-                    if url_publica:
-                        actas_subidas.append((url_publica, file.filename))
-                        cursor.execute(
-                            """INSERT INTO movimientos_actas_callao 
-                               (id_movimiento_entrada, nombre_imagen, url_imagen, codigo_carga) 
-                               VALUES (%s, %s, %s, %s)""",
-                            (id_representativo, file.filename, url_publica, codigo_carga),
-                        )
-            for nid in ids_generados:
-                if not nid or nid == id_representativo:
-                    continue
-                for url_publica, fname in actas_subidas:
-                    cursor.execute(
-                        """INSERT INTO movimientos_actas_callao 
-                           (id_movimiento_entrada, nombre_imagen, url_imagen, codigo_carga) 
-                           VALUES (%s, %s, %s, %s)""",
-                        (nid, fname, url_publica, codigo_carga),
-                    )
+        # 4. Guardar ACTAS GLOBALES (asociadas a este código_carga)
+        # IMPORTANTE: para que en la vista "cascada" las actas NO se dupliquen por cada fila,
+        # insertamos cada acta UNA sola vez por carga usando un id_movimiento representativo.
+        if files and codigo_carga:
+            id_representativo = next((i for i in ids_generados if i), None)
+            if id_representativo:
+                for file in files:
+                    if file.filename != '':
+                        url_publica = upload_to_gcs(file)
+                        if url_publica:
+                            cursor.execute(
+                                """INSERT INTO movimientos_actas 
+                                   (id_movimiento_entrada, nombre_imagen, url_imagen, codigo_carga) 
+                                   VALUES (%s, %s, %s, %s)""",
+                                (id_representativo, file.filename, url_publica, codigo_carga)
+                            )
 
         if errores:
             conn.rollback()
@@ -1084,7 +799,7 @@ def create_entradas_masivo(request, headers):
 
 
 def update_entrada(request, headers, id_entrada):
-    """Edita una entrada existente usando el SP sp_editar_entrada_callao."""
+    """Edita una entrada existente usando el SP sp_editar_entrada."""
     data = request.get_json()
     if not data:
         return bad_request_error("Datos JSON inválidos", headers)
@@ -1100,7 +815,7 @@ def update_entrada(request, headers, id_entrada):
         cursor.execute(
             """
             SELECT id, id_producto, id_tienda_salida, id_tienda_ingreso, cantidad
-            FROM movimientos_entrada_callao
+            FROM movimientos_entrada
             WHERE id = %s
             """,
             (id_entrada,)
@@ -1130,19 +845,77 @@ def update_entrada(request, headers, id_entrada):
         if not um_id:
             return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
 
-        # Filas en existencias antes del SP: evita NULL en cantidad_anterior (MySQL SELECT INTO sin fila).
-        _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
-        _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
+        # Capturar cantidad actual antes de editar (será la nueva cantidad_anterior).
+        # Nota: en algunos registros legacy el campo puede venir NULL; evitamos propagar NULL
+        # porque `cantidad_anterior` es NOT NULL en BD.
+        cantidad_previa = mov_anterior.get('cantidad') or 0
 
+        # Llamar al SP
         params = [
             id_entrada, producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
             data.get('operador'), data.get('cantidad'), um_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
             motivo_cambio
         ]
-        cursor.callproc('sp_editar_entrada_callao', params)
+        cursor.callproc('sp_editar_entrada', params)
+        # Consumir posibles result sets del SP para evitar "commands out of sync".
         while cursor.nextset():
             pass
+
+        # Helpers para ajuste de existencias por tienda.
+        def _es_almacen(id_tienda):
+            cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea WHERE id = %s", (id_tienda,))
+            t = cursor.fetchone()
+            return bool(t and t.get('es_almacen') == 1)
+
+        def _ajustar_existencia(id_producto, id_tienda, delta):
+            cursor.execute(
+                "SELECT id, cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
+                (id_producto, id_tienda)
+            )
+            ex = cursor.fetchone()
+            if ex:
+                nueva = max(0, (ex.get('cantidad') or 0) + delta)
+                cursor.execute(
+                    "UPDATE existencias_tienda SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
+                    (nueva, id_producto, id_tienda)
+                )
+            else:
+                # Si no existía, se crea con el delta (nunca negativo).
+                cursor.execute(
+                    "INSERT INTO existencias_tienda (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
+                    (id_producto, id_tienda, max(0, delta))
+                )
+
+        # Recalcular impacto de tienda de salida cuando la salida es tienda (no almacén):
+        # 1) Deshacer impacto anterior
+        id_producto_prev = mov_anterior['id_producto']
+        id_salida_prev = mov_anterior['id_tienda_salida']
+        cantidad_prev = mov_anterior['cantidad'] or 0
+        if not _es_almacen(id_salida_prev):
+            _ajustar_existencia(id_producto_prev, id_salida_prev, cantidad_prev)
+
+        # 2) Aplicar nuevo impacto
+        cantidad_nueva = int(data.get('cantidad') or 0)
+        if not _es_almacen(tienda_salida_id):
+            _ajustar_existencia(producto_id, tienda_salida_id, -cantidad_nueva)
+
+        # Guardar cantidad previa en la tabla de movimiento actualizada.
+        cursor.execute(
+            "UPDATE movimientos_entrada SET cantidad_anterior = %s WHERE id = %s",
+            (cantidad_previa, id_entrada)
+        )
+        # Reflejar también cantidad previa en el último registro de cambios.
+        cursor.execute(
+            """
+            UPDATE cambios_entrada
+            SET cantidad_anterior = %s, cantidad = %s
+            WHERE id_movimiento_entrada = %s
+            ORDER BY fecha_cambio DESC, id DESC
+            LIMIT 1
+            """,
+            (cantidad_previa, cantidad_nueva, id_entrada)
+        )
 
         conn.commit()
         return success_response(message="Entrada actualizada exitosamente", headers=headers)
@@ -1171,12 +944,12 @@ def get_salidas(request, headers):
                 ms.fecha_actualizacion, ms.motivo_cambio,
                 COUNT(msa.id) as total_actas,
                 GROUP_CONCAT(msa.url_imagen SEPARATOR ',') as actas_urls
-            FROM movimientos_salida_callao ms
-            LEFT JOIN movimientos_actas_callao msa ON ms.id = msa.id_movimiento_salida
-            JOIN productos_abastecimiento_callao p ON ms.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON ms.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao t ON ms.id_tienda = t.id
-            JOIN unidades_medida_sea_callao um ON ms.id_unidad_medida = um.id
+            FROM movimientos_salida ms
+            LEFT JOIN movimientos_actas msa ON ms.id = msa.id_movimiento_salida
+            JOIN productos_abastecimiento p ON ms.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON ms.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea t ON ms.id_tienda = t.id
+            JOIN unidades_medida_sea um ON ms.id_unidad_medida = um.id
             GROUP BY ms.id
             ORDER BY ms.fecha_registro DESC
         """
@@ -1230,30 +1003,31 @@ def create_salida(request, headers):
         if cantidad_salida > existencia_actual:
             return bad_request_error(f"Stock insuficiente en la tienda. Existencia actual: {existencia_actual}, salida pedida: {cantidad_salida}", headers)
 
-        _asegurar_fila_existencia(cursor, producto_id, tienda_id)
-
         # Llamar al SP
         params = [
             producto_id, tipo_op_id, data.get('nro_comprobante'), data.get('asesor'),
             data.get('cantidad'), um_id, tienda_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
         ]
-        cursor.callproc('sp_registrar_salida_callao', params)
+        cursor.callproc('sp_registrar_salida', params)
         result_set = cursor.fetchall()
-        _drenar_resultados_callproc(cursor)
-        nuevo_id = _resolver_id_movimiento_despues_sp(cursor, result_set)
+        nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
 
         if not nuevo_id:
-            raise Exception("No se pudo obtener id del movimiento (ni resultado del SP ni LAST_INSERT_ID)")
+            raise Exception("No se pudo obtener id_movimiento_generado en sp_registrar_salida")
 
-        # cantidad_anterior la fija el SP; no sobrescribir.
+        # En registros nuevos, cantidad_anterior inicia con el mismo valor de cantidad.
+        cursor.execute(
+            "UPDATE movimientos_salida SET cantidad_anterior = cantidad WHERE id = %s",
+            (nuevo_id,)
+        )
 
         # Guardar actas vinculadas a SALIDA
         if files and nuevo_id:
             for file in files:
                 url_publica = upload_to_gcs(file)
                 cursor.execute("""
-                    INSERT INTO movimientos_actas_callao (id_movimiento_salida, nombre_imagen, url_imagen) 
+                    INSERT INTO movimientos_actas (id_movimiento_salida, nombre_imagen, url_imagen) 
                     VALUES (%s, %s, %s)
                 """, (nuevo_id, file.filename, url_publica))
 
@@ -1305,7 +1079,6 @@ def create_salidas_masivo(request, headers):
     codigo_carga = _generar_codigo_carga()
 
     try:
-        _asegurar_columna_codigo_carga(cursor, 'movimientos_salida_callao', 'idx_ms_codigo_carga_callao')
         for idx, salida_data in enumerate(salidas):
             try:
                 producto_id = _get_id_producto_por_codigo_o_nombre(salida_data.get('producto'), conn)
@@ -1333,67 +1106,51 @@ def create_salidas_masivo(request, headers):
                     existencia_actual = _get_existencia_producto_tienda(producto_id, tienda_id, conn)
                 except Exception:
                     existencia_actual = 0
-                try:
-                    cantidad_val = int(salida_data.get('cantidad') or 0)
-                except (TypeError, ValueError):
-                    cantidad_val = 0
-                if cantidad_val > existencia_actual:
-                    errores.append(
-                        f"Salida {idx + 1}: Stock insuficiente en la tienda (existencia {existencia_actual}, salida {cantidad_val})"
-                    )
+                cantidad_salida = int(salida_data.get('cantidad') or 0)
+                if cantidad_salida > existencia_actual:
+                    errores.append(f"Salida {idx + 1}: Stock insuficiente en la tienda (existencia {existencia_actual}, salida {cantidad_salida})")
                     continue
-
-                _asegurar_fila_existencia(cursor, producto_id, tienda_id)
 
                 # Llamar al SP
                 params = [
                     producto_id, tipo_op_id, salida_data.get('nro_comprobante'), salida_data.get('asesor'),
-                    cantidad_val, um_id, tienda_id,
-                    salida_data.get('entregado_por'), salida_data.get('registrado_por'),
-                    salida_data.get('observaciones'),
+                    salida_data.get('cantidad'), um_id, tienda_id,
+                    salida_data.get('entregado_por'), salida_data.get('registrado_por'), 
+                    salida_data.get('observaciones')
                 ]
-                cursor.callproc('sp_registrar_salida_callao', params)
+                cursor.callproc('sp_registrar_salida', params)
                 result_set = cursor.fetchall()
-                _drenar_resultados_callproc(cursor)
-                nuevo_id = _resolver_id_movimiento_despues_sp(cursor, result_set)
+                nuevo_id = result_set[0]['id_movimiento_generado'] if result_set else None
 
-                if not nuevo_id:
-                    errores.append(
-                        f"Salida {idx + 1}: No se obtuvo id del movimiento (revise sp_registrar_salida_callao o LAST_INSERT_ID)"
+                # Actualizar código_carga en la salida
+                if nuevo_id:
+                    cursor.execute(
+                        "UPDATE movimientos_salida SET codigo_carga = %s, cantidad_anterior = cantidad WHERE id = %s",
+                        (codigo_carga, nuevo_id)
                     )
-                    continue
-
-                _asignar_codigo_carga_salida_si_existe_columna(cursor, nuevo_id, codigo_carga)
+                
                 ids_generados.append(nuevo_id)
-
+                
             except Exception as e:
                 errores.append(f"Salida {idx + 1}: {str(e)}")
                 logging.error(f"Error en salida {idx + 1}: {traceback.format_exc()}")
 
-        actas_subidas = []
-        id_representativo = next((i for i in ids_generados if i), None)
-        if files and codigo_carga and id_representativo:
-            for file in files:
-                if file.filename != '':
-                    url_publica = upload_to_gcs(file)
-                    if url_publica:
-                        actas_subidas.append((url_publica, file.filename))
-                        cursor.execute(
-                            """INSERT INTO movimientos_actas_callao 
-                               (id_movimiento_salida, nombre_imagen, url_imagen, codigo_carga) 
-                               VALUES (%s, %s, %s, %s)""",
-                            (id_representativo, file.filename, url_publica, codigo_carga),
-                        )
-            for nid in ids_generados:
-                if not nid or nid == id_representativo:
-                    continue
-                for url_publica, fname in actas_subidas:
-                    cursor.execute(
-                        """INSERT INTO movimientos_actas_callao 
-                           (id_movimiento_salida, nombre_imagen, url_imagen, codigo_carga) 
-                           VALUES (%s, %s, %s, %s)""",
-                        (nid, fname, url_publica, codigo_carga),
-                    )
+        # 4. Guardar ACTAS GLOBALES (asociadas a este código_carga)
+        # Insertamos cada acta UNA sola vez por carga usando un id_movimiento representativo
+        # para evitar duplicados en la vista cascada.
+        if files and codigo_carga:
+            id_representativo = next((i for i in ids_generados if i), None)
+            if id_representativo:
+                for file in files:
+                    if file.filename != '':
+                        url_publica = upload_to_gcs(file)
+                        if url_publica:
+                            cursor.execute(
+                                """INSERT INTO movimientos_actas 
+                                   (id_movimiento_salida, nombre_imagen, url_imagen, codigo_carga) 
+                                   VALUES (%s, %s, %s, %s)""",
+                                (id_representativo, file.filename, url_publica, codigo_carga)
+                            )
 
         if errores:
             conn.rollback()
@@ -1414,7 +1171,7 @@ def create_salidas_masivo(request, headers):
         conn.close()
 
 def update_salida(request, headers, id_salida):
-    """Edita una salida existente usando el SP sp_editar_salida_callao."""
+    """Edita una salida existente usando el SP sp_editar_salida."""
     data = request.get_json()
     if not data:
         return bad_request_error("Datos JSON inválidos", headers)
@@ -1444,13 +1201,14 @@ def update_salida(request, headers, id_salida):
 
         # Capturar estado actual antes de editar (para cantidad_anterior y validación de stock).
         cursor.execute(
-            "SELECT id_producto, id_tienda, cantidad FROM movimientos_salida_callao WHERE id = %s",
+            "SELECT id_producto, id_tienda, cantidad FROM movimientos_salida WHERE id = %s",
             (id_salida,)
         )
         row_actual = cursor.fetchone()
         if not row_actual:
             return not_found_error(f"Salida con ID {id_salida} no encontrada", headers)
-        cantidad_previa = row_actual.get('cantidad', 0)
+        # En algunos registros legacy puede venir NULL; evitamos propagar NULL a cantidad_anterior.
+        cantidad_previa = row_actual.get('cantidad') or 0
         producto_previo = row_actual.get('id_producto')
         tienda_previa = row_actual.get('id_tienda')
 
@@ -1470,17 +1228,32 @@ def update_salida(request, headers, id_salida):
                 headers
             )
 
-        _asegurar_fila_existencia(cursor, producto_id, tienda_id)
-
         params = [
             id_salida, producto_id, tipo_op_id, data.get('nro_comprobante'),
             data.get('asesor'), data.get('cantidad'), um_id, tienda_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
             motivo_cambio
         ]
-        cursor.callproc('sp_editar_salida_callao', params)
+        cursor.callproc('sp_editar_salida', params)
         while cursor.nextset():
             pass
+
+        # Guardar cantidad previa en la tabla de movimiento actualizada.
+        cursor.execute(
+            "UPDATE movimientos_salida SET cantidad_anterior = %s WHERE id = %s",
+            (cantidad_previa, id_salida)
+        )
+        # Reflejar también cantidad previa en el último registro de cambios.
+        cursor.execute(
+            """
+            UPDATE cambios_salida
+            SET cantidad_anterior = %s, cantidad = %s
+            WHERE id_movimiento_salida = %s
+            ORDER BY fecha_cambio DESC, id DESC
+            LIMIT 1
+            """,
+            (cantidad_previa, cantidad_nueva, id_salida)
+        )
 
         conn.commit()
         return success_response(message="Salida actualizada exitosamente", headers=headers)
@@ -1488,409 +1261,6 @@ def update_salida(request, headers, id_salida):
         conn.rollback()
         logging.error(f"Error al actualizar salida: {traceback.format_exc()}")
         return server_error(f"Error al actualizar salida: {str(e)}", headers)
-    finally:
-        cursor.close()
-        conn.close()
-
-
-# --- MÓDULO TRASLADOS ---
-def get_traslados(request, headers):
-    """Obtiene el listado de movimientos de traslado."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        # Una consulta más amigable que muestre nombres en lugar de IDs
-        sql = """
-            SELECT 
-                mg.id, mg.fecha_registro, 
-                p.codigo as producto_codigo, p.nombre as producto_nombre,
-                tos.nombre as operacion,
-                ts.codigo as tienda_salida_codigo, ts.nombre as tienda_salida_nombre,
-                ti.codigo as tienda_ingreso_codigo, ti.nombre as tienda_ingreso_nombre,
-                mg.operador, mg.cantidad, um.nombre as unidad_medida,
-                mg.entregado_por, mg.registrado_por, mg.observaciones,
-                mg.fecha_actualizacion, mg.motivo_cambio,
-                COUNT(mea.id) as total_actas, 
-                GROUP_CONCAT(mea.url_imagen SEPARATOR ',') as actas_urls
-            FROM movimientos_traslado_callao mg
-            LEFT JOIN movimientos_actas_callao mea ON mg.id = mea.id_movimiento_traslado
-            JOIN productos_abastecimiento_callao p ON mg.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON mg.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao ts ON mg.id_tienda_salida = ts.id
-            JOIN tiendas_gestion_sea_callao ti ON mg.id_tienda_ingreso = ti.id
-            JOIN unidades_medida_sea_callao um ON mg.id_unidad_medida = um.id
-            GROUP BY mg.id
-            ORDER BY mg.fecha_registro DESC
-        """
-        cursor.execute(sql)
-        traslados = cursor.fetchall()
-        return success_response(data=traslados, message="Traslados obtenidos correctamente", headers=headers)
-    finally:
-        cursor.close()
-        conn.close()
-
-def create_traslado(request, headers):
-    """Registra traslado con soporte de actas e imágenes."""
-    # 1. Obtener datos del FormData
-    form_data = request.form.get('data')
-    if not form_data:
-        return bad_request_error("Faltan datos en la petición", headers)
-    
-    data = json.loads(form_data)
-    files = request.files.getlist('actas')
-    password_cliente = data.get('password_autorizacion')
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-        # --- VALIDACIÓN DE CONTRASEÑA DINÁMICA ---
-        if not files or len(files) == 0:
-            # Para movimientos (entradas/salidas/tralado) usamos la clave dinámica del sistema.
-            pass_sistema = _obtener_contrasena_sistema(conn)
-            if not password_cliente or password_cliente != pass_sistema:
-                return (json.dumps({"message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
-
-
-        # Convertir nombres/códigos a IDs
-        producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
-        if not producto_id:
-            return bad_request_error("Producto no encontrado", headers)
-
-        tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(data.get('operacion'), 'TRASLADO', conn)
-        if not tipo_op_id:
-            return bad_request_error(f"Tipo de operación '{data.get('operacion')}' para TRASLADO no válido", headers)
-
-        tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_salida'), conn)
-        if not tienda_salida_id:
-            return bad_request_error(f"Almacén/Tienda de salida '{data.get('almacen_salida')}' no encontrado", headers)
-
-        tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_ingreso'), conn)
-        if not tienda_ingreso_id:
-            return bad_request_error(f"Tienda de ingreso '{data.get('almacen_ingreso')}' no encontrada", headers)
-
-        um_id = _get_id_unidad_medida_por_nombre(data.get('unidad_medida'), conn)
-        if not um_id:
-            return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
-
-        if not all([producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id, um_id]):
-            return bad_request_error("Uno o más parámetros (producto, tienda, etc.) son inválidos", headers)
-
-        # Verificar si la tienda de salida es un almacén o una tienda (reutilizar el mismo cursor)
-        cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea_callao WHERE id = %s", (tienda_salida_id,))
-        tienda_salida_info = cursor.fetchone()
-        es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
-
-        # Fila en existencias para tienda de INGRESO: sin ella el SP deja v_cant_anterior NULL (MySQL INTO sin filas).
-        _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
-
-        # Llamar al SP manualmente para mantener control de la transacción
-        params = [
-            producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
-            data.get('operador'), data.get('cantidad'), um_id,
-            data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
-        ]
-        try:
-            logging.info(f"Ejecutando SP: sp_registrar_traslado_callao con parámetros: {params}")
-            cursor.callproc('sp_registrar_traslado_callao', params)
-            result_set = cursor.fetchall()
-            _drenar_resultados_callproc(cursor)
-            nuevo_id = _resolver_id_movimiento_despues_sp(cursor, result_set)
-
-            if not nuevo_id:
-                raise Exception("No se pudo obtener id del movimiento (ni resultado del SP ni LAST_INSERT_ID)")
-
-            # cantidad_anterior la calcula el SP (stock en tienda ingreso antes del movimiento); no sobrescribir.
-
-            # Si la tienda de salida NO es un almacén (es una tienda), restar del stock
-            if not es_almacen_salida:
-                cantidad = data.get('cantidad', 0)
-                _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
-                cursor.execute(
-                    "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
-                    (producto_id, tienda_salida_id)
-                )
-                existencia_row = cursor.fetchone()
-
-                if existencia_row:
-                    nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
-                    cursor.execute(
-                        "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
-                        (nueva_cantidad, producto_id, tienda_salida_id)
-                    )
-                else:
-                    cursor.execute(
-                        "INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
-                        (producto_id, tienda_salida_id, 0)
-                    )
-
-            # --- GUARDAR ACTAS EN GCS Y BD ---
-            if files:
-                for file in files:
-                    url_publica = upload_to_gcs(file)
-                    cursor.execute("""
-                        INSERT INTO movimientos_actas_callao (id_movimiento_traslado, nombre_imagen, url_imagen) 
-                        VALUES (%s, %s, %s)
-                    """, (nuevo_id, file.filename, url_publica))
-
-            conn.commit()
-            return created_response(data={'id': nuevo_id}, message="Traslado registrado con actas", headers=headers)
-
-        except Exception as e:
-            conn.rollback()
-            logging.error(f"Error ejecutando traslado: {traceback.format_exc()}")
-            return server_error(f"Error al registrar traslado: {str(e)}", headers)
-    finally:
-        cursor.close()
-        conn.close()
-
-def create_traslados_masivo(request, headers):
-    """
-    Registra múltiples traslados en una sola transacción.
-    Ahora soporta actas globales por carga (todo un conjunto de actas para todos los ítems).
-    Estructura esperada:
-    {
-        "traslados": [...],
-        "actas": [{"nombre": "acta1.pdf", "archivo": file}],
-        "password_autorizacion": "xxxx" (opcional, solo si no hay actas)
-    }
-    """
-    # 1. Obtener datos JSON
-    form_data = request.form.get('data') if request.form.get('data') else None
-    if form_data:
-        data = json.loads(form_data)
-        traslados = data.get('traslados', [])
-        password_cliente = data.get('password_autorizacion')
-    else:
-        # Si viene por JSON puro (sin multipart)
-        data = request.get_json()
-        traslados = data.get('traslados', [])
-        password_cliente = data.get('password_autorizacion')
-
-    if not isinstance(traslados, list) or len(traslados) == 0:
-        return bad_request_error("El array 'traslados' es requerido y no puede estar vacío", headers)
-
-    # 2. Obtener archivos (actas globales)
-    files = request.files.getlist('actas') if request.files else []
-
-    # 3. Validar contraseña si no hay actas
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    if not files or len(files) == 0:
-        pass_sistema = _obtener_contrasena_sistema(conn)
-        if not password_cliente or password_cliente != pass_sistema:
-            cursor.close()
-            conn.close()
-            return (json.dumps({"success": False, "message": "Se requiere una contraseña válida para guardar sin actas"}), 403, headers)
-    
-    ids_generados = []
-    errores = []
-    codigo_carga = _generar_codigo_carga()
-
-    try:
-        _asegurar_columna_codigo_carga(cursor, 'movimientos_traslado_callao', 'idx_mt_codigo_carga_callao')
-        for idx, traslado_data in enumerate(traslados):
-            try:
-                # Convertir nombres/códigos a IDs
-                producto_id = _get_id_producto_por_codigo_o_nombre(traslado_data.get('producto'), conn)
-                if not producto_id:
-                    errores.append(f"Traslado {idx + 1}: Producto no encontrado")
-                    continue
-
-                tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(traslado_data.get('operacion'), 'TRASLADO', conn)
-                if not tipo_op_id:
-                    errores.append(f"Traslado {idx + 1}: Tipo de operación inválido")
-                    continue
-
-                tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(traslado_data.get('almacen_salida'), conn)
-                if not tienda_salida_id:
-                    errores.append(f"Traslado {idx + 1}: Almacén de salida no encontrado")
-                    continue
-
-                tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(traslado_data.get('almacen_ingreso'), conn)
-                if not tienda_ingreso_id:
-                    errores.append(f"Traslado {idx + 1}: Tienda de ingreso no encontrada")
-                    continue
-
-                um_id = _get_id_unidad_medida_por_nombre(traslado_data.get('unidad_medida'), conn)
-                if not um_id:
-                    errores.append(f"Traslado {idx + 1}: Unidad de medida no válida")
-                    continue
-
-                # Verificar si la tienda de salida es un almacén
-                cursor.execute("SELECT es_almacen FROM tiendas_gestion_sea_callao WHERE id = %s", (tienda_salida_id,))
-                tienda_salida_info = cursor.fetchone()
-                es_almacen_salida = tienda_salida_info['es_almacen'] if tienda_salida_info else 1
-
-                try:
-                    cantidad_val = int(traslado_data.get('cantidad') or 0)
-                except (TypeError, ValueError):
-                    cantidad_val = 0
-
-                _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
-
-                # Llamar al SP
-                params = [
-                    producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
-                    traslado_data.get('operador'), cantidad_val, um_id,
-                    traslado_data.get('entregado_por'), traslado_data.get('registrado_por'),
-                    traslado_data.get('observaciones'),
-                ]
-                cursor.callproc('sp_registrar_traslado_callao', params)
-                result_set = cursor.fetchall()
-                _drenar_resultados_callproc(cursor)
-                nuevo_id = _resolver_id_movimiento_despues_sp(cursor, result_set)
-
-                if not nuevo_id:
-                    errores.append(
-                        f"Traslado {idx + 1}: No se obtuvo id del movimiento (revise sp_registrar_traslado_callao o LAST_INSERT_ID)"
-                    )
-                    continue
-
-                _asignar_codigo_carga_traslado_si_existe_columna(cursor, nuevo_id, codigo_carga)
-                # Restar stock si la tienda de salida no es almacén (el SP ya actualizó ingreso)
-                if not es_almacen_salida:
-                    cantidad = cantidad_val
-                    _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
-                    cursor.execute(
-                        "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
-                        (producto_id, tienda_salida_id)
-                    )
-                    existencia_row = cursor.fetchone()
-                    if existencia_row:
-                        nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
-                        cursor.execute(
-                            "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
-                            (nueva_cantidad, producto_id, tienda_salida_id)
-                        )
-                    else:
-                        cursor.execute(
-                            "INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad) VALUES (%s, %s, %s)",
-                            (producto_id, tienda_salida_id, 0)
-                        )
-
-                ids_generados.append(nuevo_id)
-
-            except Exception as e:
-                errores.append(f"Traslado {idx + 1}: {str(e)}")
-                logging.error(f"Error en traslado {idx + 1}: {traceback.format_exc()}")
-
-        # 4. Actas globales: codigo_carga solo en movimientos_actas_callao (no en me).
-        # Subimos cada archivo una vez; el primer movimiento recibe el INSERT real;
-        # el mismo url/nombre se replica en el resto de filas del lote para que la cascada agrupe por codigo_carga.
-        actas_subidas = []
-        id_representativo = next((i for i in ids_generados if i), None)
-        if files and codigo_carga and id_representativo:
-            for file in files:
-                if file.filename != '':
-                    url_publica = upload_to_gcs(file)
-                    if url_publica:
-                        actas_subidas.append((url_publica, file.filename))
-                        cursor.execute(
-                            """INSERT INTO movimientos_actas_callao 
-                               (id_movimiento_traslado, nombre_imagen, url_imagen, codigo_carga) 
-                               VALUES (%s, %s, %s, %s)""",
-                            (id_representativo, file.filename, url_publica, codigo_carga),
-                        )
-            for nid in ids_generados:
-                if not nid or nid == id_representativo:
-                    continue
-                for url_publica, fname in actas_subidas:
-                    cursor.execute(
-                        """INSERT INTO movimientos_actas_callao 
-                           (id_movimiento_traslado, nombre_imagen, url_imagen, codigo_carga) 
-                           VALUES (%s, %s, %s, %s)""",
-                        (nid, fname, url_publica, codigo_carga),
-                    )
-
-        if errores:
-            conn.rollback()
-            return bad_request_error(f"Errores: {'; '.join(errores)}", headers)
-        
-        conn.commit()
-        return created_response(
-            data={'ids': ids_generados, 'total': len(ids_generados), 'codigo_carga': codigo_carga},
-            message=f"{len(ids_generados)} traslado(s) registrada(s) exitosamente",
-            headers=headers
-        )
-    except Exception as e:
-        conn.rollback()
-        logging.error(f"Error en create_traslados_masivo: {traceback.format_exc()}")
-        return server_error(f"Error: {str(e)}", headers)
-    finally:
-        cursor.close()
-        conn.close()
-
-
-
-def update_traslado(request, headers, id_traslado):
-    """Edita un traslado existente usando el SP sp_editar_traslado_callao."""
-    data = request.get_json()
-    if not data:
-        return bad_request_error("Datos JSON inválidos", headers)
-
-    motivo_cambio = data.get('motivo_cambio')
-    if not motivo_cambio:
-        return bad_request_error("El campo 'motivo_cambio' es obligatorio para editar", headers)
-
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        # Obtener estado anterior del movimiento para recalcular impacto en stock.
-        cursor.execute(
-            """
-            SELECT id, id_producto, id_tienda_salida, id_tienda_ingreso, cantidad
-            FROM movimientos_traslado_callao
-            WHERE id = %s
-            """,
-            (id_traslado,)
-        )
-        mov_anterior = cursor.fetchone()
-        if not mov_anterior:
-            return not_found_error(f"Traslado con ID {id_traslado} no encontrado", headers)
-
-        # Convertir nombres/códigos a IDs (similar a create_traslado)
-        producto_id = _get_id_producto_por_codigo_o_nombre(data.get('producto'), conn)
-        if not producto_id:
-            return bad_request_error("Producto no encontrado", headers)
-
-        tipo_op_id = _get_id_tipo_operacion_por_nombre_y_tipo(data.get('operacion'), 'TRASLADO', conn)
-        if not tipo_op_id:
-            return bad_request_error(f"Tipo de operación '{data.get('operacion')}' para TRASLADO no válido", headers)
-
-        tienda_salida_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_salida'), conn)
-        if not tienda_salida_id:
-            return bad_request_error(f"Almacén/Tienda de salida '{data.get('almacen_salida')}' no encontrado", headers)
-
-        tienda_ingreso_id = _get_id_tienda_por_nombre_o_codigo(data.get('almacen_ingreso'), conn)
-        if not tienda_ingreso_id:
-            return bad_request_error(f"Tienda de ingreso '{data.get('almacen_ingreso')}' no encontrada", headers)
-
-        um_id = _get_id_unidad_medida_por_nombre(data.get('unidad_medida'), conn)
-        if not um_id:
-            return bad_request_error(f"Unidad de medida '{data.get('unidad_medida')}' no válida", headers)
-
-        # Filas en existencias antes del SP: evita NULL en cantidad_anterior (MySQL SELECT INTO sin fila).
-        _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
-        _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
-
-        params = [
-            id_traslado, producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
-            data.get('operador'), data.get('cantidad'), um_id,
-            data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
-            motivo_cambio
-        ]
-        cursor.callproc('sp_editar_traslado_callao', params)
-        while cursor.nextset():
-            pass
-
-        conn.commit()
-        return success_response(message="Traslado actualizado exitosamente", headers=headers)
-    except Exception as e:
-        conn.rollback()
-        logging.error(f"Error al actualizar traslado: {traceback.format_exc()}")
-        return server_error(f"Error al actualizar traslado: {str(e)}", headers)
     finally:
         cursor.close()
         conn.close()
@@ -1906,9 +1276,9 @@ def get_existencias(request, headers):
                 p.codigo, p.nombre as producto,
                 et.id_tienda, t.codigo as tienda_codigo, t.nombre as tienda_nombre,
                 et.cantidad
-            FROM existencias_almacen_callao et
-            JOIN productos_abastecimiento_callao p ON et.id_producto = p.id
-            JOIN tiendas_gestion_sea_callao t ON et.id_tienda = t.id
+            FROM existencias_tienda et
+            JOIN productos_abastecimiento p ON et.id_producto = p.id
+            JOIN tiendas_gestion_sea t ON et.id_tienda = t.id
             WHERE et.cantidad != 0
             ORDER BY p.nombre, t.codigo
         """
@@ -1921,69 +1291,67 @@ def get_existencias(request, headers):
 
 def get_stock_total(request, headers):
     """
-    Stock total — tiendas `OFICINA`, `OFICINA-DOCENAS`, `CALLAO-1-A`, `CALLAO-1-B`, `CALLAO-2` (tabla tiendas_gestion_sea_callao).
-    Contrato JSON alineado con app/services/api.ts (StockTotalDB).
+    Vista similar a la hoja 'Stock Total' de Excel.
+    Combina datos de productos, stock mínimo y existencias.
     """
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        # Esta consulta es un poco más compleja porque debe pivotear las tiendas.
+        # Por simplicidad, haremos una consulta que devuelva los datos en filas
+        # y luego el frontend los agrupará. O podemos hacer un pivot en SQL.
+        # Opción 1: Devolver datos planos y que el frontend pivote.
         sql_plano = """
             SELECT 
                 p.id,
                 p.codigo,
                 p.nombre,
                 p.cantidad_reg_calculo,
-                um_reg.nombre AS unidad_medida_reg,
-                -- Existencias por tienda
-                COALESCE(ex_oficina.cantidad, 0)  AS existencia_oficina,
-                COALESCE(ex_oficina_docenas.cantidad, 0)  AS existencia_oficina_docenas,
-                COALESCE(ex_callao1a.cantidad, 0)  AS existencia_callao1_a,
-                COALESCE(ex_callao1b.cantidad, 0)  AS existencia_callao1_b,
-                COALESCE(ex_callao2.cantidad, 0)  AS existencia_callao2
-            FROM productos_abastecimiento_callao p
-            JOIN unidades_medida_sea_callao um_reg ON p.id_unidad_medida_reg = um_reg.id
-            LEFT JOIN existencias_almacen_callao ex_oficina  ON p.id = ex_oficina.id_producto  AND ex_oficina.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA')
-            LEFT JOIN existencias_almacen_callao ex_oficina_docenas  ON p.id = ex_oficina_docenas.id_producto  AND ex_oficina_docenas.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA-DOCENAS')
-            LEFT JOIN existencias_almacen_callao ex_callao1a  ON p.id = ex_callao1a.id_producto  AND ex_callao1a.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-A')
-            LEFT JOIN existencias_almacen_callao ex_callao1b  ON p.id = ex_callao1b.id_producto  AND ex_callao1b.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-B')
-            LEFT JOIN existencias_almacen_callao ex_callao2  ON p.id = ex_callao2.id_producto  AND ex_callao2.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2');
+                um_reg.nombre as unidad_medida_reg,
+                -- Stock minimo por tienda (viene de stock_minimo_tienda)
+                sm_t3006.stock_minimo as sm_3006,
+                sm_t3131.stock_minimo as sm_3131,
+                sm_t412a.stock_minimo as sm_412a,
+                sm_t3133.stock_minimo as sm_3133,
+                -- Existencias por tienda (viene de existencias_tienda)
+                COALESCE(ex_t3006.cantidad, 0) as existencia_3006,
+                COALESCE(ex_t3131.cantidad, 0) as existencia_3131,
+                COALESCE(ex_t412a.cantidad, 0) as existencia_412a,
+                COALESCE(ex_t3133.cantidad, 0) as existencia_3133
+            FROM productos_abastecimiento p
+            JOIN unidades_medida_sea um_reg ON p.id_unidad_medida_reg = um_reg.id
+            LEFT JOIN stock_minimo_tienda sm_t3006 ON p.id = sm_t3006.id_producto AND sm_t3006.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3006')
+            LEFT JOIN stock_minimo_tienda sm_t3131 ON p.id = sm_t3131.id_producto AND sm_t3131.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3131')
+            LEFT JOIN stock_minimo_tienda sm_t412a ON p.id = sm_t412a.id_producto AND sm_t412a.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '412-A')
+            LEFT JOIN stock_minimo_tienda sm_t3133 ON p.id = sm_t3133.id_producto AND sm_t3133.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3133')
+            LEFT JOIN existencias_tienda ex_t3006 ON p.id = ex_t3006.id_producto AND ex_t3006.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3006')
+            LEFT JOIN existencias_tienda ex_t3131 ON p.id = ex_t3131.id_producto AND ex_t3131.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3131')
+            LEFT JOIN existencias_tienda ex_t412a ON p.id = ex_t412a.id_producto AND ex_t412a.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '412-A')
+            LEFT JOIN existencias_tienda ex_t3133 ON p.id = ex_t3133.id_producto AND ex_t3133.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3133')
+            ORDER BY p.nombre
         """
         cursor.execute(sql_plano)
         resultados = cursor.fetchall()
 
-        def _n(v):
-            if v is None:
-                return 0
-            try:
-                return int(v)
-            except Exception:
-                try:
-                    return int(float(v))
-                except Exception:
-                    return 0
-
+        # Procesar para añadir columnas calculadas (Stock Global Minimo, Disponibles, Stock Detallado)
         for row in resultados:
-            row['disponibles'] = (
-                _n(row.get('existencia_oficina'))
-                + _n(row.get('existencia_callao1_a'))
-                + _n(row.get('existencia_callao1_b'))
-                + _n(row.get('existencia_callao2'))
-            )
+            # Stock Global Minimo (suma de stocks minimos)
+            row['stock_global_minimo'] = (row.get('sm_3006', 0) or 0) + (row.get('sm_3131', 0) or 0) + (row.get('sm_412a', 0) or 0) + (row.get('sm_3133', 0) or 0)
 
-            # cajas = suma de oficina + callao1a + callao1b + callao2
-            row['cajas'] = (
-                _n(row.get('existencia_oficina'))
-                + _n(row.get('existencia_callao1_a'))
-                + _n(row.get('existencia_callao1_b'))
-                + _n(row.get('existencia_callao2'))
-            )
-            # Alias explícito para contrato front (`StockTotalDB`)
-            row['stock_detallado_cajas'] = row['cajas']
+            # Disponibles (suma de existencias)
+            row['disponibles'] = (row.get('existencia_3006', 0) or 0) + (row.get('existencia_3131', 0) or 0) + (row.get('existencia_412a', 0) or 0) + (row.get('existencia_3133', 0) or 0)
 
-            # stock_detallado_medida = solo existencia_oficina_docenas
-            row['stock_detallado_medida'] = _n(row.get('existencia_oficina_docenas'))
+            # Stock Detallado: Cajas, Medida
+            cantidad_reg = row['cantidad_reg_calculo'] if row['cantidad_reg_calculo'] and row['cantidad_reg_calculo'] > 0 else 1
+            disponibles = row['disponibles']
 
-            row['stock_detallado_unidad_medida'] = row['unidad_medida_reg']
+            # Truncar hacia abajo en cajas (2.90 -> 2), mostrando entero.
+            cajas = int(disponibles // cantidad_reg) if cantidad_reg else 0
+            row['stock_detallado_cajas'] = cajas
+
+            # Medida = disponibles - (cajas * cantidad_reg)
+            row['stock_detallado_medida'] = disponibles - (cajas * cantidad_reg)
+            row['stock_detallado_unidad_medida'] = row['unidad_medida_reg']  # Usa la misma UM
 
         return success_response(data=resultados, message="Stock total obtenido correctamente", headers=headers)
     finally:
@@ -1994,9 +1362,9 @@ def importar_stock_total_excel(request, headers):
     """
     Importa un Excel con el mismo formato que el export de Stock Total.
     Lee la hoja 'Inventario' y actualiza únicamente:
-    - productos_abastecimiento_callao.cantidad_reg_calculo (columna C)
-    - stock_minimo para OFICINA, CALLAO-1, CALLAO-2 (columnas D, E, F)
-    - existencias para las mismas (columnas I, J, K) según export actual del front
+    - productos_abastecimiento.cantidad_reg_calculo (columna C)
+    - stock_minimo_tienda.stock_minimo para tiendas 3006/3131/412-A/3133 (columnas D-G)
+    - existencias_tienda.cantidad para tiendas 3006/3131/412-A/3133 (columnas J-M)
     """
     if request.method != 'POST':
         return bad_request_error("Método no permitido", headers)
@@ -2030,14 +1398,16 @@ def importar_stock_total_excel(request, headers):
     ws = wb["Inventario"]
 
     tiendas_col_stock_min = {
-        "OFICINA": "D",
-        "CALLAO-1": "E",
-        "CALLAO-2": "F",
+        "3006": "D",
+        "3131": "E",
+        "412-A": "F",
+        "3133": "G",
     }
     tiendas_col_existencias = {
-        "OFICINA": "I",
-        "CALLAO-1": "J",
-        "CALLAO-2": "K",
+        "3006": "J",
+        "3131": "K",
+        "412-A": "L",
+        "3133": "M",
     }
 
     def _to_int(value):
@@ -2074,16 +1444,16 @@ def importar_stock_total_excel(request, headers):
     cursor = conn.cursor()
     try:
         # Cachear ids de tienda
-        cursor.execute("SELECT id, codigo FROM tiendas_gestion_sea_callao WHERE codigo IN ('OFICINA', 'OFICINA-DOCENAS', 'CALLAO-1-A', 'CALLAO-1-B', 'CALLAO-2')")
+        cursor.execute("SELECT id, codigo FROM tiendas_gestion_sea WHERE codigo IN ('3006','3131','412-A','3133')")
         tiendas_rows = cursor.fetchall() or []
         tienda_id_por_codigo = {r["codigo"]: r["id"] for r in tiendas_rows}
 
-        faltantes_tiendas = [c for c in ["OFICINA", "OFICINA-DOCENAS", "CALLAO-1-A", "CALLAO-1-B", "CALLAO-2"] if c not in tienda_id_por_codigo]
+        faltantes_tiendas = [c for c in ["3006", "3131", "412-A", "3133"] if c not in tienda_id_por_codigo]
         if faltantes_tiendas:
             return server_error(f"No existen tiendas en BD: {', '.join(faltantes_tiendas)}", headers)
 
         sql_upsert_stock_min = """
-            INSERT INTO stock_minimo_almacen_callao (id_producto, id_tienda, stock_minimo)
+            INSERT INTO stock_minimo_tienda (id_producto, id_tienda, stock_minimo)
             VALUES (%s, %s, %s)
             ON DUPLICATE KEY UPDATE stock_minimo = VALUES(stock_minimo)
         """
@@ -2096,7 +1466,6 @@ def importar_stock_total_excel(request, headers):
         productos_no_encontrados = []
         movimientos_sugeridos = []
         ajustes_negativos = []
-        filas_con_cambio_cant_reg_o_stock_min = 0
 
         # Encabezados ocupan 2 filas, data inicia desde fila 3
         for row_idx in range(3, ws.max_row + 1):
@@ -2108,9 +1477,9 @@ def importar_stock_total_excel(request, headers):
             codigo = str(codigo).strip()
             cursor.execute(
                 """
-                SELECT p.id, p.codigo, p.cantidad_reg_calculo, um_reg.nombre AS unidad_medida_reg
-                FROM productos_abastecimiento_callao p
-                JOIN unidades_medida_sea_callao um_reg ON p.id_unidad_medida_reg = um_reg.id
+                SELECT p.id, p.codigo, um_reg.nombre AS unidad_medida_reg
+                FROM productos_abastecimiento p
+                JOIN unidades_medida_sea um_reg ON p.id_unidad_medida_reg = um_reg.id
                 WHERE p.codigo = %s
                 """,
                 (codigo,)
@@ -2126,32 +1495,11 @@ def importar_stock_total_excel(request, headers):
             unidad_medida_reg = prod_row.get("unidad_medida_reg") or "UNIDADES"
             procesadas += 1
 
-            # Comparar CANT. (C) y STOCK MÍNIMO (D–F) vs BD para permitir importar solo configuración sin deltas de existencia
-            c_excel = _to_int(ws[f"C{row_idx}"].value)
-            cr_db_val = int(prod_row.get("cantidad_reg_calculo") or 0)
-            fila_difiere_config = c_excel != cr_db_val
-            for codigo_tienda_sm, col_sm in tiendas_col_stock_min.items():
-                val_excel_sm = _to_int(ws[f"{col_sm}{row_idx}"].value)
-                cursor.execute(
-                    """
-                    SELECT COALESCE(stock_minimo, 0) AS sm
-                    FROM stock_minimo_almacen_callao
-                    WHERE id_producto = %s AND id_tienda = %s
-                    """,
-                    (id_producto, tienda_id_por_codigo[codigo_tienda_sm]),
-                )
-                sm_row = cursor.fetchone()
-                sm_db = int(sm_row["sm"]) if sm_row else 0
-                if val_excel_sm != sm_db:
-                    fila_difiere_config = True
-            if fila_difiere_config:
-                filas_con_cambio_cant_reg_o_stock_min += 1
-
             # CANT. (columna C) -> cantidad_reg_calculo
-            cantidad_reg_calculo = c_excel
+            cantidad_reg_calculo = _to_int(ws[f"C{row_idx}"].value)
             if modo in ("aplicar", "aplicar_directo"):
                 cursor.execute(
-                    "UPDATE productos_abastecimiento_callao SET cantidad_reg_calculo = %s WHERE id = %s",
+                    "UPDATE productos_abastecimiento SET cantidad_reg_calculo = %s WHERE id = %s",
                     (cantidad_reg_calculo, id_producto)
                 )
                 actualizadas_productos += cursor.rowcount
@@ -2171,7 +1519,7 @@ def importar_stock_total_excel(request, headers):
                 nuevo_val = _to_int(ws[f"{col}{row_idx}"].value)
                 id_tienda = tienda_id_por_codigo[codigo_tienda]
                 cursor.execute(
-                    "SELECT cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
+                    "SELECT cantidad FROM existencias_tienda WHERE id_producto = %s AND id_tienda = %s",
                     (id_producto, id_tienda)
                 )
                 ex_row = cursor.fetchone()
@@ -2216,7 +1564,6 @@ def importar_stock_total_excel(request, headers):
                 "productos_no_encontrados_muestra": productos_no_encontrados,
                 "movimientos_entrada_sugeridos": movimientos_sugeridos,
                 "ajustes_negativos": ajustes_negativos,
-                "filas_con_cambio_cant_reg_o_stock_min": filas_con_cambio_cant_reg_o_stock_min,
             },
             message="Excel procesado correctamente",
             headers=headers
@@ -2229,9 +1576,9 @@ def importar_stock_total_excel(request, headers):
         cursor.close()
         conn.close()
 
-# --- MÓDULO HISTORIAL DE CAMBIOS ENTRADAS/SALIDAS/TRASLADOS ---
+# --- MÓDULO HISTORIAL DE CAMBIOS ---
 def get_historial_entradas(request, headers):
-    """Obtiene el historial de cambios de entradas (tabla cambios_entrada_callao)."""
+    """Obtiene el historial de cambios de entradas (tabla cambios_entrada)."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -2242,20 +1589,16 @@ def get_historial_entradas(request, headers):
                 tos.nombre as operacion,
                 ts.codigo as tienda_salida_codigo,
                 ti.codigo as tienda_ingreso_codigo,
-                ce.operador,
-                me.cantidad as cantidad,
-                ce.cantidad as cantidad_anterior,
-                um.nombre as unidad_medida,
+                ce.operador, ce.cantidad, ce.cantidad_anterior, um.nombre as unidad_medida,
                 ce.entregado_por, ce.registrado_por, ce.observaciones,
                 ce.motivo_cambio,
                 ce.fecha_movimiento_orig
-            FROM cambios_entrada_callao ce
-            JOIN movimientos_entrada_callao me ON ce.id_movimiento_entrada = me.id
-            JOIN productos_abastecimiento_callao p ON ce.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON ce.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao ts ON ce.id_tienda_salida = ts.id
-            JOIN tiendas_gestion_sea_callao ti ON ce.id_tienda_ingreso = ti.id
-            JOIN unidades_medida_sea_callao um ON ce.id_unidad_medida = um.id
+            FROM cambios_entrada ce
+            JOIN productos_abastecimiento p ON ce.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON ce.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea ts ON ce.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea ti ON ce.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea um ON ce.id_unidad_medida = um.id
             ORDER BY ce.fecha_cambio DESC
         """
         cursor.execute(sql)
@@ -2266,7 +1609,7 @@ def get_historial_entradas(request, headers):
         conn.close()
 
 def get_historial_salidas(request, headers):
-    """Obtiene el historial de cambios de salidas (tabla cambios_salida_callao)."""
+    """Obtiene el historial de cambios de salidas (tabla cambios_salida)."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -2275,19 +1618,16 @@ def get_historial_salidas(request, headers):
                 cs.fecha_cambio as fecha,
                 p.codigo as producto_codigo, p.nombre as producto_nombre,
                 tos.nombre as operacion, cs.nro_comprobante, cs.asesor,
-                ms.cantidad as cantidad,
-                cs.cantidad as cantidad_anterior,
-                um.nombre as unidad_medida,
+                cs.cantidad, cs.cantidad_anterior, um.nombre as unidad_medida,
                 t.codigo as tienda_codigo,
                 cs.entregado_por, cs.registrado_por, cs.observaciones,
                 cs.motivo_cambio,
                 cs.fecha_movimiento_orig
-            FROM cambios_salida_callao cs
-            JOIN movimientos_salida_callao ms ON cs.id_movimiento_salida = ms.id
-            JOIN productos_abastecimiento_callao p ON cs.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON cs.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao t ON cs.id_tienda = t.id
-            JOIN unidades_medida_sea_callao um ON cs.id_unidad_medida = um.id
+            FROM cambios_salida cs
+            JOIN productos_abastecimiento p ON cs.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON cs.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea t ON cs.id_tienda = t.id
+            JOIN unidades_medida_sea um ON cs.id_unidad_medida = um.id
             ORDER BY cs.fecha_cambio DESC
         """
         cursor.execute(sql)
@@ -2296,42 +1636,6 @@ def get_historial_salidas(request, headers):
     finally:
         cursor.close()
         conn.close()
-
-def get_historial_traslados(request, headers):
-    """Obtiene el historial de cambios de traslados (tabla cambios_traslado_callao)."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        sql = """
-            SELECT 
-                ct.fecha_cambio as fecha,
-                p.codigo as producto_codigo, p.nombre as producto_nombre,
-                tos.nombre as operacion,
-                ts.codigo as tienda_salida_codigo,
-                ti.codigo as tienda_ingreso_codigo,
-                ct.operador,
-                mt.cantidad as cantidad,
-                ct.cantidad as cantidad_anterior,
-                um.nombre as unidad_medida,
-                ct.entregado_por, ct.registrado_por, ct.observaciones,
-                ct.motivo_cambio,
-                ct.fecha_movimiento_orig
-            FROM cambios_traslado_callao ct
-            JOIN movimientos_traslado_callao mt ON ct.id_movimiento_traslado = mt.id
-            JOIN productos_abastecimiento_callao p ON ct.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON ct.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao ts ON ct.id_tienda_salida = ts.id
-            JOIN tiendas_gestion_sea_callao ti ON ct.id_tienda_ingreso = ti.id
-            JOIN unidades_medida_sea_callao um ON ct.id_unidad_medida = um.id
-            ORDER BY ct.fecha_cambio DESC
-        """
-        cursor.execute(sql)
-        historial = cursor.fetchall()
-        return success_response(data=historial, message="Historial de traslados obtenido correctamente", headers=headers)
-    finally:
-        cursor.close()
-        conn.close()
-
 
 # --- MÓDULO ABASTECIMIENTO ---
 def calcular_abastecimiento(request, headers):
@@ -2348,72 +1652,59 @@ def calcular_abastecimiento(request, headers):
                 p.id,
                 p.codigo,
                 p.nombre,
-                p.cantidad_reg_calculo,
-                um_reg.nombre AS unidad_medida_reg,
-                -- Stock mínimo por tienda
-                sm_oficina.stock_minimo  AS sm_oficina,
-                sm_oficina_docenas.stock_minimo  AS sm_oficina_docenas,
-                sm_callao1a.stock_minimo  AS sm_callao1_a,
-                sm_callao1b.stock_minimo  AS sm_callao1_b,
-                sm_callao2.stock_minimo  AS sm_callao2,
-                -- Existencias por tienda
-                COALESCE(ex_oficina.cantidad, 0)  AS existencia_oficina,
-                COALESCE(ex_oficina_docenas.cantidad, 0)  AS existencia_oficina_docenas,
-                COALESCE(ex_callao1a.cantidad, 0)  AS existencia_callao1a,
-                COALESCE(ex_callao1b.cantidad, 0)  AS existencia_callao1b,
-                COALESCE(ex_callao2.cantidad, 0)  AS existencia_callao2
-            FROM productos_abastecimiento_callao p
-            JOIN unidades_medida_sea_callao um_reg ON p.id_unidad_medida_reg = um_reg.id
-            LEFT JOIN stock_minimo_almacen_callao sm_oficina  ON p.id = sm_oficina.id_producto  AND sm_oficina.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA')
-            LEFT JOIN stock_minimo_almacen_callao sm_oficina_docenas  ON p.id = sm_oficina_docenas.id_producto  AND sm_oficina_docenas.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA-DOCENAS')
-            LEFT JOIN stock_minimo_almacen_callao sm_callao1a  ON p.id = sm_callao1a.id_producto  AND sm_callao1a.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-A')
-            LEFT JOIN stock_minimo_almacen_callao sm_callao1b  ON p.id = sm_callao1b.id_producto  AND sm_callao1b.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-B')
-            LEFT JOIN stock_minimo_almacen_callao sm_callao2  ON p.id = sm_callao2.id_producto  AND sm_callao2.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2')
-            LEFT JOIN existencias_almacen_callao ex_oficina  ON p.id = ex_oficina.id_producto  AND ex_oficina.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA')
-            LEFT JOIN existencias_almacen_callao ex_oficina_docenas  ON p.id = ex_oficina_docenas.id_producto  AND ex_oficina_docenas.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'OFICINA-DOCENAS')
-            LEFT JOIN existencias_almacen_callao ex_callao1a  ON p.id = ex_callao1a.id_producto  AND ex_callao1a.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-A')
-            LEFT JOIN existencias_almacen_callao ex_callao1b  ON p.id = ex_callao1b.id_producto  AND ex_callao1b.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-1-B')
-            LEFT JOIN existencias_almacen_callao ex_callao2  ON p.id = ex_callao2.id_producto  AND ex_callao2.id_tienda  = (SELECT id FROM tiendas_gestion_sea_callao WHERE codigo = 'CALLAO-2');
+                p.cantidad_reg_calculo as cantidad,
+                um_reg.nombre as unidad_medida,
+                -- Stock minimo
+                COALESCE(smt_3006.stock_minimo, 0) as stock_min_3006,
+                COALESCE(smt_3131.stock_minimo, 0) as stock_min_3131,
+                COALESCE(smt_412a.stock_minimo, 0) as stock_min_412a,
+                COALESCE(smt_3133.stock_minimo, 0) as stock_min_3133,
+                -- Existencias
+                COALESCE(ext_3006.cantidad, 0) as existencia_3006,
+                COALESCE(ext_3131.cantidad, 0) as existencia_3131,
+                COALESCE(ext_412a.cantidad, 0) as existencia_412a,
+                COALESCE(ext_3133.cantidad, 0) as existencia_3133
+            FROM productos_abastecimiento p
+            JOIN unidades_medida_sea um_reg ON p.id_unidad_medida_reg = um_reg.id
+            LEFT JOIN stock_minimo_tienda smt_3006 ON p.id = smt_3006.id_producto AND smt_3006.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3006')
+            LEFT JOIN stock_minimo_tienda smt_3131 ON p.id = smt_3131.id_producto AND smt_3131.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3131')
+            LEFT JOIN stock_minimo_tienda smt_412a ON p.id = smt_412a.id_producto AND smt_412a.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '412-A')
+            LEFT JOIN stock_minimo_tienda smt_3133 ON p.id = smt_3133.id_producto AND smt_3133.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3133')
+            LEFT JOIN existencias_tienda ext_3006 ON p.id = ext_3006.id_producto AND ext_3006.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3006')
+            LEFT JOIN existencias_tienda ext_3131 ON p.id = ext_3131.id_producto AND ext_3131.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3131')
+            LEFT JOIN existencias_tienda ext_412a ON p.id = ext_412a.id_producto AND ext_412a.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '412-A')
+            LEFT JOIN existencias_tienda ext_3133 ON p.id = ext_3133.id_producto AND ext_3133.id_tienda = (SELECT id FROM tiendas_gestion_sea WHERE codigo = '3133')
+            ORDER BY p.nombre
         """
         cursor.execute(sql)
         productos_base = cursor.fetchall()
 
         resultados = []
-        import math
         for row in productos_base:
-            sm_o = row.get('sm_oficina') or 0
-            sm_od = row.get('sm_oficina_docenas') or 0
-            sm_c1a = row.get('sm_callao1_a') or 0
-            sm_c1b = row.get('sm_callao1_b') or 0
-            sm_c2 = row.get('sm_callao2') or 0
-            ex_o = row.get('existencia_oficina') or 0
-            ex_od = row.get('existencia_oficina_docenas') or 0
-            ex_c1a = row.get('existencia_callao1_a') or 0
-            ex_c1b = row.get('existencia_callao1_b') or 0
-            ex_c2 = row.get('existencia_callao2') or 0
+            # Calcular la sección "Abastecer" (stock_min - existencia)
+            abast_3006 = max(0, (row['stock_min_3006'] or 0) - (row['existencia_3006'] or 0))
+            abast_3131 = max(0, (row['stock_min_3131'] or 0) - (row['existencia_3131'] or 0))
+            abast_412a = max(0, (row['stock_min_412a'] or 0) - (row['existencia_412a'] or 0))
+            abast_3133 = max(0, (row['stock_min_3133'] or 0) - (row['existencia_3133'] or 0))
 
-            abast_oficina = max(0, int(sm_o) - int(ex_o))
-            abast_oficina_docenas = max(0, int(sm_od) - int(ex_od))
-            abast_callao1a = max(0, int(sm_c1a) - int(ex_c1a))
-            abast_callao1b = max(0, int(sm_c1b) - int(ex_c1b))
-            abast_callao2 = max(0, int(sm_c2) - int(ex_c2))
+            # Calcular "ABASTECER CAJAS"
+            total_abastecer_unidades = abast_3006 + abast_3131 + abast_412a + abast_3133
+            cantidad_reg = row['cantidad'] if row['cantidad'] and row['cantidad'] > 0 else 1
+            import math
+            abastecer_cajas = math.ceil(total_abastecer_unidades / cantidad_reg)  # Usamos CEIL para redondear hacia arriba
 
-            total_abastecer_unidades = abast_oficina + abast_oficina_docenas + abast_callao1a + abast_callao1b + abast_callao2
-            cantidad_reg = row['cantidad_reg_calculo'] if row.get('cantidad_reg_calculo') and row['cantidad_reg_calculo'] > 0 else 1
-            abastecer_cajas = math.ceil(total_abastecer_unidades / cantidad_reg) if cantidad_reg else 0
-
+            # Calcular "ENVIAR" (SI si abastecer_cajas > 0, NO si es 0)
             enviar = 'SI' if abastecer_cajas > 0 else 'NO'
 
             resultados.append({
                 'codigo': row['codigo'],
                 'nombre': row['nombre'],
                 'cantidad': cantidad_reg,
-                'unidad_medida': row['unidad_medida_reg'],
-                'abastecer_oficina': abast_oficina,
-                'abastecer_oficina_docenas': abast_oficina_docenas,
-                'abastecer_callao1a': abast_callao1a,
-                'abastecer_callao1b': abast_callao1b,
-                'abastecer_callao2': abast_callao2,
+                'unidad_medida': row['unidad_medida'],
+                'abastecer_3006': abast_3006,
+                'abastecer_3131': abast_3131,
+                'abastecer_412a': abast_412a,
+                'abastecer_3133': abast_3133,
                 'abastecer_cajas': abastecer_cajas,
                 'enviar': enviar
             })
@@ -2436,8 +1727,8 @@ def guardar_abastecimiento(request, headers):
         return bad_request_error("No se recibieron datos de abastecimiento", headers)
     
     data = json.loads(form_data)
-    nombre_abastecimiento = (data.get('nombre_abastecimiento') or '').strip().upper()
-    registrado_por = (data.get('registrado_por') or '').strip().upper()
+    nombre_abastecimiento = data.get('nombre_abastecimiento')
+    registrado_por = data.get('registrado_por')
     detalles = data.get('detalles')
     password_cliente = data.get('password_autorizacion') # Contraseña enviada desde el front (ya no es requerida aquí)
     
@@ -2453,47 +1744,31 @@ def guardar_abastecimiento(request, headers):
     try:
         # Actas opcionales: el abastecimiento puede guardarse sin imágenes.
 
-        cursor.execute(
-            "INSERT INTO abastecimiento_cabecera_callao (nombre, registrado_por) VALUES (%s, %s)",
-            (nombre_abastecimiento, registrado_por),
-        )
-        id_cabecera = cursor.lastrowid
+        # 3. Insertar cabecera (Usando tu SP existente)
+        cursor.callproc('sp_guardar_abastecimiento', (nombre_abastecimiento, registrado_por, 0))
+        conn.commit()
+        cursor.execute("SELECT LAST_INSERT_ID() as id")
+        id_cabecera = cursor.fetchone()['id']
+
         if not id_cabecera:
             raise Exception("No se pudo obtener el ID de la cabecera")
 
-        sql_ins_detalle = """
-            INSERT INTO abastecimiento_detalle_callao (
-                id_abastecimiento, id_producto, cantidad_reg_calculo, id_unidad_medida,
-                cant_almacen_oficina, cant_almacen_oficina_docenas, cant_almacen_callao_1_a, cant_almacen_callao_1_b, cant_almacen_callao_2,
-                abastecer_cajas, enviar
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
+        # 4. Insertar detalles
         for detalle in detalles:
             producto_id = _get_id_producto_por_codigo_o_nombre(detalle.get('codigo'), conn)
             if not producto_id:
                 continue
 
-            id_um = int(detalle.get('id_unidad_medida') or 0)
-            cant_reg = int(detalle.get('cantidad_reg_calculo') or 0)
-            if id_um <= 0 or cant_reg < 0:
-                raise ValueError(f"Detalle inválido para producto {detalle.get('codigo')}: id_unidad_medida y cantidad_reg_calculo son obligatorios")
-
-            cursor.execute(
-                sql_ins_detalle,
-                (
-                    id_cabecera,
-                    producto_id,
-                    cant_reg,
-                    id_um,
-                    int(detalle.get('cant_almacen_oficina') or 0),
-                    int(detalle.get('cant_almacen_oficina_docenas') or 0),
-                    int(detalle.get('cant_almacen_callao_1_a') or 0),
-                    int(detalle.get('cant_almacen_callao_1_b') or 0),
-                    int(detalle.get('cant_almacen_callao_2') or 0),
-                    int(detalle.get('abastecer_cajas') or 0),
-                    detalle.get('enviar', 'NO'),
-                ),
-            )
+            cursor.callproc('sp_guardar_abastecimiento_detalle', (
+                id_cabecera,
+                producto_id,
+                detalle.get('cant_tienda_3006', 0),
+                detalle.get('cant_tienda_3131', 0),
+                detalle.get('cant_tienda_412a', 0),
+                detalle.get('cant_tienda_3133', 0),
+                detalle.get('abastecer_cajas', 0),
+                detalle.get('enviar', 'NO')
+            ))
 
         # 5. Subir Actas a GCS e insertar en la nueva tabla
         if files:
@@ -2501,7 +1776,7 @@ def guardar_abastecimiento(request, headers):
                 if file.filename != '':
                     url_publica = upload_to_gcs(file) # Tu función existente
                     if url_publica:
-                        sql_acta = "INSERT INTO abastecimiento_actas_callao (id_abastecimiento, nombre_imagen, url_imagen) VALUES (%s, %s, %s)"
+                        sql_acta = "INSERT INTO abastecimiento_actas (id_abastecimiento, nombre_imagen, url_imagen) VALUES (%s, %s, %s)"
                         cursor.execute(sql_acta, (id_cabecera, file.filename, url_publica))
 
         conn.commit()
@@ -2520,7 +1795,7 @@ def get_historial_abastecimientos(request, headers):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        sql = "SELECT id, nombre, registrado_por, fecha_registro FROM abastecimiento_cabecera_callao ORDER BY fecha_registro DESC"
+        sql = "SELECT id, nombre, registrado_por, fecha_registro FROM abastecimiento_cabecera ORDER BY fecha_registro DESC"
         cursor.execute(sql)
         historial = cursor.fetchall()
         return success_response(data=historial, message="Historial de abastecimientos obtenido", headers=headers)
@@ -2537,7 +1812,7 @@ def get_detalle_abastecimiento(request, headers, nombre_abastecimiento):
     cursor = conn.cursor()
     try:
         # Obtener la cabecera
-        sql_cab = "SELECT id, nombre, registrado_por, fecha_registro FROM abastecimiento_cabecera_callao WHERE nombre = %s"
+        sql_cab = "SELECT id, nombre, registrado_por, fecha_registro FROM abastecimiento_cabecera WHERE nombre = %s"
         cursor.execute(sql_cab, (nombre_abastecimiento,))
         cabecera = cursor.fetchone()
         if not cabecera:
@@ -2549,15 +1824,11 @@ def get_detalle_abastecimiento(request, headers, nombre_abastecimiento):
                 p.codigo, p.nombre,
                 ad.cantidad_reg_calculo as cantidad,
                 um.nombre as unidad_medida,
-                ad.cant_almacen_oficina,
-                ad.cant_almacen_oficina_docenas,
-                ad.cant_almacen_callao_1_a,
-                ad.cant_almacen_callao_1_b,
-                ad.cant_almacen_callao_2,
+                ad.cant_tienda_3006, ad.cant_tienda_3131, ad.cant_tienda_412a, ad.cant_tienda_3133,
                 ad.abastecer_cajas, ad.enviar
-            FROM abastecimiento_detalle_callao ad
-            JOIN productos_abastecimiento_callao p ON ad.id_producto = p.id
-            JOIN unidades_medida_sea_callao um ON ad.id_unidad_medida = um.id
+            FROM abastecimiento_detalle ad
+            JOIN productos_abastecimiento p ON ad.id_producto = p.id
+            JOIN unidades_medida_sea um ON ad.id_unidad_medida = um.id
             WHERE ad.id_abastecimiento = %s
         """
         cursor.execute(sql_det, (cabecera['id'],))
@@ -2584,19 +1855,15 @@ def get_historial_abastecimiento_general(request, headers):
                 p.codigo, p.nombre,
                 ad.cantidad_reg_calculo as cantidad,
                 um.nombre as unidad_medida,
-                ad.cant_almacen_oficina,
-                ad.cant_almacen_oficina_docenas,
-                ad.cant_almacen_callao_1_a,
-                ad.cant_almacen_callao_1_b,
-                ad.cant_almacen_callao_2,
+                ad.cant_tienda_3006, ad.cant_tienda_3131, ad.cant_tienda_412a, ad.cant_tienda_3133,
                 ad.abastecer_cajas, ad.enviar,
                 ac.nombre as nombre_abastecimiento,
                 ac.fecha_registro,
                 ac.registrado_por
-            FROM abastecimiento_detalle_callao ad
-            JOIN abastecimiento_cabecera_callao ac ON ad.id_abastecimiento = ac.id
-            JOIN productos_abastecimiento_callao p ON ad.id_producto = p.id
-            JOIN unidades_medida_sea_callao um ON ad.id_unidad_medida = um.id
+            FROM abastecimiento_detalle ad
+            JOIN abastecimiento_cabecera ac ON ad.id_abastecimiento = ac.id
+            JOIN productos_abastecimiento p ON ad.id_producto = p.id
+            JOIN unidades_medida_sea um ON ad.id_unidad_medida = um.id
             ORDER BY ac.fecha_registro DESC, p.nombre
         """
         cursor.execute(sql)
@@ -2622,8 +1889,8 @@ def get_actas_abastecimiento(request, headers, id_abastecimiento):
                 aa.fecha_subida,
                 ac.registrado_por,
                 ac.fecha_registro
-            FROM abastecimiento_actas_callao aa
-            JOIN abastecimiento_cabecera_callao ac ON aa.id_abastecimiento = ac.id
+            FROM abastecimiento_actas aa
+            JOIN abastecimiento_cabecera ac ON aa.id_abastecimiento = ac.id
             WHERE aa.id_abastecimiento = %s
             ORDER BY aa.fecha_subida DESC
         """
@@ -2645,8 +1912,8 @@ def subir_actas_abastecimiento(request, headers, id_abastecimiento):
         return bad_request_error("No se recibieron datos", headers)
     
     data = json.loads(form_data)
-    password_cliente = (data.get("password_autorizacion") or "").strip()
-
+    password_cliente = data.get('password_autorizacion')
+    
     # 2. Obtener archivos (Actas)
     files = request.files.getlist('actas')
     
@@ -2655,7 +1922,7 @@ def subir_actas_abastecimiento(request, headers, id_abastecimiento):
     cursor = conn.cursor()
     
     try:
-        cursor.execute("SELECT id FROM abastecimiento_cabecera_callao WHERE id = %s", (id_abastecimiento,))
+        cursor.execute("SELECT id FROM abastecimiento_cabecera WHERE id = %s", (id_abastecimiento,))
         abastecimiento = cursor.fetchone()
         if not abastecimiento:
             return not_found_error(f"Abastecimiento con ID {id_abastecimiento} no encontrado", headers)
@@ -2664,16 +1931,11 @@ def subir_actas_abastecimiento(request, headers, id_abastecimiento):
         if not files or len(files) == 0:
             return bad_request_error("Se requiere al menos un archivo para subir", headers)
         
-        pass_sistema = _password_efectiva_actas_abastecimiento(cursor)
-        if not pass_sistema:
-            return (
-                json.dumps({
-                    "message": "No hay contraseña configurada en el sistema (pass_abastecimiento_sin_acta ni pass_movimiento_sin_acta).",
-                    "error": "Contraseña de sistema no configurada",
-                }),
-                403,
-                headers,
-            )
+        # Validar contraseña
+        cursor.execute("SELECT valor FROM configuracion_sistema WHERE clave = 'pass_abastecimiento_sin_acta'")
+        res_config = cursor.fetchone()
+        pass_sistema = res_config['valor'] if res_config else None
+        
         if not password_cliente or password_cliente != pass_sistema:
             return (json.dumps({"message": "Se requiere una contraseña válida para subir actas"}), 403, headers)
         
@@ -2683,7 +1945,7 @@ def subir_actas_abastecimiento(request, headers, id_abastecimiento):
             if file.filename != '':
                 url_publica = upload_to_gcs(file)
                 if url_publica:
-                    sql_acta = "INSERT INTO abastecimiento_actas_callao (id_abastecimiento, nombre_imagen, url_imagen) VALUES (%s, %s, %s)"
+                    sql_acta = "INSERT INTO abastecimiento_actas (id_abastecimiento, nombre_imagen, url_imagen) VALUES (%s, %s, %s)"
                     cursor.execute(sql_acta, (id_abastecimiento, file.filename, url_publica))
                     actas_subidas.append({
                         'nombre_imagen': file.filename,
@@ -2727,7 +1989,7 @@ def cambiar_password_abastecimiento(request, headers):
     cursor = conn.cursor()
     try:
         # Verificar contraseña anterior
-        cursor.execute("SELECT valor FROM configuracion_sistema_callao WHERE clave = 'pass_abastecimiento_sin_acta'")
+        cursor.execute("SELECT valor FROM configuracion_sistema WHERE clave = 'pass_abastecimiento_sin_acta'")
         res_config = cursor.fetchone()
         pass_actual = res_config['valor'] if res_config else None
         
@@ -2736,14 +1998,14 @@ def cambiar_password_abastecimiento(request, headers):
         
         # Actualizar contraseña
         cursor.execute(
-            "UPDATE configuracion_sistema_callao SET valor = %s, ultima_actualizacion = NOW() WHERE clave = 'pass_abastecimiento_sin_acta'",
+            "UPDATE configuracion_sistema SET valor = %s, ultima_actualizacion = NOW() WHERE clave = 'pass_abastecimiento_sin_acta'",
             (password_nueva,)
         )
         
         if cursor.rowcount == 0:
             # Si no existe, crear el registro
             cursor.execute(
-                "INSERT INTO configuracion_sistema_callao (clave, valor) VALUES ('pass_abastecimiento_sin_acta', %s)",
+                "INSERT INTO configuracion_sistema (clave, valor) VALUES ('pass_abastecimiento_sin_acta', %s)",
                 (password_nueva,)
             )
         
@@ -2769,31 +2031,10 @@ def get_entradas_cascada(request, headers):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        # Obtener todas las entradas agrupadas por código_carga.
-        # Si existe me.codigo_carga se prioriza para soportar masivos sin actas.
-        tiene_codigo_carga_en_me = _tabla_tiene_columna(cursor, 'movimientos_entrada_callao', 'codigo_carga')
-        expr_codigo_carga = """
-                COALESCE(
-                  me.codigo_carga,
-                  (SELECT ma2.codigo_carga FROM movimientos_actas_callao ma2
-                   WHERE ma2.id_movimiento_entrada = me.id
-                     AND ma2.codigo_carga IS NOT NULL AND CHAR_LENGTH(TRIM(ma2.codigo_carga)) > 0
-                   ORDER BY ma2.fecha_subida DESC LIMIT 1),
-                  CONCAT('ENT-', me.id)
-                ) AS codigo_carga,
-        """ if tiene_codigo_carga_en_me else """
-                COALESCE(
-                  (SELECT ma2.codigo_carga FROM movimientos_actas_callao ma2
-                   WHERE ma2.id_movimiento_entrada = me.id
-                     AND ma2.codigo_carga IS NOT NULL AND CHAR_LENGTH(TRIM(ma2.codigo_carga)) > 0
-                   ORDER BY ma2.fecha_subida DESC LIMIT 1),
-                  CONCAT('ENT-', me.id)
-                ) AS codigo_carga,
-        """
-
-        sql = f"""
+        # Obtener todas las entradas agrupadas por código_carga
+        sql = """
             SELECT 
-                {expr_codigo_carga}
+                me.codigo_carga,
                 me.id,
                 me.fecha_registro,
                 p.codigo as producto_codigo,
@@ -2811,13 +2052,13 @@ def get_entradas_cascada(request, headers):
                 me.observaciones,
                 me.fecha_actualizacion,
                 me.motivo_cambio
-            FROM movimientos_entrada_callao me
-            JOIN productos_abastecimiento_callao p ON me.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON me.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao ts ON me.id_tienda_salida = ts.id
-            JOIN tiendas_gestion_sea_callao ti ON me.id_tienda_ingreso = ti.id
-            JOIN unidades_medida_sea_callao um ON me.id_unidad_medida = um.id
-            ORDER BY me.fecha_registro DESC
+            FROM movimientos_entrada me
+            JOIN productos_abastecimiento p ON me.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON me.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea ts ON me.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea ti ON me.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea um ON me.id_unidad_medida = um.id
+            ORDER BY me.codigo_carga DESC, me.fecha_registro DESC
         """
         cursor.execute(sql)
         todas_entradas = cursor.fetchall()
@@ -2833,23 +2074,18 @@ def get_entradas_cascada(request, headers):
                 ma.codigo_carga,
                 ma.fecha_subida,
                 me.registrado_por AS registrado_por
-            FROM movimientos_actas_callao ma
-            LEFT JOIN movimientos_entrada_callao me ON ma.id_movimiento_entrada = me.id
+            FROM movimientos_actas ma
+            LEFT JOIN movimientos_entrada me ON ma.id_movimiento_entrada = me.id
             WHERE ma.codigo_carga IS NOT NULL
               AND ma.id_movimiento_entrada IS NOT NULL
         """
         cursor.execute(sql_actas)
         todas_actas = cursor.fetchall()
 
-        # Agrupar actas por código_carga (dedupe por URL para no repetir la misma imagen N veces)
+        # Agrupar actas por código_carga
         actas_por_carga = {}
-        actas_vistas = set()
         for acta in todas_actas:
             codigo_carga = acta['codigo_carga']
-            dedupe_key = (codigo_carga, acta.get('url_imagen') or '')
-            if dedupe_key in actas_vistas:
-                continue
-            actas_vistas.add(dedupe_key)
             if codigo_carga not in actas_por_carga:
                 actas_por_carga[codigo_carga] = []
             actas_por_carga[codigo_carga].append(acta)
@@ -2885,30 +2121,10 @@ def get_salidas_cascada(request, headers):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        # Obtener todas las salidas agrupadas por código_carga.
-        # Si existe ms.codigo_carga se prioriza para soportar masivos sin actas.
-        tiene_codigo_carga_en_ms = _tabla_tiene_columna(cursor, 'movimientos_salida_callao', 'codigo_carga')
-        expr_codigo_carga = """
-                COALESCE(
-                  ms.codigo_carga,
-                  (SELECT ma2.codigo_carga FROM movimientos_actas_callao ma2
-                   WHERE ma2.id_movimiento_salida = ms.id
-                     AND ma2.codigo_carga IS NOT NULL AND CHAR_LENGTH(TRIM(ma2.codigo_carga)) > 0
-                   ORDER BY ma2.fecha_subida DESC LIMIT 1),
-                  CONCAT('SAL-', ms.id)
-                ) AS codigo_carga,
-        """ if tiene_codigo_carga_en_ms else """
-                COALESCE(
-                  (SELECT ma2.codigo_carga FROM movimientos_actas_callao ma2
-                   WHERE ma2.id_movimiento_salida = ms.id
-                     AND ma2.codigo_carga IS NOT NULL AND CHAR_LENGTH(TRIM(ma2.codigo_carga)) > 0
-                   ORDER BY ma2.fecha_subida DESC LIMIT 1),
-                  CONCAT('SAL-', ms.id)
-                ) AS codigo_carga,
-        """
-        sql = f"""
+        # Obtener todas las salidas agrupadas por código_carga
+        sql = """
             SELECT 
-                {expr_codigo_carga}
+                ms.codigo_carga,
                 ms.id,
                 ms.fecha_registro,
                 p.codigo as producto_codigo,
@@ -2925,12 +2141,12 @@ def get_salidas_cascada(request, headers):
                 ms.observaciones,
                 ms.fecha_actualizacion,
                 ms.motivo_cambio
-            FROM movimientos_salida_callao ms
-            JOIN productos_abastecimiento_callao p ON ms.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON ms.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao t ON ms.id_tienda = t.id
-            JOIN unidades_medida_sea_callao um ON ms.id_unidad_medida = um.id
-            ORDER BY ms.fecha_registro DESC
+            FROM movimientos_salida ms
+            JOIN productos_abastecimiento p ON ms.id_producto = p.id
+            JOIN tipos_operacion_sea tos ON ms.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea t ON ms.id_tienda = t.id
+            JOIN unidades_medida_sea um ON ms.id_unidad_medida = um.id
+            ORDER BY ms.codigo_carga DESC, ms.fecha_registro DESC
         """
         cursor.execute(sql)
         todas_salidas = cursor.fetchall()
@@ -2946,26 +2162,23 @@ def get_salidas_cascada(request, headers):
                 ma.codigo_carga,
                 ma.fecha_subida,
                 ms.registrado_por AS registrado_por
-            FROM movimientos_actas_callao ma
-            LEFT JOIN movimientos_salida_callao ms ON ma.id_movimiento_salida = ms.id
+            FROM movimientos_actas ma
+            LEFT JOIN movimientos_salida ms ON ma.id_movimiento_salida = ms.id
             WHERE ma.codigo_carga IS NOT NULL
               AND ma.id_movimiento_salida IS NOT NULL
         """
         cursor.execute(sql_actas)
         todas_actas = cursor.fetchall()
 
+        # Agrupar actas por código_carga
         actas_por_carga = {}
-        actas_vistas = set()
         for acta in todas_actas:
             codigo_carga = acta['codigo_carga']
-            dedupe_key = (codigo_carga, acta.get('url_imagen') or '')
-            if dedupe_key in actas_vistas:
-                continue
-            actas_vistas.add(dedupe_key)
             if codigo_carga not in actas_por_carga:
                 actas_por_carga[codigo_carga] = []
             actas_por_carga[codigo_carga].append(acta)
 
+        # Agrupar salidas por código_carga
         cascada = {}
         for salida in todas_salidas:
             codigo_carga = salida['codigo_carga']
@@ -2983,115 +2196,6 @@ def get_salidas_cascada(request, headers):
 
         resultado = list(cascada.values())
         return success_response(data=resultado, message="Salidas cascada obtenidas correctamente", headers=headers)
-
-    finally:
-        cursor.close()
-        conn.close()
-
-def get_traslados_cascada(request, headers):
-    """
-    Obtiene los traslados agrupados por código_carga (vista cascada).
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        # Si existe mg.codigo_carga se prioriza para soportar masivos sin actas.
-        tiene_codigo_carga_en_mg = _tabla_tiene_columna(cursor, 'movimientos_traslado_callao', 'codigo_carga')
-        expr_codigo_carga = """
-                COALESCE(
-                  mg.codigo_carga,
-                  (SELECT ma2.codigo_carga FROM movimientos_actas_callao ma2
-                   WHERE ma2.id_movimiento_traslado = mg.id
-                     AND ma2.codigo_carga IS NOT NULL AND CHAR_LENGTH(TRIM(ma2.codigo_carga)) > 0
-                   ORDER BY ma2.fecha_subida DESC LIMIT 1),
-                  CONCAT('TRA-', mg.id)
-                ) AS codigo_carga,
-        """ if tiene_codigo_carga_en_mg else """
-                COALESCE(
-                  (SELECT ma2.codigo_carga FROM movimientos_actas_callao ma2
-                   WHERE ma2.id_movimiento_traslado = mg.id
-                     AND ma2.codigo_carga IS NOT NULL AND CHAR_LENGTH(TRIM(ma2.codigo_carga)) > 0
-                   ORDER BY ma2.fecha_subida DESC LIMIT 1),
-                  CONCAT('TRA-', mg.id)
-                ) AS codigo_carga,
-        """
-        sql = f"""
-            SELECT 
-                {expr_codigo_carga}
-                mg.id,
-                mg.fecha_registro,
-                p.codigo as producto_codigo,
-                p.nombre as producto_nombre,
-                tos.nombre as operacion,
-                ts.codigo as tienda_salida_codigo,
-                ts.nombre as tienda_salida_nombre,
-                ti.codigo as tienda_ingreso_codigo,
-                ti.nombre as tienda_ingreso_nombre,
-                mg.operador,
-                mg.cantidad,
-                um.nombre as unidad_medida,
-                mg.entregado_por,
-                mg.registrado_por,
-                mg.observaciones,
-                mg.fecha_actualizacion,
-                mg.motivo_cambio
-            FROM movimientos_traslado_callao mg
-            JOIN productos_abastecimiento_callao p ON mg.id_producto = p.id
-            JOIN tipos_operacion_sea_callao tos ON mg.id_tipo_operacion = tos.id
-            JOIN tiendas_gestion_sea_callao ts ON mg.id_tienda_salida = ts.id
-            JOIN tiendas_gestion_sea_callao ti ON mg.id_tienda_ingreso = ti.id
-            JOIN unidades_medida_sea_callao um ON mg.id_unidad_medida = um.id
-            ORDER BY mg.fecha_registro DESC
-        """
-        cursor.execute(sql)
-        todos_traslados = cursor.fetchall()
-
-        sql_actas = """
-            SELECT 
-                ma.id,
-                ma.id_movimiento_traslado,
-                ma.nombre_imagen,
-                ma.url_imagen,
-                ma.codigo_carga,
-                ma.fecha_subida,
-                mg.registrado_por AS registrado_por
-            FROM movimientos_actas_callao ma
-            LEFT JOIN movimientos_traslado_callao mg ON ma.id_movimiento_traslado = mg.id
-            WHERE ma.codigo_carga IS NOT NULL
-              AND ma.id_movimiento_traslado IS NOT NULL
-        """
-        cursor.execute(sql_actas)
-        todas_actas = cursor.fetchall()
-
-        actas_por_carga = {}
-        actas_vistas = set()
-        for acta in todas_actas:
-            codigo_carga = acta['codigo_carga']
-            dedupe_key = (codigo_carga, acta.get('url_imagen') or '')
-            if dedupe_key in actas_vistas:
-                continue
-            actas_vistas.add(dedupe_key)
-            if codigo_carga not in actas_por_carga:
-                actas_por_carga[codigo_carga] = []
-            actas_por_carga[codigo_carga].append(acta)
-
-        cascada = {}
-        for traslado in todos_traslados:
-            codigo_carga = traslado['codigo_carga']
-            if codigo_carga not in cascada:
-                cascada[codigo_carga] = {
-                    'codigo_carga': codigo_carga,
-                    'fecha_primera': traslado['fecha_registro'],
-                    'cantidad_items': 0,
-                    'operador': traslado['operador'],
-                    'detalles': [],
-                    'actas': actas_por_carga.get(codigo_carga, [])
-                }
-            cascada[codigo_carga]['detalles'].append(traslado)
-            cascada[codigo_carga]['cantidad_items'] += 1
-
-        resultado = list(cascada.values())
-        return success_response(data=resultado, message="Traslados cascada obtenidos correctamente", headers=headers)
 
     finally:
         cursor.close()
@@ -3125,11 +2229,13 @@ def agregar_acta_a_entrada(request, headers):
     cursor = conn.cursor()
 
     try:
-        cursor.execute("SELECT id FROM movimientos_entrada_callao WHERE id = %s", (id_entrada,))
-        if not cursor.fetchone():
+        # Verificar que la entrada existe y obtener el código_carga
+        cursor.execute("SELECT codigo_carga FROM movimientos_entrada WHERE id = %s", (id_entrada,))
+        result = cursor.fetchone()
+        if not result:
             return not_found_error("Entrada no encontrada", headers)
 
-        codigo_carga = _codigo_carga_desde_actas_entrada(cursor, id_entrada)
+        codigo_carga = result['codigo_carga']
 
         # Guardar archivo(s)
         for file in files:
@@ -3137,7 +2243,7 @@ def agregar_acta_a_entrada(request, headers):
                 url_publica = upload_to_gcs(file)
                 if url_publica:
                     cursor.execute(
-                        """INSERT INTO movimientos_actas_callao 
+                        """INSERT INTO movimientos_actas 
                            (id_movimiento_entrada, nombre_imagen, url_imagen, codigo_carga) 
                            VALUES (%s, %s, %s, %s)""",
                         (id_entrada, nombre_acta or file.filename, url_publica, codigo_carga)
@@ -3177,11 +2283,13 @@ def agregar_acta_a_salida(request, headers):
     cursor = conn.cursor()
 
     try:
-        cursor.execute("SELECT id FROM movimientos_salida_callao WHERE id = %s", (id_salida,))
-        if not cursor.fetchone():
+        # Verificar que la salida existe y obtener el código_carga
+        cursor.execute("SELECT codigo_carga FROM movimientos_salida WHERE id = %s", (id_salida,))
+        result = cursor.fetchone()
+        if not result:
             return not_found_error("Salida no encontrada", headers)
 
-        codigo_carga = _codigo_carga_desde_actas_salida(cursor, id_salida)
+        codigo_carga = result['codigo_carga']
 
         # Guardar archivo(s)
         for file in files:
@@ -3189,62 +2297,10 @@ def agregar_acta_a_salida(request, headers):
                 url_publica = upload_to_gcs(file)
                 if url_publica:
                     cursor.execute(
-                        """INSERT INTO movimientos_actas_callao 
+                        """INSERT INTO movimientos_actas 
                            (id_movimiento_salida, nombre_imagen, url_imagen, codigo_carga) 
                            VALUES (%s, %s, %s, %s)""",
                         (id_salida, nombre_acta or file.filename, url_publica, codigo_carga)
-                    )
-
-        conn.commit()
-        return created_response(message="Acta agregada exitosamente", headers=headers)
-
-    except Exception as e:
-        conn.rollback()
-        logging.error(f"Error: {traceback.format_exc()}")
-        return server_error(str(e), headers)
-    finally:
-        cursor.close()
-        conn.close()
-
-def agregar_acta_a_traslado(request, headers):
-    """
-    Agrega una acta a un registro de traslado existente.
-    """
-    if request.method not in ['POST', 'PUT']:
-        return bad_request_error("Método no permitido", headers)
-
-    data = request.form.get('data')
-    if not data:
-        return bad_request_error("Datos requeridos", headers)
-
-    data = json.loads(data)
-    id_traslado = data.get('id_traslado')
-    nombre_acta = data.get('nombre_acta')
-    files = request.files.getlist('archivo')
-
-    if not id_traslado or not files:
-        return bad_request_error("ID de traslado y archivo requeridos", headers)
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute("SELECT id FROM movimientos_traslado_callao WHERE id = %s", (id_traslado,))
-        if not cursor.fetchone():
-            return not_found_error("Traslado no encontrado", headers)
-
-        codigo_carga = _codigo_carga_desde_actas_traslado(cursor, id_traslado)
-
-        # Guardar archivo(s)
-        for file in files:
-            if file.filename != '':
-                url_publica = upload_to_gcs(file)
-                if url_publica:
-                    cursor.execute(
-                        """INSERT INTO movimientos_actas_callao 
-                           (id_movimiento_traslado, nombre_imagen, url_imagen, codigo_carga) 
-                           VALUES (%s, %s, %s, %s)""",
-                        (id_traslado, nombre_acta or file.filename, url_publica, codigo_carga)
                     )
 
         conn.commit()
@@ -3268,12 +2324,12 @@ def eliminar_acta(request, headers, id_acta):
 
     try:
         # Verificar que la acta existe
-        cursor.execute("SELECT id FROM movimientos_actas_callao WHERE id = %s", (id_acta,))
+        cursor.execute("SELECT id FROM movimientos_actas WHERE id = %s", (id_acta,))
         if not cursor.fetchone():
             return not_found_error("Acta no encontrada", headers)
 
         # Eliminar acta
-        cursor.execute("DELETE FROM movimientos_actas_callao WHERE id = %s", (id_acta,))
+        cursor.execute("DELETE FROM movimientos_actas WHERE id = %s", (id_acta,))
         conn.commit()
 
         return success_response(message="Acta eliminada exitosamente", headers=headers)
@@ -3302,13 +2358,13 @@ def actualizar_nombre_acta(request, headers, id_acta):
 
     try:
         # Verificar que la acta existe
-        cursor.execute("SELECT id FROM movimientos_actas_callao WHERE id = %s", (id_acta,))
+        cursor.execute("SELECT id FROM movimientos_actas WHERE id = %s", (id_acta,))
         if not cursor.fetchone():
             return not_found_error("Acta no encontrada", headers)
 
         # Actualizar nombre
         cursor.execute(
-            "UPDATE movimientos_actas_callao SET nombre_imagen = %s WHERE id = %s",
+            "UPDATE movimientos_actas SET nombre_imagen = %s WHERE id = %s",
             (nuevo_nombre, id_acta)
         )
         conn.commit()
@@ -3370,7 +2426,7 @@ def actualizar_contrasena_sistema(request, headers):
 # FUNCIÓN PRINCIPAL (FUNCION QUE ENRUTA TODOS LOS PROCESOS)
 # ============================================================
 @functions_framework.http
-def abastecimiento_entra_salida_callao(request):
+def abastecimiento_entra_salida_malvinas(request):
     # 1. Definición de headers (se usa en todos los retornos)
     headers = {
         'Access-Control-Allow-Origin': '*',
@@ -3450,24 +2506,6 @@ def abastecimiento_entra_salida_callao(request):
         elif path == '/api/tipos-operacion/salida' and method == 'GET':
             return get_tipos_operacion('SALIDA', headers)
 
-        # ==================== MÓDULO: TRASLADOS ====================
-        elif path == '/api/traslados' and method == 'GET':
-            return get_traslados(request, headers)
-        elif path == '/api/traslados' and method == 'POST':
-            return create_traslado(request, headers)
-        elif path == '/api/traslados/masivo' and method == 'POST':
-            return create_traslados_masivo(request, headers)
-        elif path == '/api/traslados/cascada' and method == 'GET':
-            return get_traslados_cascada(request, headers)
-        elif path.startswith('/api/traslados/') and method == 'PUT':
-            id_traslado = path.split('/')[-1]
-            if id_traslado.isdigit():
-                return update_traslado(request, headers, int(id_traslado))
-            else:
-                return not_found_error("ID de traslado inválido", headers)
-        elif path == '/api/tipos-operacion/traslado' and method == 'GET':
-            return get_tipos_operacion('TRASLADO', headers)
-
         # ==================== MÓDULO: EXISTENCIAS / STOCK TOTAL ====================
         elif path == '/api/existencias' and method == 'GET':
             return get_existencias(request, headers)
@@ -3481,8 +2519,6 @@ def abastecimiento_entra_salida_callao(request):
             return agregar_acta_a_entrada(request, headers)
         elif path == '/api/actas/salida' and method in ['POST', 'PUT']:
             return agregar_acta_a_salida(request, headers)
-        elif path == '/api/actas/traslado' and method in ['POST', 'PUT']:
-            return agregar_acta_a_traslado(request, headers)
         elif path.startswith('/api/actas/') and method == 'DELETE':
             id_acta = path.split('/')[-1]
             if id_acta.isdigit():
@@ -3507,8 +2543,6 @@ def abastecimiento_entra_salida_callao(request):
             return get_historial_entradas(request, headers)
         elif path == '/api/historial/salidas' and method == 'GET':
             return get_historial_salidas(request, headers)
-        elif path == '/api/historial/traslados' and method == 'GET':
-            return get_historial_traslados(request, headers)
 
         # ==================== MÓDULO: ABASTECIMIENTO ====================
         elif path == '/api/abastecimiento/calcular' and method == 'GET':

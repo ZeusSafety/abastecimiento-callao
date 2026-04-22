@@ -502,7 +502,8 @@ export async function createEntradasMasivo(entradas: Array<{
   producto: string;
   operacion: string;
   almacen_salida: string;
-  almacen_ingreso: string;
+  almacen_ingreso?: string;
+  almacenes_ingreso?: string[];
   operador?: string;
   cantidad: number;
   unidad_medida: string;

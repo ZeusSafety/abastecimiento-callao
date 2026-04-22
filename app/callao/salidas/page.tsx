@@ -186,12 +186,7 @@ function ModalSalida({
             return; 
         }
 
-        const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
         const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
-        if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
-            showToast('error', 'Indica entregado (OTROS)');
-            return;
-        }
         if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
             showToast('error', 'Indica quién registra (OTROS)');
             return;
@@ -207,7 +202,7 @@ function ModalSalida({
             cantidad: Number(form.cantidad),
             unidadMedida: form.unidadMedida,
             almacen: form.almacen,
-            entregado,
+            entregado: '',
             registradoPor,
             observaciones: form.observaciones,
         };
@@ -329,7 +324,7 @@ function ModalSalida({
                 cantidad: p.cantidad,
                 unidad_medida: p.unidadMedida,
                 almacen: almacenStr,
-                entregado_por: p.entregado || undefined,
+                entregado_por: undefined,
                 registrado_por: p.registradoPor,
                 observaciones: p.observaciones || undefined,
             };
@@ -397,12 +392,7 @@ function ModalSalida({
             }
 
             try {
-                const entregado = resolvePersonaCombo(form.entregado, form.entregadoCustom);
                 const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
-                if (form.entregado === COMBO_OTROS_VALUE && !entregado) {
-                    showToast('error', 'Indica entregado (OTROS)');
-                    return;
-                }
                 if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
                     showToast('error', 'Indica quién registra (OTROS)');
                     return;
@@ -416,7 +406,7 @@ function ModalSalida({
                     cantidad: Number(form.cantidad),
                     unidadMedida: form.unidadMedida,
                     almacen: form.almacen,
-                    entregado,
+                    entregado: '',
                     registradoPor,
                     observaciones: form.observaciones,
                 }, form.motivoCambio);
@@ -654,43 +644,6 @@ function ModalSalida({
                                 </select>
                                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                             </div>
-                        </div>
-
-                        {/* Entregado */}
-                        <div>
-                            <label className="form-label">Entregado</label>
-                            <div className="relative">
-                                <select
-                                    value={form.entregado}
-                                    onChange={e =>
-                                        setForm(f => ({
-                                            ...f,
-                                            entregado: e.target.value,
-                                            entregadoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
-                                        }))
-                                    }
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {OPERADORES.map(o => (
-                                        <option key={o} value={o}>
-                                            {o}
-                                        </option>
-                                    ))}
-                                    <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
-                            {form.entregado === COMBO_OTROS_VALUE && (
-                                <input
-                                    type="text"
-                                    value={form.entregadoCustom}
-                                    onChange={e => setForm(f => ({ ...f, entregadoCustom: e.target.value }))}
-                                    className="form-input mt-2"
-                                    style={{ fontSize: 12 }}
-                                    placeholder="Nombre"
-                                />
-                            )}
                         </div>
 
                         {/* Registrado por */}

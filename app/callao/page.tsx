@@ -39,6 +39,12 @@ function StockBadge({ value, min }: { value: number; min: number }) {
 
 const STORAGE_KEY_SELECTED = 'callao_inventario_selected';
 const STORAGE_KEY_EDITING = 'callao_inventario_editing';
+const TIENDAS_DISPONIBLES_CALLAO: ReadonlyArray<Tienda> = [
+    'TIENDA OFICINA',
+    'TIENDA CALLAO-1-A',
+    'TIENDA CALLAO-1-B',
+    'TIENDA CALLAO-2',
+];
 
 export default function StockTotalPage() {
     const { state, refreshProductos, refreshEntradas, showToast } = useCallao();
@@ -60,7 +66,6 @@ export default function StockTotalPage() {
     const [importFilasConfig, setImportFilasConfig] = useState(0);
     const [isImportingPreview, setIsImportingPreview] = useState(false);
     const [isImportSaving, setIsImportSaving] = useState(false);
-    const [replicaValue, setReplicaValue] = useState('');
 
     const [importForm, setImportForm] = useState({
         operacion: 'OTROS',
@@ -347,7 +352,6 @@ export default function StockTotalPage() {
             '',
             'DISPONIBLES',
             'STOCK DETALLADO',
-            '',
         ];
 
         const headerBottom = [
@@ -359,7 +363,6 @@ export default function StockTotalPage() {
             'U.MED',
             ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
             'TOTAL',
-            'CAJAS',
             'DOC,DEC,UNI SUELTAS',
         ];
 
@@ -371,14 +374,12 @@ export default function StockTotalPage() {
                 (acc, { tienda }) => acc + (stockMin[tienda] || 0),
                 0
             );
-            const disponibles = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
-                (acc, { tienda }) => acc + (p.existencia[tienda] || 0),
+            const disponibles = TIENDAS_DISPONIBLES_CALLAO.reduce(
+                (acc, tienda) => acc + (p.existencia[tienda] || 0),
                 0
             );
-            // Cajas se trunca hacia abajo (2.90 -> 2).
-            const cajas = cantidadReg > 0 ? Math.floor(disponibles / cantidadReg) : 0;
-            // Medida ahora usa el valor de réplica si existe
-            const medidaValor = replicaValue || (disponibles - (cajas * cantidadReg));
+            // Doc,Dec,Uni Sueltas refleja exclusivamente la sede Oficina-Docenas por producto.
+            const medidaValor = p.existencia['TIENDA OFICINA-DOCENAS'] || 0;
 
             return [
                 p.codigo, // 0
@@ -389,8 +390,7 @@ export default function StockTotalPage() {
                 p.unidadMedidaRegCalculo, // 9
                 ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0), // 10,11,12,13,14
                 disponibles, // 15
-                cajas, // 16
-                medidaValor, // 17
+                medidaValor, // 16
             ];
         });
 
@@ -404,15 +404,14 @@ export default function StockTotalPage() {
             { s: { r: 0, c: 9 }, e: { r: 1, c: 9 } }, // U. MEDIDA
             { s: { r: 0, c: 10 }, e: { r: 0, c: 14 } }, // EXISTENCIA ALMACEN (5 stores)
             { s: { r: 0, c: 15 }, e: { r: 1, c: 15 } }, // DISPONIBLES
-            { s: { r: 0, c: 16 }, e: { r: 0, c: 17 } }, // STOCK DETALLADO (2 cols)
+            { s: { r: 0, c: 16 }, e: { r: 1, c: 16 } }, // STOCK DETALLADO (1 col)
         ];
         ws['!cols'] = [
             { wch: 12 }, { wch: 34 }, { wch: 8 },
             { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
             { wch: 12 }, { wch: 12 },
             { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-            { wch: 12 },
-            { wch: 10 }, { wch: 20 },
+            { wch: 12 }, { wch: 20 },
         ];
 
         const wb = XLSX.utils.book_new();
@@ -694,7 +693,9 @@ export default function StockTotalPage() {
                                             Existencia Almacén
                                         </th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center bg-[#001F3D]">Disponibles</th>
-                                        <th colSpan={2} className="px-4 py-2 text-center bg-[#1a4a7a]">Stock Detallado</th>
+                                        <th rowSpan={2} className="px-2 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
+                                            Doc,Dec,Uni Sueltas
+                                        </th>
                                     </tr>
                                     <tr className="bg-[#1a4a7a] text-white border-t border-[#ffffff20]">
 
@@ -703,16 +704,14 @@ export default function StockTotalPage() {
                                                 {etiqueta}
                                             </th>
                                         ))}
-                                        <th className="px-2 py-2 border-r border-[#ffffff20] text-center">Cajas</th>
-                                        <th className="px-2 py-2 border-r border-[#ffffff20] text-center">Doc,Dec,Uni Sueltas</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {isLoading ? (
-                                        <TableSkeleton rows={20} cols={12} />
+                                        <TableSkeleton rows={20} cols={11} />
                                     ) : filtered.length === 0 ? (
                                         <tr>
-                                            <td colSpan={12} className="px-4 py-12 text-center">
+                                            <td colSpan={11} className="px-4 py-12 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <Package className="w-12 h-12 text-gray-300" />
                                                     <p className="text-gray-400 text-sm font-medium">
@@ -733,13 +732,12 @@ export default function StockTotalPage() {
                                                 0
                                             );
                                             // Existencia siempre usa el valor original porque no se puede editar
-                                            const disponibles = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
-                                                (acc, { tienda: t }) => acc + p.existencia[t],
+                                            const disponibles = TIENDAS_DISPONIBLES_CALLAO.reduce(
+                                                (acc, t) => acc + p.existencia[t],
                                                 0
                                             );
                                             const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
-                                            const cajas = cantidadReg > 0 ? Math.floor(disponibles / cantidadReg) : 0;
-                                            const medida = disponibles - (cajas * cantidadReg);
+                                            const medida = p.existencia['TIENDA OFICINA-DOCENAS'] || 0;
                                             
                                             return (
                                                 <tr
@@ -794,20 +792,8 @@ export default function StockTotalPage() {
                                                         );
                                                     })}
                                                     <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{disponibles}</td>
-                                                    <td className="px-4 py-3 text-center font-bold text-[11px]">{cajas}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: '#22c55e' }}>
-                                                        {idx === 0 ? (
-                                                            <input
-                                                                type="text"
-                                                                value={replicaValue}
-                                                                onChange={e => setReplicaValue(e.target.value)}
-                                                                onClick={e => e.stopPropagation()}
-                                                                className="w-full bg-transparent text-center border-b border-green-200 focus:border-green-500 outline-none text-[11px] font-bold"
-                                                                placeholder="-"
-                                                            />
-                                                        ) : (
-                                                            replicaValue || (disponibles - (cajas * cantidadReg))
-                                                        )}
+                                                        {medida}
                                                     </td>
                                                 </tr>
                                             );
