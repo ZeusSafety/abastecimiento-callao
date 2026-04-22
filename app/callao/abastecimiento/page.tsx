@@ -5,7 +5,7 @@ import {
     useCallao,
     TIENDAS,
     TIENDAS_VISTA_INVENTARIO_CALLAO,
-    Tienda,
+    Tienda, 
     AbastecimientoRow,
     UnidadMedida,
     resolveIdUnidadMedidaReg, 
