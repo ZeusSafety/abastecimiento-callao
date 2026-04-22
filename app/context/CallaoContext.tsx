@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect } from 'react';
 import * as api from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -206,10 +206,32 @@ export interface RegistroSalida {
   motivoCambio?: string;
 }
 
+export interface RegistroTraslado {
+  id: string;
+  fecha: string;
+  productoId: string;
+  producto: string;
+  operacion: string;
+  almacenSalida: AlmacenCompleto;
+  almacenIngreso: Tienda;
+  operador: string;
+  cantidad: number;
+  cantidadAnterior?: number;
+  unidadMedida: UnidadMedida;
+  entregado: string;
+  registradoPor: string;
+  observaciones: string;
+  updatedAt?: string;
+  motivoCambio?: string;
+}
+
 export interface CambioEntrada extends RegistroEntrada {
   motivoCambio: string;
 }
 export interface CambioSalida extends RegistroSalida {
+  motivoCambio: string;
+}
+export interface CambioTraslado extends RegistroTraslado {
   motivoCambio: string;
 }
 
@@ -251,8 +273,10 @@ interface CallaoState {
   productos: Producto[];
   entradas: RegistroEntrada[];
   salidas: RegistroSalida[];
+  traslados: RegistroTraslado[];
   cambiosEntrada: CambioEntrada[];
   cambiosSalida: CambioSalida[];
+  cambiosTraslado: CambioTraslado[];
   historialAbastecimiento: HistorialAbastecimiento[];
   toasts: ToastItem[];
   notifications: NotificationItem[];
@@ -274,6 +298,10 @@ interface CallaoContextType {
   addSalida: (s: Omit<RegistroSalida, 'id' | 'fecha'>) => Promise<void>;
   updateSalida: (id: string, data: Partial<RegistroSalida>, motivo: string) => Promise<void>;
   refreshSalidas: () => Promise<void>;
+  // Traslados
+  addTraslado: (t: Omit<RegistroTraslado, 'id' | 'fecha'>) => Promise<void>;
+  updateTraslado: (id: string, data: Partial<RegistroTraslado>, motivo: string) => Promise<void>;
+  refreshTraslados: () => Promise<void>;
   // Abastecimiento
   guardarAbastecimiento: (nombre: string, registradoPor: string, items: AbastecimientoRow[]) => Promise<void>;
   refreshAbastecimiento: () => Promise<void>;
@@ -281,6 +309,7 @@ interface CallaoContextType {
   // Historiales
   refreshHistorialEntradas: () => Promise<void>;
   refreshHistorialSalidas: () => Promise<void>;
+  refreshHistorialTraslados: () => Promise<void>;
   // Toast
   showToast: (type: ToastItem['type'], message: string) => void;
   removeToast: (id: string) => void;
@@ -435,13 +464,57 @@ function convertirSalidaDB(salidaDB: api.SalidaDB, productos: Producto[]): Regis
   };
 }
 
+function convertirTrasladoDB(trasladoDB: api.TrasladoDB, productos: Producto[]): RegistroTraslado {
+  const almacenSalida = resolveAlmacenSalidaEntradaDesdeApi(
+    trasladoDB.tienda_salida_codigo || '',
+    trasladoDB.tienda_salida_nombre
+  );
+  
+  const almacenIngreso: Tienda = (getTiendaFromCodigo(trasladoDB.tienda_ingreso_codigo) || 
+    (trasladoDB.tienda_ingreso_nombre && TIENDAS.includes(trasladoDB.tienda_ingreso_nombre as Tienda) 
+      ? trasladoDB.tienda_ingreso_nombre as Tienda 
+      : null) || 
+    'TIENDA OFICINA') as Tienda;
+
+  // Buscar producto por código o nombre
+  const producto = productos.find(p => 
+    p.codigo === trasladoDB.producto_codigo || 
+    p.nombre === trasladoDB.producto_nombre
+  );
+
+  // Para historial de cambios, usar fecha_movimiento_orig como fecha original y fecha (fecha_cambio) como updatedAt
+  const fechaOriginal = trasladoDB.fecha_movimiento_orig || trasladoDB.fecha_registro;
+  const fechaCambio = trasladoDB.fecha || trasladoDB.fecha_actualizacion;
+
+  return {
+    id: trasladoDB.id ? trasladoDB.id.toString() : '',
+    fecha: fechaOriginal ? fmtDate(fechaOriginal) : '',
+    productoId: producto?.id || '',
+    producto: trasladoDB.producto_nombre || '',
+    operacion: trasladoDB.operacion || '',
+    almacenSalida,
+    almacenIngreso,
+    operador: trasladoDB.operador || '',
+    cantidad: trasladoDB.cantidad || 0,
+    cantidadAnterior: trasladoDB.cantidad_anterior ?? undefined,
+    unidadMedida: (trasladoDB.unidad_medida as UnidadMedida) || 'DOCENAS',
+    entregado: trasladoDB.entregado_por || '',
+    registradoPor: trasladoDB.registrado_por || '',
+    observaciones: trasladoDB.observaciones || '',
+    updatedAt: fechaCambio ? fmtDate(fechaCambio) : undefined,
+    motivoCambio: trasladoDB.motivo_cambio || undefined,
+  };
+}
+
 export function CallaoProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<CallaoState>({
     productos: [],
     entradas: [],
     salidas: [],
+    traslados: [],
     cambiosEntrada: [],
     cambiosSalida: [],
+    cambiosTraslado: [],
     historialAbastecimiento: [],
     toasts: [],
     notifications: [],
@@ -486,11 +559,12 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
     const cargarDatos = async () => {
       setState(s => ({ ...s, loading: true, error: null }));
       try {
-        const [productosDB, stockTotalDB, entradasDB, salidasDB] = await Promise.all([
+        const [productosDB, stockTotalDB, entradasDB, salidasDB, trasladosDB] = await Promise.all([
           api.getProductos(true),
           api.getStockTotal(),
           api.getEntradas(),
           api.getSalidas(),
+          api.getTraslados(),
         ]);
 
         // Crear mapa de stock total por código
@@ -502,11 +576,12 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
           return convertirProductoDB(p, stock);
         });
 
-        // Convertir entradas y salidas
+        // Convertir entradas, salidas y traslados
         const entradas = entradasDB.map(e => convertirEntradaDB(e, productos));
         const salidas = salidasDB.map(s => convertirSalidaDB(s, productos));
+        const traslados = trasladosDB.map(t => convertirTrasladoDB(t, productos));
 
-        setState(s => ({ ...s, productos, entradas, salidas, loading: false }));
+        setState(s => ({ ...s, productos, entradas, salidas, traslados, loading: false }));
       } catch (error: any) {
         console.error('Error cargando datos iniciales:', error);
         setState(s => ({ ...s, error: error.message, loading: false }));
@@ -565,6 +640,19 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
     }
   }, [showToast]);
 
+  const refreshTraslados = useCallback(async () => {
+    try {
+      const trasladosDB = await api.getTraslados();
+      setState(s => {
+        const traslados = trasladosDB.map(t => convertirTrasladoDB(t, s.productos));
+        return { ...s, traslados };
+      });
+    } catch (error: any) {
+      console.error('Error refrescando traslados:', error);
+      showToast('error', 'Error al cargar traslados');
+    }
+  }, [showToast]);
+
   const refreshHistorialEntradas = useCallback(async () => {
     try {
       const cambiosDB = await api.getHistorialEntradas();
@@ -594,6 +682,22 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       console.error('Error refrescando historial salidas:', error);
       showToast('error', 'Error al cargar historial de salidas');
+    }
+  }, [showToast]);
+
+  const refreshHistorialTraslados = useCallback(async () => {
+    try {
+      const cambiosDB = await api.getHistorialTraslados();
+      setState(s => {
+        const cambios = cambiosDB.map(t => convertirTrasladoDB(t, s.productos)).map(t => ({
+          ...t,
+          motivoCambio: t.motivoCambio || '',
+        })) as CambioTraslado[];
+        return { ...s, cambiosTraslado: cambios };
+      });
+    } catch (error: any) {
+      console.error('Error refrescando historial traslados:', error);
+      showToast('error', 'Error al cargar historial de traslados');
     }
   }, [showToast]);
 
@@ -770,6 +874,71 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
     }
   }, [state.salidas, state.productos, refreshSalidas, refreshProductos, refreshHistorialSalidas, addNotification, showToast]);
 
+  const addTraslado = useCallback(async (t: Omit<RegistroTraslado, 'id' | 'fecha'>) => {
+    try {
+      const producto = state.productos.find(p => p.id === t.productoId);
+      if (!producto) throw new Error('Producto no encontrado');
+
+      const almacenSalidaStr = getCodigoAlmacenSalidaEntrada(t.almacenSalida);
+
+      await api.createTraslado({
+        producto: producto.codigo,
+        operacion: t.operacion,
+        almacen_salida: almacenSalidaStr,
+        almacen_ingreso: getCodigoFromTienda(t.almacenIngreso),
+        operador: t.operador,
+        cantidad: t.cantidad,
+        unidad_medida: t.unidadMedida,
+        entregado_por: t.entregado,
+        registrado_por: t.registradoPor,
+        observaciones: t.observaciones,
+      });
+
+      await Promise.all([refreshTraslados(), refreshProductos()]);
+      addNotification('entrada', 'Nuevo Traslado', `Traslado de ${t.cantidad} ${t.unidadMedida} de ${t.producto} desde ${t.almacenSalida} a ${t.almacenIngreso}`);
+      showToast('success', 'Traslado registrado correctamente');
+    } catch (error: any) {
+      console.error('Error creando traslado:', error);
+      showToast('error', error.message || 'Error al registrar traslado');
+      throw error;
+    }
+  }, [state.productos, refreshTraslados, refreshProductos, addNotification, showToast]);
+
+  const updateTraslado = useCallback(async (id: string, data: Partial<RegistroTraslado>, motivo: string) => {
+    try {
+      const traslado = state.traslados.find(t => t.id === id);
+      if (!traslado) throw new Error('Traslado no encontrado');
+
+      const producto = state.productos.find(p => p.codigo === traslado.producto || p.nombre === traslado.producto);
+      if (!producto) throw new Error('Producto no encontrado');
+
+      const finalData = { ...traslado, ...data };
+      const almacenSalidaStr = getCodigoAlmacenSalidaEntrada(finalData.almacenSalida);
+
+      await api.updateTraslado(parseInt(id), {
+        producto: producto.codigo,
+        operacion: finalData.operacion,
+        almacen_salida: almacenSalidaStr,
+        almacen_ingreso: getCodigoFromTienda(finalData.almacenIngreso),
+        operador: finalData.operador,
+        cantidad: finalData.cantidad,
+        unidad_medida: finalData.unidadMedida,
+        entregado_por: finalData.entregado,
+        registrado_por: finalData.registradoPor,
+        observaciones: finalData.observaciones,
+        motivo_cambio: motivo,
+      });
+
+      await Promise.all([refreshTraslados(), refreshProductos(), refreshHistorialTraslados()]);
+      addNotification('cambio', 'Traslado Actualizado', `Se modificó un registro de traslado. Motivo: ${motivo}`);
+      showToast('success', 'Traslado actualizado correctamente');
+    } catch (error: any) {
+      console.error('Error actualizando traslado:', error);
+      showToast('error', error.message || 'Error al actualizar traslado');
+      throw error;
+    }
+  }, [state.traslados, state.productos, refreshTraslados, refreshProductos, refreshHistorialTraslados, addNotification, showToast]);
+
   const refreshAbastecimiento = useCallback(async () => {
     try {
       const historialDB = await api.getHistorialAbastecimientos();
@@ -860,28 +1029,58 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
     }
   }, [state.productos, refreshAbastecimiento, addNotification, showToast]);
 
+  const value = useMemo(() => ({
+    state,
+    addProducto,
+    updateExistencia,
+    refreshProductos,
+    addEntrada,
+    updateEntrada,
+    refreshEntradas,
+    addSalida,
+    updateSalida,
+    refreshSalidas,
+    addTraslado,
+    updateTraslado,
+    refreshTraslados,
+    refreshHistorialTraslados,
+    guardarAbastecimiento,
+    refreshAbastecimiento,
+    cargarDetalleAbastecimiento,
+    refreshHistorialEntradas,
+    refreshHistorialSalidas,
+    showToast,
+    removeToast,
+    addNotification,
+    markNotificationsAsRead,
+  }), [
+    state,
+    addProducto,
+    updateExistencia,
+    refreshProductos,
+    addEntrada,
+    updateEntrada,
+    refreshEntradas,
+    addSalida,
+    updateSalida,
+    refreshSalidas,
+    addTraslado,
+    updateTraslado,
+    refreshTraslados,
+    refreshHistorialTraslados,
+    guardarAbastecimiento,
+    refreshAbastecimiento,
+    cargarDetalleAbastecimiento,
+    refreshHistorialEntradas,
+    refreshHistorialSalidas,
+    showToast,
+    removeToast,
+    addNotification,
+    markNotificationsAsRead,
+  ]);
+
   return (
-    <CallaoContext.Provider value={{
-      state,
-      addProducto,
-      updateExistencia,
-      refreshProductos,
-      addEntrada,
-      updateEntrada,
-      refreshEntradas,
-      addSalida,
-      updateSalida,
-      refreshSalidas,
-      guardarAbastecimiento,
-      refreshAbastecimiento,
-      cargarDetalleAbastecimiento,
-      refreshHistorialEntradas,
-      refreshHistorialSalidas,
-      showToast,
-      removeToast,
-      addNotification,
-      markNotificationsAsRead,
-    }}>
+    <CallaoContext.Provider value={value}>
       {children}
     </CallaoContext.Provider>
   );

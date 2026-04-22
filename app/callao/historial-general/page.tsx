@@ -49,7 +49,9 @@ export default function HistorialGeneralPage() {
                         unidadMedida: item.unidad_medida as UnidadMedida,
                         tiendas: {
                             'TIENDA OFICINA': item.cant_almacen_oficina ?? 0,
-                            'TIENDA CALLAO-1': item.cant_almacen_callao_1 ?? 0,
+                            'TIENDA OFICINA-DOCENAS': 0,
+                            'TIENDA CALLAO-1-A': item.cant_almacen_callao_1 ?? 0,
+                            'TIENDA CALLAO-1-B': 0,
                             'TIENDA CALLAO-2': item.cant_almacen_callao_2 ?? 0,
                         },
                         abastecerCajas: item.abastecer_cajas || 0,

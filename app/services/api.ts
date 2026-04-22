@@ -79,6 +79,29 @@ export interface SalidaDB {
   fecha?: string | null; // Para historial de cambios (fecha_cambio)
 }
 
+export interface TrasladoDB {
+  id: number;
+  fecha_registro: string;
+  producto_codigo: string;
+  producto_nombre: string;
+  operacion: string;
+  tienda_salida_codigo: string;
+  tienda_salida_nombre: string | null;
+  tienda_ingreso_codigo: string;
+  tienda_ingreso_nombre: string | null;
+  operador: string | null;
+  cantidad: number;
+  cantidad_anterior?: number | null;
+  unidad_medida: string;
+  entregado_por: string | null;
+  registrado_por: string | null;
+  observaciones: string | null;
+  fecha_actualizacion: string | null;
+  motivo_cambio: string | null;
+  fecha_movimiento_orig?: string | null; // Para historial de cambios
+  fecha?: string | null; // Para historial de cambios (fecha_cambio)
+}
+
 /**
  * Respuesta de GET /api/stock-total — tiendas `tiendas_gestion_sea_callao`: OFICINA, CALLAO-1, CALLAO-2.
  */
@@ -152,6 +175,7 @@ export interface ActaMovimientoDB {
   id: number;
   id_movimiento_entrada: number | null;
   id_movimiento_salida: number | null;
+  id_movimiento_traslado: number | null;
   nombre_imagen: string;
   url_imagen: string;
   codigo_carga: string | null;
@@ -198,6 +222,26 @@ export interface SalidaDetalleCascadaDB {
   motivo_cambio: string | null;
 }
 
+export interface TrasladoDetalleCascadaDB {
+  id: number;
+  fecha_registro: string;
+  producto_codigo: string;
+  producto_nombre: string;
+  operacion: string;
+  tienda_salida_codigo: string;
+  tienda_salida_nombre: string | null;
+  tienda_ingreso_codigo: string;
+  tienda_ingreso_nombre: string | null;
+  operador: string | null;
+  cantidad: number;
+  unidad_medida: string;
+  entregado_por: string | null;
+  registrado_por: string | null;
+  observaciones: string | null;
+  fecha_actualizacion: string | null;
+  motivo_cambio: string | null;
+}
+
 export interface EntradaCascadaDB {
   codigo_carga: string | null;
   fecha_primera: string;
@@ -213,6 +257,15 @@ export interface SalidaCascadaDB {
   cantidad_items: number;
   asesor: string | null;
   detalles: SalidaDetalleCascadaDB[];
+  actas: ActaMovimientoDB[];
+}
+
+export interface TrasladoCascadaDB {
+  codigo_carga: string | null;
+  fecha_primera: string;
+  cantidad_items: number;
+  operador: string | null;
+  detalles: TrasladoDetalleCascadaDB[];
   actas: ActaMovimientoDB[];
 }
 
@@ -261,8 +314,8 @@ export async function getUnidadesMedida(): Promise<UnidadMedidaDB[]> {
 }
 
 // Tipos de Operación
-export async function getTiposOperacion(tipo: 'ENTRADA' | 'SALIDA'): Promise<{ id: number; nombre: string }[]> {
-  const endpoint = tipo === 'ENTRADA' ? '/api/tipos-operacion/entrada' : '/api/tipos-operacion/salida';
+export async function getTiposOperacion(tipo: 'ENTRADA' | 'SALIDA' | 'TRASLADO'): Promise<{ id: number; nombre: string }[]> {
+  const endpoint = tipo === 'ENTRADA' ? '/api/tipos-operacion/entrada' : (tipo === 'SALIDA' ? '/api/tipos-operacion/salida' : '/api/tipos-operacion/traslado');
   const response = await fetchAPI<{ id: number; nombre: string }[]>(endpoint);
   return response.data || [];
 }
@@ -368,6 +421,55 @@ export async function updateEntrada(
     body: JSON.stringify(data),
   });
   if (!response.success) throw new Error(response.error || 'Error al actualizar entrada');
+}
+
+// Traslados
+export async function getTraslados(): Promise<TrasladoDB[]> {
+  const response = await fetchAPI<TrasladoDB[]>('/api/traslados');
+  return response.data || [];
+}
+
+export async function createTraslado(data: {
+  producto: string;
+  operacion: string;
+  almacen_salida: string;
+  almacen_ingreso: string;
+  operador?: string;
+  cantidad: number;
+  unidad_medida: string;
+  entregado_por?: string;
+  registrado_por?: string;
+  observaciones?: string;
+}): Promise<{ id: number }> {
+  const response = await fetchAPI<{ id: number }>('/api/traslados', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  if (!response.data) throw new Error(response.error || 'Error al crear traslado');
+  return response.data;
+}
+
+export async function updateTraslado(
+  id: number,
+  data: {
+    producto: string;
+    operacion: string;
+    almacen_salida: string;
+    almacen_ingreso: string;
+    operador?: string;
+    cantidad: number;
+    unidad_medida: string;
+    entregado_por?: string;
+    registrado_por?: string;
+    observaciones?: string;
+    motivo_cambio: string;
+  }
+): Promise<void> {
+  const response = await fetchAPI(`/api/traslados/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+  if (!response.success) throw new Error(response.error || 'Error al actualizar traslado');
 }
 
 // Salidas
@@ -499,6 +601,57 @@ options?: {
   return result.data as { ids: number[]; total: number; codigo_carga: string };
 }
 
+export async function createTrasladosMasivo(traslados: Array<{
+  producto: string;
+  operacion: string;
+  almacen_salida: string;
+  almacen_ingreso: string;
+  operador?: string;
+  cantidad: number;
+  unidad_medida: string;
+  entregado_por?: string;
+  registrado_por?: string;
+  observaciones?: string;
+}>,
+options?: {
+  actas?: Array<{ file: File; nombre: string }>;
+  passwordAutorizacion?: string;
+}): Promise<{ ids: number[]; total: number; codigo_carga: string }> {
+  const formData = new FormData();
+  formData.append(
+    'data',
+    JSON.stringify({
+      traslados,
+      password_autorizacion: options?.passwordAutorizacion,
+    }),
+  );
+
+  if (options?.actas && options.actas.length > 0) {
+    options.actas.forEach(({ file, nombre }) => {
+      const blob = file.slice(0, file.size, file.type);
+      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
+      formData.append('actas', renamedFile);
+    });
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/traslados/masivo`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+    throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || result.message || 'Error al crear traslados');
+  }
+
+  return result.data as { ids: number[]; total: number; codigo_carga: string };
+}
+
 export async function updateSalida(
   id: number,
   data: {
@@ -602,6 +755,12 @@ export async function getHistorialSalidas(): Promise<SalidaDB[]> {
   return response.data || [];
 }
 
+// Historial Traslados
+export async function getHistorialTraslados(): Promise<TrasladoDB[]> {
+  const response = await fetchAPI<TrasladoDB[]>('/api/historial/traslados');
+  return response.data || [];
+}
+
 // Cascada (agrupación por codigo_carga)
 export async function getEntradasCascada(): Promise<EntradaCascadaDB[]> {
   const response = await fetchAPI<EntradaCascadaDB[]>('/api/entradas/cascada');
@@ -610,6 +769,11 @@ export async function getEntradasCascada(): Promise<EntradaCascadaDB[]> {
 
 export async function getSalidasCascada(): Promise<SalidaCascadaDB[]> {
   const response = await fetchAPI<SalidaCascadaDB[]>('/api/salidas/cascada');
+  return response.data || [];
+}
+
+export async function getTrasladosCascada(): Promise<TrasladoCascadaDB[]> {
+  const response = await fetchAPI<TrasladoCascadaDB[]>('/api/traslados/cascada');
   return response.data || [];
 }
 
@@ -657,6 +821,35 @@ export async function agregarActaSalida(
   });
 
   const response = await fetch(`${API_BASE_URL}/api/actas/salida`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+    throw new Error(errorData.error || errorData.message || `Error ${response.status}`);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || result.message || 'Error al agregar acta');
+  }
+}
+
+export async function agregarActaTraslado(
+  idTraslado: number,
+  actas: Array<{ file: File; nombre: string }>
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('data', JSON.stringify({ id_traslado: idTraslado, nombre_acta: '' }));
+
+  actas.forEach(({ file, nombre }) => {
+    const blob = file.slice(0, file.size, file.type);
+    const renamedFile = new File([blob], nombre || file.name, { type: file.type });
+    formData.append('archivo', renamedFile);
+  });
+
+  const response = await fetch(`${API_BASE_URL}/api/actas/traslado`, {
     method: 'POST',
     body: formData,
   });

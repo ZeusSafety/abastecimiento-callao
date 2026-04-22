@@ -289,6 +289,20 @@ def _codigo_carga_desde_actas_salida(cursor, id_salida):
         return row['codigo_carga']
     return _generar_codigo_carga()
 
+def _codigo_carga_desde_actas_traslado(cursor, id_traslado):
+    """Último codigo_carga en actas del traslado; si no hay, genera uno nuevo."""
+    cursor.execute(
+        """SELECT codigo_carga FROM movimientos_actas_callao
+           WHERE id_movimiento_traslado = %s AND codigo_carga IS NOT NULL
+             AND CHAR_LENGTH(TRIM(codigo_carga)) > 0
+           ORDER BY fecha_subida DESC LIMIT 1""",
+        (id_traslado,),
+    )
+    row = cursor.fetchone()
+    if row and row.get('codigo_carga'):
+        return row['codigo_carga']
+    return _generar_codigo_carga()
+
 def _obtener_contrasena_sistema(conn):
     """Obtiene la contraseña actual del sistema de configuración."""
     cursor = conn.cursor()
@@ -2850,6 +2864,101 @@ def get_salidas_cascada(request, headers):
         cursor.close()
         conn.close()
 
+def get_traslados_cascada(request, headers):
+    """
+    Obtiene los traslados agrupados por código_carga (vista cascada).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT 
+                COALESCE(
+                  (SELECT ma2.codigo_carga FROM movimientos_actas_callao ma2
+                   WHERE ma2.id_movimiento_traslado = mg.id
+                     AND ma2.codigo_carga IS NOT NULL AND CHAR_LENGTH(TRIM(ma2.codigo_carga)) > 0
+                   ORDER BY ma2.fecha_subida DESC LIMIT 1),
+                  CONCAT('TRA-', mg.id)
+                ) AS codigo_carga,
+                mg.id,
+                mg.fecha_registro,
+                p.codigo as producto_codigo,
+                p.nombre as producto_nombre,
+                tos.nombre as operacion,
+                ts.codigo as tienda_salida_codigo,
+                ts.nombre as tienda_salida_nombre,
+                ti.codigo as tienda_ingreso_codigo,
+                ti.nombre as tienda_ingreso_nombre,
+                mg.operador,
+                mg.cantidad,
+                um.nombre as unidad_medida,
+                mg.entregado_por,
+                mg.registrado_por,
+                mg.observaciones,
+                mg.fecha_actualizacion,
+                mg.motivo_cambio
+            FROM movimientos_traslado_callao mg
+            JOIN productos_abastecimiento_callao p ON mg.id_producto = p.id
+            JOIN tipos_operacion_sea_callao tos ON mg.id_tipo_operacion = tos.id
+            JOIN tiendas_gestion_sea_callao ts ON mg.id_tienda_salida = ts.id
+            JOIN tiendas_gestion_sea_callao ti ON mg.id_tienda_ingreso = ti.id
+            JOIN unidades_medida_sea_callao um ON mg.id_unidad_medida = um.id
+            ORDER BY mg.fecha_registro DESC
+        """
+        cursor.execute(sql)
+        todos_traslados = cursor.fetchall()
+
+        sql_actas = """
+            SELECT 
+                ma.id,
+                ma.id_movimiento_traslado,
+                ma.nombre_imagen,
+                ma.url_imagen,
+                ma.codigo_carga,
+                ma.fecha_subida,
+                mg.registrado_por AS registrado_por
+            FROM movimientos_actas_callao ma
+            LEFT JOIN movimientos_traslado_callao mg ON ma.id_movimiento_traslado = mg.id
+            WHERE ma.codigo_carga IS NOT NULL
+              AND ma.id_movimiento_traslado IS NOT NULL
+        """
+        cursor.execute(sql_actas)
+        todas_actas = cursor.fetchall()
+
+        actas_por_carga = {}
+        actas_vistas = set()
+        for acta in todas_actas:
+            codigo_carga = acta['codigo_carga']
+            dedupe_key = (codigo_carga, acta.get('url_imagen') or '')
+            if dedupe_key in actas_vistas:
+                continue
+            actas_vistas.add(dedupe_key)
+            if codigo_carga not in actas_por_carga:
+                actas_por_carga[codigo_carga] = []
+            actas_por_carga[codigo_carga].append(acta)
+
+        cascada = {}
+        for traslado in todos_traslados:
+            codigo_carga = traslado['codigo_carga']
+            if codigo_carga not in cascada:
+                cascada[codigo_carga] = {
+                    'codigo_carga': codigo_carga,
+                    'fecha_primera': traslado['fecha_registro'],
+                    'cantidad_items': 0,
+                    'operador': traslado['operador'],
+                    'detalles': [],
+                    'actas': actas_por_carga.get(codigo_carga, [])
+                }
+            cascada[codigo_carga]['detalles'].append(traslado)
+            cascada[codigo_carga]['cantidad_items'] += 1
+
+        resultado = list(cascada.values())
+        return success_response(data=resultado, message="Traslados cascada obtenidos correctamente", headers=headers)
+
+    finally:
+        cursor.close()
+        conn.close()
+
 # ============================================================
 # ENDPOINTS DE GESTIÓN DE ACTAS
 # ============================================================
@@ -2946,6 +3055,58 @@ def agregar_acta_a_salida(request, headers):
                            (id_movimiento_salida, nombre_imagen, url_imagen, codigo_carga) 
                            VALUES (%s, %s, %s, %s)""",
                         (id_salida, nombre_acta or file.filename, url_publica, codigo_carga)
+                    )
+
+        conn.commit()
+        return created_response(message="Acta agregada exitosamente", headers=headers)
+
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error: {traceback.format_exc()}")
+        return server_error(str(e), headers)
+    finally:
+        cursor.close()
+        conn.close()
+
+def agregar_acta_a_traslado(request, headers):
+    """
+    Agrega una acta a un registro de traslado existente.
+    """
+    if request.method not in ['POST', 'PUT']:
+        return bad_request_error("Método no permitido", headers)
+
+    data = request.form.get('data')
+    if not data:
+        return bad_request_error("Datos requeridos", headers)
+
+    data = json.loads(data)
+    id_traslado = data.get('id_traslado')
+    nombre_acta = data.get('nombre_acta')
+    files = request.files.getlist('archivo')
+
+    if not id_traslado or not files:
+        return bad_request_error("ID de traslado y archivo requeridos", headers)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT id FROM movimientos_traslado_callao WHERE id = %s", (id_traslado,))
+        if not cursor.fetchone():
+            return not_found_error("Traslado no encontrado", headers)
+
+        codigo_carga = _codigo_carga_desde_actas_traslado(cursor, id_traslado)
+
+        # Guardar archivo(s)
+        for file in files:
+            if file.filename != '':
+                url_publica = upload_to_gcs(file)
+                if url_publica:
+                    cursor.execute(
+                        """INSERT INTO movimientos_actas_callao 
+                           (id_movimiento_traslado, nombre_imagen, url_imagen, codigo_carga) 
+                           VALUES (%s, %s, %s, %s)""",
+                        (id_traslado, nombre_acta or file.filename, url_publica, codigo_carga)
                     )
 
         conn.commit()
@@ -3151,6 +3312,24 @@ def abastecimiento_entra_salida_callao(request):
         elif path == '/api/tipos-operacion/salida' and method == 'GET':
             return get_tipos_operacion('SALIDA', headers)
 
+        # ==================== MÓDULO: TRASLADOS ====================
+        elif path == '/api/traslados' and method == 'GET':
+            return get_traslados(request, headers)
+        elif path == '/api/traslados' and method == 'POST':
+            return create_traslado(request, headers)
+        elif path == '/api/traslados/masivo' and method == 'POST':
+            return create_traslados_masivo(request, headers)
+        elif path == '/api/traslados/cascada' and method == 'GET':
+            return get_traslados_cascada(request, headers)
+        elif path.startswith('/api/traslados/') and method == 'PUT':
+            id_traslado = path.split('/')[-1]
+            if id_traslado.isdigit():
+                return update_traslado(request, headers, int(id_traslado))
+            else:
+                return not_found_error("ID de traslado inválido", headers)
+        elif path == '/api/tipos-operacion/traslado' and method == 'GET':
+            return get_tipos_operacion('TRASLADO', headers)
+
         # ==================== MÓDULO: EXISTENCIAS / STOCK TOTAL ====================
         elif path == '/api/existencias' and method == 'GET':
             return get_existencias(request, headers)
@@ -3164,6 +3343,8 @@ def abastecimiento_entra_salida_callao(request):
             return agregar_acta_a_entrada(request, headers)
         elif path == '/api/actas/salida' and method in ['POST', 'PUT']:
             return agregar_acta_a_salida(request, headers)
+        elif path == '/api/actas/traslado' and method in ['POST', 'PUT']:
+            return agregar_acta_a_traslado(request, headers)
         elif path.startswith('/api/actas/') and method == 'DELETE':
             id_acta = path.split('/')[-1]
             if id_acta.isdigit():
@@ -3188,6 +3369,8 @@ def abastecimiento_entra_salida_callao(request):
             return get_historial_entradas(request, headers)
         elif path == '/api/historial/salidas' and method == 'GET':
             return get_historial_salidas(request, headers)
+        elif path == '/api/historial/traslados' and method == 'GET':
+            return get_historial_traslados(request, headers)
 
         # ==================== MÓDULO: ABASTECIMIENTO ====================
         elif path == '/api/abastecimiento/calcular' and method == 'GET':

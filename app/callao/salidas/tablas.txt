@@ -1,0 +1,807 @@
+--
+-- ============================================================
+-- SISTEMA DE GESTIÓN SALIDAS/ENTRADAS/ABASTECIMIENTO CALLAO
+-- ============================================================
+--
+
+--
+-- TABLA TIENDAS DISPONIBLES POR ALMACEN CALLAO
+--
+CREATE TABLE tiendas_gestion_sea_callao (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    codigo      VARCHAR(20)  NOT NULL UNIQUE,  -- 'OFICINA', 'CALLAO 1 (MONICA)', 'CALLAO 2 (NUEVO)'
+    nombre      VARCHAR(100) NOT NULL,          -- 'OFICINA', etc.
+    es_almacen  TINYINT(1)   NOT NULL DEFAULT 0, 
+    activo      TINYINT(1)   NOT NULL DEFAULT 1
+);
+--
+select * from tiendas_gestion_sea_callao;
+--
+INSERT INTO tiendas_gestion_sea_callao (codigo, nombre, es_almacen) VALUES
+('IMPORTACION', 'IMPORTACION', 1),
+('MALVINAS', 'ALMACEN MALVINAS', 0),
+('OFICINA', 'OFICINA', 0),
+('OFICINA-DOCENAS', 'OFICINA DOCENAS', 0),
+('CALLAO-1-A', 'CALLAO 1 A', 0),
+('CALLAO-1-B', 'CALLAO 1 B', 0),
+('CALLAO-2', 'CALLAO 2', 0);
+--
+-- TABLA DE UNIDAD DE MEDIDA DISPONIBLES
+--
+CREATE TABLE unidades_medida_sea_callao (
+    id     INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(20) NOT NULL UNIQUE  -- DOCENAS, DECENAS, UNIDADES, CAJITAS, BOLSITAS
+);
+Select * from unidades_medida_sea_callao;
+--
+INSERT INTO unidades_medida_sea_callao (nombre) VALUES
+('DOCENAS'),('DECENAS'),('UNIDADES'),('CAJITAS'),('BOLSITAS');
+
+-- 
+-- TABLA PRODUCTOS PARA ABASTECIMIENTO CALLAO
+-- 
+CREATE TABLE IF NOT EXISTS productos_abastecimiento_callao (
+     id                      INT     NOT NULL AUTO_INCREMENT,
+     codigo                  VARCHAR(30)      NOT NULL,
+     nombre                  VARCHAR(200)     NOT NULL,
+     -- Sección INFORMACIÓN
+     cantidad_en_caja        INT,
+     id_unidad_medida_info   INT      NOT NULL,
+     cantidad_unidades_caja  INT,
+     -- Sección REG. CÁLCULO
+     cantidad_reg_calculo    INT,        
+     id_unidad_medida_reg    INT      NOT NULL,        
+     activo                  TINYINT(1)       NOT NULL DEFAULT 1,
+     PRIMARY KEY (id),
+     UNIQUE KEY uq_productos_codigo (codigo),
+     KEY idx_productos_nombre (nombre),
+     CONSTRAINT fk_prod_callao_um_info FOREIGN KEY (id_unidad_medida_info) REFERENCES unidades_medida_sea_callao(id),
+     CONSTRAINT fk_prod_callao_um_reg  FOREIGN KEY (id_unidad_medida_reg)  REFERENCES unidades_medida_sea_callao(id)
+ ) ENGINE=InnoDB COMMENT='Catálogo maestro de productos para Callao';
+--
+select * from productos_abastecimiento_callao;
+
+-- TABLA PARA DETERMINAR EL STOCK MINIMO CALLAO
+CREATE TABLE IF NOT EXISTS stock_minimo_almacen_callao (
+    id              INT 	      NOT NULL AUTO_INCREMENT,
+    id_producto     INT   		  NOT NULL,
+    id_tienda       INT           NOT NULL,
+    stock_minimo    INT NOT NULL DEFAULT 0
+        COMMENT 'Cantidad mínima requerida según UM del producto',
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_stock_min (id_producto, id_tienda),
+    CONSTRAINT fk_smt_callao_producto FOREIGN KEY (id_producto) REFERENCES productos_abastecimiento_callao(id) ON DELETE CASCADE,
+    CONSTRAINT fk_smt_callao_tienda   FOREIGN KEY (id_tienda)   REFERENCES tiendas_gestion_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Stock mínimo por producto para alamcenes de callao';
+--
+select * from stock_minimo_almacen_callao;
+--
+-- TABLA SECCION EXISTENCIAS DE LOS ALAMACENES CALLAO
+--
+CREATE TABLE IF NOT EXISTS existencias_almacen_callao (
+    id          INT   		  NOT NULL AUTO_INCREMENT,
+    id_producto INT   		  NOT NULL,
+    id_tienda   INT           NOT NULL,
+    cantidad    INT 		  NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_existencias (id_producto, id_tienda),
+    CONSTRAINT fk_ext_callao_producto FOREIGN KEY (id_producto) REFERENCES productos_abastecimiento_callao(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ext_callao_tienda   FOREIGN KEY (id_tienda)   REFERENCES tiendas_gestion_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Stock actual por producto para almacenes de Callao';
+--
+select * from existencias_almacen_callao;
+--
+-- TABLA TIPOS DE OPERACION CALLAO (ENTRADA/SALIDA)
+--
+CREATE TABLE IF NOT EXISTS tipos_operacion_sea_callao (
+    id     INT  NOT NULL AUTO_INCREMENT,
+    nombre VARCHAR(30)      NOT NULL,
+    tipo   ENUM('ENTRADA','SALIDA','TRASLADO') NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_op_nombre_tipo_callao (nombre, tipo)
+) ENGINE=InnoDB;
+--
+Select * from tipos_operacion_sea_callao;
+--
+INSERT INTO tipos_operacion_sea_callao (nombre, tipo) VALUES
+('ENTRADA',    'ENTRADA'),
+('OTROS',  'ENTRADA'),
+('SALIDA',       'SALIDA'),
+('VENTA',       'SALIDA'),
+('OTROS',  'SALIDA'),
+('TRASLADO',       'TRASLADO'),
+('OTROS',  'TRASLADO');
+
+--
+-- TABLA MOVIMIENTOS DE ENTRADA CALLAO
+--
+CREATE TABLE IF NOT EXISTS movimientos_entrada_callao (
+    id                  INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    fecha_registro      DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_producto         INT              NOT NULL,
+    id_tipo_operacion   INT              NOT NULL,
+    id_tienda_salida    INT              NOT NULL  COMMENT 'Almacén/tienda de origen',
+    id_tienda_ingreso   INT              NOT NULL  COMMENT 'Tienda destino',
+    operador            VARCHAR(50)          NULL,
+    cantidad            INT              NOT NULL,
+    cantidad_anterior   INT              NOT NULL,
+    id_unidad_medida    INT  NOT NULL,
+    entregado_por       VARCHAR(100)         NULL,
+    registrado_por      VARCHAR(50)          NULL,
+    observaciones       TEXT                 NULL,
+    fecha_actualizacion DATETIME             NULL,
+    motivo_cambio       TEXT                 NULL,
+    PRIMARY KEY (id),
+    KEY idx_me_fecha      (fecha_registro),
+    KEY idx_me_producto   (id_producto),
+    KEY idx_me_tienda_ing (id_tienda_ingreso),
+    CONSTRAINT fk_me_callao_producto   FOREIGN KEY (id_producto)       REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_me_callao_tipo_op    FOREIGN KEY (id_tipo_operacion) REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_me_callao_tienda_sal FOREIGN KEY (id_tienda_salida)  REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_me_callao_tienda_ing FOREIGN KEY (id_tienda_ingreso) REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_me_callao_um         FOREIGN KEY (id_unidad_medida)  REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Movimientos de entrada para Callao';
+--
+Select * from movimientos_entrada_callao;
+--
+-- TABLA HISTORIAL CAMBIOS ENTRADA CALLAO
+--
+CREATE TABLE IF NOT EXISTS cambios_entrada_callao (
+    id                    INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    id_movimiento_entrada INT UNSIGNED     NOT NULL,
+    fecha_movimiento_orig DATETIME         NOT NULL,
+    id_producto           INT 		       NOT NULL,
+    id_tipo_operacion     INT  			   NOT NULL,
+    id_tienda_salida      INT              NOT NULL,
+    id_tienda_ingreso     INT              NOT NULL,
+    operador           	  VARCHAR(50)          NULL,
+    cantidad              INT	           NOT NULL,
+    cantidad_anterior     INT              NOT NULL,
+    id_unidad_medida      INT 			   NOT NULL,
+    entregado_por         VARCHAR(100)         NULL,
+    registrado_por        VARCHAR(50)          NULL,
+    observaciones         TEXT                 NULL,
+    motivo_cambio         TEXT                 NULL,
+    fecha_cambio          DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_ce_movimiento (id_movimiento_entrada),
+    CONSTRAINT fk_ce_callao_movimiento FOREIGN KEY (id_movimiento_entrada) REFERENCES movimientos_entrada_callao(id),
+    CONSTRAINT fk_ce_callao_producto   FOREIGN KEY (id_producto)           REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_ce_callao_tipo_op    FOREIGN KEY (id_tipo_operacion)     REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_ce_callao_tienda_sal FOREIGN KEY (id_tienda_salida)      REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_ce_callao_tienda_ing FOREIGN KEY (id_tienda_ingreso)     REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_ce_callao_um         FOREIGN KEY (id_unidad_medida)      REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Historial de ediciones sobre entradas para los almacenes de Callao';
+--
+select * from cambios_entrada_callao;
+--
+-- TABLA MOVIMIENTOS DE SALIDA CALLAO
+--
+CREATE TABLE IF NOT EXISTS movimientos_salida_callao (
+    id                  INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    fecha_registro      DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_producto         INT 		     NOT NULL,
+    id_tipo_operacion   INT 		     NOT NULL,
+    nro_comprobante     VARCHAR(50)          NULL,
+    asesor              VARCHAR(50)          NULL,
+    cantidad            INT	         	 NOT NULL,
+    cantidad_anterior   INT              NOT NULL,
+    id_unidad_medida    INT 			 NOT NULL,
+    id_tienda           INT              NOT NULL,
+    entregado_por       VARCHAR(100)         NULL,
+    registrado_por   	VARCHAR(50)          NULL,
+    observaciones       TEXT                 NULL,
+    fecha_actualizacion DATETIME             NULL,
+    motivo_cambio       TEXT                 NULL,
+    PRIMARY KEY (id),
+    KEY idx_ms_fecha    (fecha_registro),
+    KEY idx_ms_producto (id_producto),
+    KEY idx_ms_tienda   (id_tienda),
+    CONSTRAINT fk_ms_callao_producto   FOREIGN KEY (id_producto)       REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_ms_callao_tipo_op    FOREIGN KEY (id_tipo_operacion) REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_ms_callao_tienda     FOREIGN KEY (id_tienda)         REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_ms_callao_um         FOREIGN KEY (id_unidad_medida)  REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Movimientos de salida Callao';
+--
+select * from movimientos_salida_callao;
+--
+-- TABLA HISTORIAL CAMBIOS SALIDA CALLAO
+--
+CREATE TABLE IF NOT EXISTS cambios_salida_callao (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id_movimiento_salida INT UNSIGNED,
+    fecha_movimiento_orig DATETIME,
+    id_producto INT,
+    id_tipo_operacion INT,
+    nro_comprobante VARCHAR(50),
+    asesor VARCHAR(150),
+    cantidad INT,
+    cantidad_anterior INT,
+    id_unidad_medida INT,
+    id_tienda INT,
+    entregado_por VARCHAR(100),
+    registrado_por VARCHAR(50),
+    observaciones TEXT,
+    motivo_cambio TEXT,
+    fecha_cambio         DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_cs_movimiento (id_movimiento_salida),
+    CONSTRAINT fk_cs_callao_movimiento FOREIGN KEY (id_movimiento_salida) REFERENCES movimientos_salida_callao(id),
+    CONSTRAINT fk_cs_callao_producto   FOREIGN KEY (id_producto)          REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_cs_callao_tipo_op    FOREIGN KEY (id_tipo_operacion)    REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_cs_callao_tienda     FOREIGN KEY (id_tienda)            REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_cs_callao_um         FOREIGN KEY (id_unidad_medida)     REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Historial de ediciones sobre salidas para Callao';
+--
+select * from cambios_salida_callao;
+--
+
+--
+-- TABLA MOVIMIENTOS DE TRASLADO CALLAO
+--
+CREATE TABLE IF NOT EXISTS movimientos_traslado_callao (
+    id                  INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    fecha_registro      DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_producto         INT              NOT NULL,
+    id_tipo_operacion   INT              NOT NULL,
+    id_tienda_salida    INT              NOT NULL  COMMENT 'Almacén/tienda de origen',
+    id_tienda_ingreso   INT              NOT NULL  COMMENT 'Tienda destino',
+    operador            VARCHAR(50)          NULL,
+    cantidad            INT              NOT NULL,
+    cantidad_anterior   INT              NOT NULL,
+    id_unidad_medida    INT  NOT NULL,
+    entregado_por       VARCHAR(100)         NULL,
+    registrado_por      VARCHAR(50)          NULL,
+    observaciones       TEXT                 NULL,
+    fecha_actualizacion DATETIME             NULL,
+    motivo_cambio       TEXT                 NULL,
+    PRIMARY KEY (id),
+    KEY idx_mr_fecha      (fecha_registro),
+    KEY idx_mr_producto   (id_producto),
+    KEY idx_mr_tienda_ing (id_tienda_ingreso),
+    CONSTRAINT fk_mr_callao_producto   FOREIGN KEY (id_producto)       REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_mr_callao_tipo_op    FOREIGN KEY (id_tipo_operacion) REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_mr_callao_tienda_sal FOREIGN KEY (id_tienda_salida)  REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_mr_callao_tienda_ing FOREIGN KEY (id_tienda_ingreso) REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_mr_callao_um         FOREIGN KEY (id_unidad_medida)  REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Movimientos de traslado para Callao';
+--
+Select * from movimientos_traslado_callao;
+--
+-- TABLA HISTORIAL CAMBIOS TRASLADO CALLAO
+--
+CREATE TABLE IF NOT EXISTS cambios_traslado_callao (
+    id                    INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    id_movimiento_traslado INT UNSIGNED     NOT NULL,
+    fecha_movimiento_orig DATETIME         NOT NULL,
+    id_producto           INT 		       NOT NULL,
+    id_tipo_operacion     INT  			   NOT NULL,
+    id_tienda_salida      INT              NOT NULL,
+    id_tienda_ingreso     INT              NOT NULL,
+    operador           	  VARCHAR(50)          NULL,
+    cantidad              INT	           NOT NULL,
+    cantidad_anterior     INT              NOT NULL,
+    id_unidad_medida      INT 			   NOT NULL,
+    entregado_por         VARCHAR(100)         NULL,
+    registrado_por        VARCHAR(50)          NULL,
+    observaciones         TEXT                 NULL,
+    motivo_cambio         TEXT                 NULL,
+    fecha_cambio          DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_cr_movimiento (id_movimiento_traslado),
+    CONSTRAINT fk_cr_callao_movimiento FOREIGN KEY (id_movimiento_traslado) REFERENCES movimientos_traslado_callao(id),
+    CONSTRAINT fk_cr_callao_producto   FOREIGN KEY (id_producto)           REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_cr_callao_tipo_op    FOREIGN KEY (id_tipo_operacion)     REFERENCES tipos_operacion_sea_callao(id),
+    CONSTRAINT fk_cr_callao_tienda_sal FOREIGN KEY (id_tienda_salida)      REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_cr_callao_tienda_ing FOREIGN KEY (id_tienda_ingreso)     REFERENCES tiendas_gestion_sea_callao(id),
+    CONSTRAINT fk_cr_callao_um         FOREIGN KEY (id_unidad_medida)      REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Historial de ediciones sobre traslados para los almacenes de Callao';
+--
+select * from cambios_traslado_callao;
+--
+
+--
+-- TABLA CABECERA DE ABASTECIMIENTO CALLAO
+--
+CREATE TABLE IF NOT EXISTS abastecimiento_cabecera_callao (
+    id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    nombre         VARCHAR(150) NOT NULL,
+    registrado_por VARCHAR(50) NOT NULL,
+    fecha_registro DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_abast_nombre (nombre)
+) ENGINE=InnoDB COMMENT='Encabezado de cada sesión de abastecimiento guardada';
+--
+select * from abastecimiento_cabecera_callao;
+--
+-- TABLA DETALLE ABASTECIMIENTO CALLAO
+-- 
+CREATE TABLE IF NOT EXISTS abastecimiento_detalle_callao (
+    id                   INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    id_abastecimiento    INT UNSIGNED     NOT NULL,
+    id_producto          INT  		      NOT NULL,
+    cantidad_reg_calculo INT	          NOT NULL,
+    id_unidad_medida     INT 		  	  NOT NULL,
+    cant_almacen_oficina INT	          NOT NULL,
+    cant_almacen_oficina_docenas INT	          NOT NULL,
+    cant_alamacen_callao_1_a     INT	          NOT NULL,
+    cant_alamacen_callao_1_b     INT	  NOT NULL,
+    cant_almacen_callao_2     INT	          NOT NULL,
+    abastecer_cajas      INT	          NOT NULL,
+    enviar               ENUM('SI','NO')  NOT NULL DEFAULT 'NO',
+    PRIMARY KEY (id),
+    KEY idx_abd_callao_abast   (id_abastecimiento),
+    KEY idx_abd_callao_producto (id_producto),
+    CONSTRAINT fk_abd_callao_cabecera FOREIGN KEY (id_abastecimiento) REFERENCES abastecimiento_cabecera_callao(id) ON DELETE CASCADE,
+    CONSTRAINT fk_abd_callao_producto FOREIGN KEY (id_producto)       REFERENCES productos_abastecimiento_callao(id),
+    CONSTRAINT fk_abd_callao_um       FOREIGN KEY (id_unidad_medida)  REFERENCES unidades_medida_sea_callao(id)
+) ENGINE=InnoDB COMMENT='Abastecimiento guardado para almacenes Callao';
+--
+select * from abastecimiento_detalle_callao;
+
+-- ==================================================
+-- TABLA PARA LAS ACTAS EN MOVIMIENTOS CALLAO
+-- ================================================== 
+CREATE TABLE movimientos_actas_callao (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    codigo_carga VARCHAR(50) NULL,
+    id_movimiento_entrada INT UNSIGNED NULL,
+    id_movimiento_salida INT UNSIGNED NULL,
+    id_movimiento_traslado INT UNSIGNED NULL,
+    nombre_imagen VARCHAR(250),
+    url_imagen VARCHAR(255) NOT NULL,
+    fecha_subida DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_acta_callao_entrada 
+        FOREIGN KEY (id_movimiento_entrada) 
+        REFERENCES movimientos_entrada_callao(id) ON DELETE CASCADE,
+    CONSTRAINT fk_acta_callao_salida 
+        FOREIGN KEY (id_movimiento_salida) 
+        REFERENCES movimientos_salida_callao(id) ON DELETE CASCADE,
+	CONSTRAINT fk_acta_callao_traslado 
+        FOREIGN KEY (id_movimiento_traslado) 
+        REFERENCES movimientos_traslado_callao(id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Actas de soporte para entradas y salidas de Callao';
+--
+Select * from movimientos_actas_callao;
+--
+CREATE INDEX idx_actas_callao_codigo_carga_callao ON movimientos_actas_callao(codigo_carga);
+--
+-- ==========================================
+-- CONTRASEÑA DINAMICA CALLAO
+-- ========================================== 
+--
+CREATE TABLE configuracion_sistema_callao (
+    clave VARCHAR(50) PRIMARY KEY, -- Ejemplo: 'pass_movimiento_sin_acta'
+    valor VARCHAR(255) NOT NULL,
+    ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    actualizado_por VARCHAR(50)
+);
+Select * from colaboradores;
+
+-- ===========================================================================================
+-- PROCEDIMIENTOS ALMANCENADOS PARA GESTION DE SALIDA/ENTRADA/TRASLADO/ABASTECIMIENTO CALLAO
+-- ===========================================================================================
+
+-- 
+-- SP: REGISTRAR UNA ENTRADA CALLAO
+--
+DELIMITER $$
+CREATE PROCEDURE sp_registrar_entrada_callao (
+    IN p_id_producto        INT UNSIGNED,
+    IN p_id_tipo_operacion  INT,
+    IN p_id_tienda_salida   INT,
+    IN p_id_tienda_ingreso  INT,
+    IN p_operador           VARCHAR(50),
+    IN p_cantidad           INT,
+    IN p_id_unidad_medida   INT,
+    IN p_entregado_por      VARCHAR(100),
+    IN p_registrado_por     VARCHAR(50),
+    IN p_observaciones      TEXT
+)
+BEGIN
+    DECLARE v_cant_anterior INT;
+
+    -- Obtener stock actual en la tienda de ingreso (antes del movimiento)
+    SELECT IFNULL(cantidad, 0) INTO v_cant_anterior
+    FROM existencias_almacen_callao
+    WHERE id_producto = p_id_producto AND id_tienda = p_id_tienda_ingreso;
+
+    -- Insertar movimiento con cantidad_anterior calculada
+    INSERT INTO movimientos_entrada_callao (
+        id_producto, id_tipo_operacion, id_tienda_salida, id_tienda_ingreso,
+        operador, cantidad, cantidad_anterior, id_unidad_medida, entregado_por,
+        registrado_por, observaciones
+    ) VALUES (
+        p_id_producto, p_id_tipo_operacion, p_id_tienda_salida, p_id_tienda_ingreso,
+        p_operador, p_cantidad, v_cant_anterior, p_id_unidad_medida, p_entregado_por,
+        p_registrado_por, p_observaciones
+    );
+
+    SET @v_id = LAST_INSERT_ID();
+
+    -- Actualizar existencias sumando la cantidad ingresada
+    INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad)
+    VALUES (p_id_producto, p_id_tienda_ingreso, p_cantidad)
+    ON DUPLICATE KEY UPDATE cantidad = cantidad + p_cantidad;
+
+    SELECT @v_id AS id_movimiento_generado;
+END$$
+
+-- 
+-- SP: REGISTRAR UNA SALIDA CALLAO
+--
+DELIMITER $$
+CREATE PROCEDURE sp_registrar_salida_callao (
+    IN p_id_producto        INT UNSIGNED,
+    IN p_id_tipo_operacion  INT,
+    IN p_nro_comprobante    VARCHAR(50),
+    IN p_asesor             VARCHAR(150),
+    IN p_cantidad           INT,
+    IN p_id_unidad_medida   INT,
+    IN p_id_tienda          INT,
+    IN p_entregado_por      VARCHAR(100),
+    IN p_registrado_por     VARCHAR(50),
+    IN p_observaciones      TEXT
+)
+BEGIN
+    DECLARE v_cant_anterior INT;
+
+    -- Obtener stock actual en la tienda (antes de la salida)
+    SELECT IFNULL(cantidad, 0) INTO v_cant_anterior
+    FROM existencias_almacen_callao
+    WHERE id_producto = p_id_producto AND id_tienda = p_id_tienda;
+
+    -- Insertar movimiento con cantidad_anterior calculada
+    INSERT INTO movimientos_salida_callao (
+        id_producto, id_tipo_operacion, nro_comprobante, asesor,
+        cantidad, cantidad_anterior, id_unidad_medida, id_tienda,
+        entregado_por, registrado_por, observaciones
+    ) VALUES (
+        p_id_producto, p_id_tipo_operacion, p_nro_comprobante, p_asesor,
+        p_cantidad, v_cant_anterior, p_id_unidad_medida, p_id_tienda,
+        p_entregado_por, p_registrado_por, p_observaciones
+    );
+
+    SET @v_id = LAST_INSERT_ID();
+
+    -- Actualizar existencias restando la cantidad vendida
+    INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad)
+    VALUES (p_id_producto, p_id_tienda, -p_cantidad)
+    ON DUPLICATE KEY UPDATE cantidad = cantidad - p_cantidad;
+
+    SELECT @v_id AS id_movimiento_generado;
+END$$
+
+
+-- 
+-- SP: REGISTRAR UNA TRASLADO CALLAO
+--
+DELIMITER $$
+CREATE PROCEDURE sp_registrar_traslado_callao (
+    IN p_id_producto        INT UNSIGNED,
+    IN p_id_tipo_operacion  INT,
+    IN p_id_tienda_salida   INT,
+    IN p_id_tienda_ingreso  INT,
+    IN p_operador           VARCHAR(50),
+    IN p_cantidad           INT,
+    IN p_id_unidad_medida   INT,
+    IN p_entregado_por      VARCHAR(100),
+    IN p_registrado_por     VARCHAR(50),
+    IN p_observaciones      TEXT
+)
+BEGIN
+    DECLARE v_cant_anterior INT;
+
+    -- Obtener stock actual en la tienda de ingreso (antes del movimiento)
+    SELECT IFNULL(cantidad, 0) INTO v_cant_anterior
+    FROM existencias_almacen_callao
+    WHERE id_producto = p_id_producto AND id_tienda = p_id_tienda_ingreso;
+
+    -- Insertar movimiento con cantidad_anterior calculada
+    INSERT INTO movimientos_traslado_callao (
+        id_producto, id_tipo_operacion, id_tienda_salida, id_tienda_ingreso,
+        operador, cantidad, cantidad_anterior, id_unidad_medida, entregado_por,
+        registrado_por, observaciones
+    ) VALUES (
+        p_id_producto, p_id_tipo_operacion, p_id_tienda_salida, p_id_tienda_ingreso,
+        p_operador, p_cantidad, v_cant_anterior, p_id_unidad_medida, p_entregado_por,
+        p_registrado_por, p_observaciones
+    );
+
+    SET @v_id = LAST_INSERT_ID();
+
+    -- Actualizar existencias sumando la cantidad ingresada
+    INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad)
+    VALUES (p_id_producto, p_id_tienda_ingreso, p_cantidad)
+    ON DUPLICATE KEY UPDATE cantidad = cantidad + p_cantidad;
+
+    SELECT @v_id AS id_movimiento_generado;
+END$$
+
+
+--
+-- SP: EDITAR UNA ENTRADA CALLAO
+--
+DELIMITER $$
+CREATE PROCEDURE sp_editar_entrada_callao (
+    IN p_id_movimiento      INT UNSIGNED,
+    IN p_id_producto        INT UNSIGNED,
+    IN p_id_tipo_operacion  INT,
+    IN p_id_tienda_salida   INT,
+    IN p_id_tienda_ingreso  INT,
+    IN p_operador           VARCHAR(50),
+    IN p_cantidad           INT,
+    IN p_id_unidad_medida   INT,
+    IN p_entregado_por      VARCHAR(100),
+    IN p_registrado_por     VARCHAR(50),
+    IN p_observaciones      TEXT,
+    IN p_motivo_cambio      TEXT
+)
+BEGIN
+    DECLARE v_cant_ant     INT;
+    DECLARE v_tienda_ant   INT;
+    DECLARE v_prod_ant     INT UNSIGNED;
+    DECLARE v_fecha_orig   DATETIME;
+    DECLARE v_nueva_cant_anterior INT;
+
+    -- Obtener datos originales del movimiento
+    SELECT cantidad, id_tienda_ingreso, id_producto, fecha_registro
+    INTO   v_cant_ant, v_tienda_ant, v_prod_ant, v_fecha_orig
+    FROM   movimientos_entrada_callao
+    WHERE  id = p_id_movimiento;
+
+    -- Guardar snapshot en historial
+    INSERT INTO cambios_entrada_callao (
+        id_movimiento_entrada, fecha_movimiento_orig,
+        id_producto, id_tipo_operacion, id_tienda_salida, id_tienda_ingreso,
+        operador, cantidad, cantidad_anterior, id_unidad_medida,
+        entregado_por, registrado_por, observaciones, motivo_cambio
+    )
+    SELECT id, v_fecha_orig,
+           id_producto, id_tipo_operacion, id_tienda_salida, id_tienda_ingreso,
+           operador, cantidad, cantidad_anterior, id_unidad_medida,
+           entregado_por, registrado_por, observaciones, p_motivo_cambio
+    FROM movimientos_entrada_callao
+    WHERE id = p_id_movimiento;
+
+    -- Revertir existencia anterior (restar lo que se había sumado)
+    UPDATE existencias_almacen_callao
+    SET cantidad = cantidad - v_cant_ant
+    WHERE id_producto = v_prod_ant AND id_tienda = v_tienda_ant;
+
+    -- Obtener el stock actual en la nueva tienda de ingreso (para cantidad_anterior)
+    SELECT IFNULL(cantidad, 0) INTO v_nueva_cant_anterior
+    FROM existencias_almacen_callao
+    WHERE id_producto = p_id_producto AND id_tienda = p_id_tienda_ingreso;
+
+    -- Actualizar movimiento con los nuevos datos
+    UPDATE movimientos_entrada_callao
+    SET id_producto         = p_id_producto,
+        id_tipo_operacion   = p_id_tipo_operacion,
+        id_tienda_salida    = p_id_tienda_salida,
+        id_tienda_ingreso   = p_id_tienda_ingreso,
+        operador            = p_operador,
+        cantidad            = p_cantidad,
+        cantidad_anterior   = v_nueva_cant_anterior,
+        id_unidad_medida    = p_id_unidad_medida,
+        entregado_por       = p_entregado_por,
+        registrado_por      = p_registrado_por,
+        observaciones       = p_observaciones,
+        motivo_cambio       = p_motivo_cambio,
+        fecha_actualizacion = NOW()
+    WHERE id = p_id_movimiento;
+
+    -- Aplicar nueva existencia (sumar la nueva cantidad)
+    INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad)
+    VALUES (p_id_producto, p_id_tienda_ingreso, p_cantidad)
+    ON DUPLICATE KEY UPDATE cantidad = cantidad + p_cantidad;
+END$$
+
+
+--
+-- SP: EDITAR UNA SALIDA CALLAO
+--
+DELIMITER $$
+CREATE PROCEDURE sp_editar_salida_callao (
+    IN p_id_movimiento      INT UNSIGNED,
+    IN p_id_producto        INT UNSIGNED,
+    IN p_id_tipo_operacion  INT,
+    IN p_nro_comprobante    VARCHAR(50),
+    IN p_asesor             VARCHAR(150),
+    IN p_cantidad           INT,
+    IN p_id_unidad_medida   INT,
+    IN p_id_tienda          INT,
+    IN p_entregado_por      VARCHAR(100),
+    IN p_registrado_por     VARCHAR(50),
+    IN p_observaciones      TEXT,
+    IN p_motivo_cambio      TEXT
+)
+BEGIN
+    DECLARE v_cant_ant   INT;
+    DECLARE v_tienda_ant INT;
+    DECLARE v_prod_ant   INT UNSIGNED;
+    DECLARE v_fecha_orig DATETIME;
+    DECLARE v_nueva_cant_anterior INT;
+
+    -- Obtener datos originales del movimiento
+    SELECT cantidad, id_tienda, id_producto, fecha_registro
+    INTO   v_cant_ant, v_tienda_ant, v_prod_ant, v_fecha_orig
+    FROM   movimientos_salida_callao
+    WHERE  id = p_id_movimiento;
+
+    -- Guardar snapshot en historial
+    INSERT INTO cambios_salida_callao (
+        id_movimiento_salida, fecha_movimiento_orig,
+        id_producto, id_tipo_operacion, nro_comprobante, asesor,
+        cantidad, cantidad_anterior, id_unidad_medida, id_tienda,
+        entregado_por, registrado_por, observaciones, motivo_cambio
+    )
+    SELECT id, v_fecha_orig,
+           id_producto, id_tipo_operacion, nro_comprobante, asesor,
+           cantidad, cantidad_anterior, id_unidad_medida, id_tienda,
+           entregado_por, registrado_por, observaciones, p_motivo_cambio
+    FROM movimientos_salida_callao
+    WHERE id = p_id_movimiento;
+
+    -- Revertir existencia anterior (devolver el stock que se había restado)
+    UPDATE existencias_almacen_callao
+    SET cantidad = cantidad + v_cant_ant
+    WHERE id_producto = v_prod_ant AND id_tienda = v_tienda_ant;
+
+    -- Obtener el stock actual en la tienda (para cantidad_anterior)
+    SELECT IFNULL(cantidad, 0) INTO v_nueva_cant_anterior
+    FROM existencias_almacen_callao
+    WHERE id_producto = p_id_producto AND id_tienda = p_id_tienda;
+
+    -- Actualizar movimiento con los nuevos datos
+    UPDATE movimientos_salida_callao
+    SET id_producto         = p_id_producto,
+        id_tipo_operacion   = p_id_tipo_operacion,
+        nro_comprobante     = p_nro_comprobante,
+        asesor              = p_asesor,
+        cantidad            = p_cantidad,
+        cantidad_anterior   = v_nueva_cant_anterior,
+        id_unidad_medida    = p_id_unidad_medida,
+        id_tienda           = p_id_tienda,
+        entregado_por       = p_entregado_por,
+        registrado_por      = p_registrado_por,
+        observaciones       = p_observaciones,
+        motivo_cambio       = p_motivo_cambio,
+        fecha_actualizacion = NOW()
+    WHERE id = p_id_movimiento;
+
+    -- Aplicar nueva salida (restar la nueva cantidad)
+    INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad)
+    VALUES (p_id_producto, p_id_tienda, -p_cantidad)
+    ON DUPLICATE KEY UPDATE cantidad = cantidad - p_cantidad;
+END$$
+
+
+--
+-- SP: EDITAR UNA TRASLADO CALLAO
+--
+DELIMITER $$
+CREATE PROCEDURE sp_editar_traslado_callao (
+    IN p_id_movimiento      INT UNSIGNED,
+    IN p_id_producto        INT UNSIGNED,
+    IN p_id_tipo_operacion  INT,
+    IN p_id_tienda_salida   INT,
+    IN p_id_tienda_ingreso  INT,
+    IN p_operador           VARCHAR(50),
+    IN p_cantidad           INT,
+    IN p_id_unidad_medida   INT,
+    IN p_entregado_por      VARCHAR(100),
+    IN p_registrado_por     VARCHAR(50),
+    IN p_observaciones      TEXT,
+    IN p_motivo_cambio      TEXT
+)
+BEGIN
+    DECLARE v_cant_ant     INT;
+    DECLARE v_tienda_ant   INT;
+    DECLARE v_prod_ant     INT UNSIGNED;
+    DECLARE v_fecha_orig   DATETIME;
+    DECLARE v_nueva_cant_anterior INT;
+
+    -- Obtener datos originales del movimiento
+    SELECT cantidad, id_tienda_ingreso, id_producto, fecha_registro
+    INTO   v_cant_ant, v_tienda_ant, v_prod_ant, v_fecha_orig
+    FROM   movimientos_traslado_callao
+    WHERE  id = p_id_movimiento;
+
+    -- Guardar snapshot en historial
+    INSERT INTO cambios_traslado_callao (
+        id_movimiento_traslado, fecha_movimiento_orig,
+        id_producto, id_tipo_operacion, id_tienda_salida, id_tienda_ingreso,
+        operador, cantidad, cantidad_anterior, id_unidad_medida,
+        entregado_por, registrado_por, observaciones, motivo_cambio
+    )
+    SELECT id, v_fecha_orig,
+           id_producto, id_tipo_operacion, id_tienda_salida, id_tienda_ingreso,
+           operador, cantidad, cantidad_anterior, id_unidad_medida,
+           entregado_por, registrado_por, observaciones, p_motivo_cambio
+    FROM movimientos_traslado_callao
+    WHERE id = p_id_movimiento;
+
+    -- Revertir existencia anterior (restar lo que se había sumado)
+    UPDATE existencias_almacen_callao
+    SET cantidad = cantidad - v_cant_ant
+    WHERE id_producto = v_prod_ant AND id_tienda = v_tienda_ant;
+
+    -- Obtener el stock actual en la nueva tienda de ingreso (para cantidad_anterior)
+    SELECT IFNULL(cantidad, 0) INTO v_nueva_cant_anterior
+    FROM existencias_almacen_callao
+    WHERE id_producto = p_id_producto AND id_tienda = p_id_tienda_ingreso;
+
+    -- Actualizar movimiento con los nuevos datos
+    UPDATE movimientos_traslado_callao
+    SET id_producto         = p_id_producto,
+        id_tipo_operacion   = p_id_tipo_operacion,
+        id_tienda_salida    = p_id_tienda_salida,
+        id_tienda_ingreso   = p_id_tienda_ingreso,
+        operador            = p_operador,
+        cantidad            = p_cantidad,
+        cantidad_anterior   = v_nueva_cant_anterior,
+        id_unidad_medida    = p_id_unidad_medida,
+        entregado_por       = p_entregado_por,
+        registrado_por      = p_registrado_por,
+        observaciones       = p_observaciones,
+        motivo_cambio       = p_motivo_cambio,
+        fecha_actualizacion = NOW()
+    WHERE id = p_id_movimiento;
+
+    -- Aplicar nueva existencia (sumar la nueva cantidad)
+    INSERT INTO existencias_almacen_callao (id_producto, id_tienda, cantidad)
+    VALUES (p_id_producto, p_id_tienda_ingreso, p_cantidad)
+    ON DUPLICATE KEY UPDATE cantidad = cantidad + p_cantidad;
+END$$
+
+
+--
+-- SP: CREAR CABECERA DE ABASTECIMIENTO CALLAO
+--
+DELIMITER $$
+CREATE PROCEDURE sp_guardar_abastecimiento_callao (
+    IN  p_nombre         VARCHAR(150),
+    IN  p_registrado_por VARCHAR(100),
+    OUT p_id_cabecera    INT UNSIGNED
+)
+BEGIN
+    INSERT INTO abastecimiento_cabecera_callao (nombre, registrado_por)
+    VALUES (p_nombre, p_registrado_por);
+    SET p_id_cabecera = LAST_INSERT_ID();
+END$$
+
+--
+-- SP: GUARDAR DETALLES ABASTECIMIENTOS CALLAO
+--
+DELIMITER $$
+CREATE PROCEDURE sp_guardar_abastecimiento_detalle_callao (
+    IN p_id_abastecimiento INT UNSIGNED,
+    IN p_id_producto       INT UNSIGNED,
+    IN p_cant_almacen_oficina         INT,
+    IN p_cant_almacen_oficina_docenas         INT,
+    IN p_cant_almacen_callao_1_a         INT,
+    IN p_cant_almacen_callao_1_b         INT,
+    IN p_cant_almacen_callao_2         INT,
+    IN p_abastecer_cajas   INT,
+    IN p_enviar            ENUM('SI','NO')
+)
+BEGIN
+    DECLARE v_um INT;
+    DECLARE v_reg_cant INT;
+
+    -- Obtener unidad de medida y cantidad de reg. cálculo del producto
+    SELECT id_unidad_medida_reg, cantidad_reg_calculo
+    INTO v_um, v_reg_cant
+    FROM productos_abastecimiento_callao
+    WHERE id = p_id_producto;
+
+    INSERT INTO abastecimiento_detalle_callao (
+        id_abastecimiento, id_producto, cantidad_reg_calculo, id_unidad_medida,
+        cant_almacen_oficina, cant_almacen_oficina_docenas, cant_almacen_callao_1_a, cant_almacen_callao_1_b , cant_almacen_callao_2,
+        abastecer_cajas, enviar
+    ) VALUES (
+        p_id_abastecimiento, p_id_producto, v_reg_cant, v_um,
+        p_cant_almacen_oficina, p_cant_almacen_oficina_docenas, p_cant_almacen_callao_1_a, p_cant_almacen_callao_1_b, p_cant_almacen_callao_2,
+        p_abastecer_cajas, p_enviar
+    );
+END$$
