@@ -687,13 +687,13 @@ export default function StockTotalPage() {
                                     <tr className="bg-[#002D5A] text-white">
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20]">Código</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] min-w-[200px]">Producto</th>
-                                        <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">Cant.</th>
+                                        <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">Cant. en Caja</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">U. Medida</th>
                                         <th colSpan={5} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
                                             Existencia Almacén
                                         </th>
-                                        <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center bg-[#001F3D]">Disponibles</th>
-                                        <th rowSpan={2} className="px-2 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
+                                        <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center bg-[#002D5A]">Disponibles</th>
+                                        <th rowSpan={2} className="px-2 py-2 border-r border-[#ffffff20] text-center bg-[#002D5A]">
                                             Doc,Dec,Uni Sueltas
                                         </th>
                                     </tr>

@@ -732,7 +732,7 @@ function ModalEntrada({
                                 <input
                                     type="text"
                                     value={form.operadorCustom}
-                                    onChange={e => setForm(f => ({ ...f, operadorCustom: e.target.value }))}
+                                    onChange={e => setForm(f => ({ ...f, operadorCustom: e.target.value.toUpperCase() }))}
                                     className="form-input mt-2"
                                     style={{ fontSize: 12 }}
                                     placeholder="Nombre del operador"
@@ -822,7 +822,7 @@ function ModalEntrada({
                                 <input
                                     type="text"
                                     value={form.registradoCustom}
-                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value }))}
+                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
                                     className="form-input w-full mt-2"
                                     style={{ fontSize: 12 }}
                                     placeholder="Nombre"

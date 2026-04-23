@@ -32,15 +32,21 @@ const navItems = [
         items: [
             { id: 'entradas', label: 'Entradas', href: '/callao/entradas', icon: PackagePlus },
             { id: 'salidas', label: 'Salidas', href: '/callao/salidas', icon: PackageMinus },
-            { id: 'traslado', label: 'Traslado', href: '/callao/traslado', icon: PackagePlus },
+            { id: 'traslado', label: 'Traslados', href: '/callao/traslado', icon: PackagePlus },
         ],
     },
     {
-        group: 'HISTORIAL',
+        group: 'EDITAR MOVIMIENTOS',
         items: [
             { id: 'historial-entradas', label: 'Historial Entradas', href: '/callao/historial-entradas', icon: History },
             { id: 'historial-salidas', label: 'Historial Salidas', href: '/callao/historial-salidas', icon: ClipboardList },
             { id: 'historial-traslado', label: 'Historial Traslado', href: '/callao/historial-traslado', icon: History },
+            
+        ],
+    },
+    {
+        group: 'HISTORIAL DE MOVIENTOS EDITADOS',
+        items: [
             { id: 'cambios-entrada', label: 'Cambios Entrada', href: '/callao/cambios-entrada', icon: TrendingUp },
             { id: 'cambios-salida', label: 'Cambios Salida', href: '/callao/cambios-salida', icon: TrendingUp },
             { id: 'cambios-traslado', label: 'Cambios Traslado', href: '/callao/cambios-traslado', icon: TrendingUp },

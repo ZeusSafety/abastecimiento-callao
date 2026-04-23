@@ -78,7 +78,7 @@ export function getOperacionColor(operacion: string): { bg: string; text: string
         case 'ENTRADA':
             return { bg: 'bg-green-50', text: 'text-green-700' };
         case 'SALIDA':
-            return { bg: 'bg-cyan-50', text: 'text-cyan-700' };
+            return { bg: 'bg-red-50', text: 'text-red-700' };
         case 'OTROS':
             return { bg: 'bg-gray-50', text: 'text-gray-700' };
         default:

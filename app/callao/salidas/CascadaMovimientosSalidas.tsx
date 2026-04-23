@@ -268,7 +268,7 @@ export default function CascadaMovimientosSalidas({
                                 </div>
                               </div>
                               <div className="w-full sm:w-[180px]">
-                                <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">OPERADOR</div>
+                                <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">ASESOR</div>
                                 <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
                                   {operador}
                                 </div>

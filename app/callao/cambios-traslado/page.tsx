@@ -7,25 +7,31 @@ import { exportToExcel, exportToPDF } from '../../utils/export';
 
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
     if (!fechaStr) return { fecha: '-', hora: '' };
-    try {
-        let d: Date;
-        if (fechaStr.includes('/')) {
-            const parts = fechaStr.split(' ');
-            const [dia, mes, anio] = parts[0].split('/');
-            d = new Date(`${anio}-${mes}-${dia} ${parts.slice(1).join(' ')}`);
-        } else {
-            d = new Date(fechaStr);
-        }
-        if (isNaN(d.getTime())) return { fecha: fechaStr, hora: '-' };
-        const dia = d.getDate().toString().padStart(2, '0');
-        const mes = (d.getMonth() + 1).toString().padStart(2, '0');
-        const fechaFormateada = `${dia}/${mes}/${d.getFullYear()}`;
-        let horas = d.getHours();
-        const minutos = d.getMinutes().toString().padStart(2, '0');
-        const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
-        horas = horas % 12 || 12;
-        return { fecha: fechaFormateada, hora: `${horas}:${minutos} ${periodo}` };
-    } catch { return { fecha: fechaStr, hora: '-' }; }
+    const raw = fechaStr.trim().replace(/\s+/g, ' ');
+    const dateMatch = raw.match(/^(\d{2}\/\d{2}\/\d{4})\s+(.+)$/);
+    if (dateMatch) {
+        return { fecha: dateMatch[1], hora: dateMatch[2] || '-' };
+    }
+
+    let d: Date;
+    if (fechaStr.includes('/')) {
+        const parts = fechaStr.split(' ');
+        const fechaPart = parts[0];
+        const horaPart = parts.slice(1).join(' ');
+        const [dia, mes, anio] = fechaPart.split('/');
+        d = new Date(`${anio}-${mes}-${dia} ${horaPart}`);
+    } else {
+        d = new Date(fechaStr);
+    }
+    if (isNaN(d.getTime())) return { fecha: fechaStr, hora: '-' };
+    const dia = d.getDate().toString().padStart(2, '0');
+    const mes = (d.getMonth() + 1).toString().padStart(2, '0');
+    const anio = d.getFullYear();
+    let horas = d.getHours();
+    const minutos = d.getMinutes().toString().padStart(2, '0');
+    const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
+    horas = horas % 12 || 12;
+    return { fecha: `${dia}/${mes}/${anio}`, hora: `${horas}:${minutos} ${periodo}` };
 }
 
 export default function CambiosTrasladoPage() {

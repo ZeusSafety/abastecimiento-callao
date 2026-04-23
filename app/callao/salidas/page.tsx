@@ -691,7 +691,7 @@ function ModalSalida({
                                 <input
                                     type="text"
                                     value={form.registradoCustom}
-                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value }))}
+                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
                                     className="form-input w-full mt-2"
                                     style={{ fontSize: 12 }}
                                     placeholder="Nombre"

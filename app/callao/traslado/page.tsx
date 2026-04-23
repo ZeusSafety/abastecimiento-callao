@@ -701,7 +701,7 @@ function ModalTraslado({
                                 <input
                                     type="text"
                                     value={form.operadorCustom}
-                                    onChange={e => setForm(f => ({ ...f, operadorCustom: e.target.value }))}
+                                    onChange={e => setForm(f => ({ ...f, operadorCustom: e.target.value.toUpperCase() }))}
                                     className="form-input mt-2"
                                     style={{ fontSize: 12 }}
                                     placeholder="Nombre del operador"
@@ -783,7 +783,7 @@ function ModalTraslado({
                                 <input
                                     type="text"
                                     value={form.registradoCustom}
-                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value }))}
+                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
                                     className="form-input mt-2"
                                     style={{ fontSize: 12 }}
                                     placeholder="Nombre"
@@ -941,7 +941,7 @@ function ModalTraslado({
                                                         <input
                                                             type="text"
                                                             value={p.operador}
-                                                            onChange={e => handleActualizarProducto(i, 'operador', e.target.value)}
+                                                            onChange={e => handleActualizarProducto(i, 'operador', e.target.value.toUpperCase())}
                                                             onClick={e => e.stopPropagation()}
                                                             className="w-full p-1 text-[11px] border rounded"
                                                         />
