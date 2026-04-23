@@ -188,15 +188,16 @@ export default function StockTotalPage() {
     const totalProductos = state.productos.length;
     const entradas = state.entradas.length;
     const salidas = state.salidas.length;
+    const traslados = state.traslados.length;
     const alertas = state.productos.filter(p =>
         TIENDAS.some(t => p.existencia[t] < p.stockMinimo[t])
     ).length;
 
     const stats = [
         { label: 'Productos', value: totalProductos, icon: Package, color: '#002D5A', bg: '#E9F1FF' },
-        { label: 'Entradas', value: entradas, icon: TrendingUp, color: '#1e40af', bg: '#dbeafe' },
+        { label: 'Entradas', value: entradas, icon: TrendingUp, color: '#1eaf4e', bg: '#dbfeec' },
         { label: 'Salidas', value: salidas, icon: TrendingUp, color: '#9d174d', bg: '#fce7f3' },
-        { label: 'Stock Bajo', value: alertas, icon: AlertTriangle, color: '#92400e', bg: '#fffbeb' },
+        { label: 'Traslados', value: traslados, icon: TrendingUp, color: '#3a9ced', bg: '#e9f4fe' },
     ];
 
     // Manejar selección de fila

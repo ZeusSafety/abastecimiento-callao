@@ -796,7 +796,7 @@ function ModalTraslado({
                             <label className="form-label">Observaciones</label>
                             <textarea
                                 value={form.observaciones}
-                                onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
+                                onChange={e => setForm(f => ({ ...f, observaciones: e.target.value.toUpperCase() }))}
                                 className="form-input"
                                 rows={3}
                                 style={{ resize: 'vertical', fontSize: 12 }}
@@ -1489,16 +1489,10 @@ export default function TrasladoPage() {
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center gap-4">
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setRepIdActasTraslado(detalleRep ? Number(detalleRep.id) : null);
-                                                                        setModalSubirActasOpen(true);
-                                                                    }}
-                                                                    className="shrink-0 px-4 py-2 text-[10px] rounded-xl font-bold border border-[#002D5A] text-[#002D5A] hover:bg-[#002D5A] hover:text-white transition-all shadow-sm flex items-center justify-start gap-2"
-                                                                >
-                                                                    <Upload className="w-3 h-3" />
-                                                                    <span>Subir Actas</span>
-                                                                </button>
+                                                                <div className="text-[10px] text-gray-500">
+                                                                    Actas: {' '}
+                                                                    <span className="text-gray-900 font-bold">{carga.actas.length}</span>
+                                                                </div>
                                                                 <button
                                                                     onClick={() => {
                                                                         setActasSeleccionadas(carga.actas);
