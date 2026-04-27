@@ -672,7 +672,21 @@ function ModalSalida({
                                     </select>
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
-                                <button
+                                
+                            </div>
+                            {form.registradoPor === COMBO_OTROS_VALUE && (
+                                <input
+                                    type="text"
+                                    value={form.registradoCustom}
+                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
+                                    className="form-input w-full mt-2"
+                                    style={{ fontSize: 12 }}
+                                    placeholder="Nombre"
+                                />
+                            )}
+                        </div>
+
+                        <button
                                     type="button"
                                     onClick={() => setModalActasOpen(true)}
                                     className="flex items-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm"
@@ -686,18 +700,6 @@ function ModalSalida({
                                         </span>
                                     )}
                                 </button>
-                            </div>
-                            {form.registradoPor === COMBO_OTROS_VALUE && (
-                                <input
-                                    type="text"
-                                    value={form.registradoCustom}
-                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
-                                    className="form-input w-full mt-2"
-                                    style={{ fontSize: 12 }}
-                                    placeholder="Nombre"
-                                />
-                            )}
-                        </div>
 
                         {/* Observaciones */}
                         <div className="col-span-2">

@@ -762,7 +762,21 @@ function ModalTraslado({
                                     </select>
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
-                                {!isEdit && (
+                                
+                            </div>
+                            {form.registradoPor === COMBO_OTROS_VALUE && (
+                                <input
+                                    type="text"
+                                    value={form.registradoCustom}
+                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
+                                    className="form-input mt-2"
+                                    style={{ fontSize: 12 }}
+                                    placeholder="Nombre"
+                                />
+                            )}
+                        </div>
+                        
+                        {!isEdit && (
                                     <button
                                         type="button"
                                         onClick={() => setModalActasOpen(true)}
@@ -778,18 +792,6 @@ function ModalTraslado({
                                         )}
                                     </button>
                                 )}
-                            </div>
-                            {form.registradoPor === COMBO_OTROS_VALUE && (
-                                <input
-                                    type="text"
-                                    value={form.registradoCustom}
-                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
-                                    className="form-input mt-2"
-                                    style={{ fontSize: 12 }}
-                                    placeholder="Nombre"
-                                />
-                            )}
-                        </div>
 
                         {/* Observaciones — ancho completo */}
                         <div className="col-span-2">

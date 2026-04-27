@@ -45,7 +45,7 @@ const navItems = [
         ],
     },
     {
-        group: 'HISTORIAL DE MOVIENTOS EDITADOS',
+        group: 'HISTORIAL DE MOVIMIENTOS EDITADOS',
         items: [
             { id: 'cambios-entrada', label: 'Cambios Entrada', href: '/callao/cambios-entrada', icon: TrendingUp },
             { id: 'cambios-salida', label: 'Cambios Salida', href: '/callao/cambios-salida', icon: TrendingUp },
@@ -115,13 +115,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                             />
                         </div>
                     </button>
-                    {/* Botón Cerrar Móvil */}
-                    <button
-                        onClick={onClose}
-                        className="lg:hidden absolute top-3 right-3 p-1.5 rounded-lg hover:bg-gray-100 transition-colors bg-white/80 backdrop-blur-sm shadow-sm"
-                    >
-                        <X className="w-4 h-4 text-gray-500" />
-                    </button>
+                    
                 </div>
 
                 {/* Navigation */}
