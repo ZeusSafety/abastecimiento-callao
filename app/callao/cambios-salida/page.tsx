@@ -286,7 +286,7 @@ export default function CambiosSalidaPage() {
                                                                             <td className="px-4 py-3">
                                                                                 <button
                                                                                     onClick={() => setModalObservaciones({ isOpen: true, content: c.observaciones || 'Sin observaciones.' })}
-                                                                                    className="inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+                                                                                    className="inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
                                                                                     title="Ver observaciones"
                                                                                 >
                                                                                     <Eye className="w-4 h-4" />
@@ -360,7 +360,7 @@ export default function CambiosSalidaPage() {
             {modalMotivo.isOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[10000]">
-                        <div className="bg-gradient-to-r from-[#f59e0b] to-[#d97706] px-6 py-4 flex items-center justify-between">
+                        <div className="bg-gradient-to-r from-[#002D5A] to-[#003d7a] px-6 py-4 flex items-center justify-between">
                             <h2 className="text-white font-black text-lg uppercase tracking-wider">Motivo del Cambio</h2>
                             <button onClick={() => setModalMotivo({ isOpen: false, content: '' })} className="text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors">
                                 <X className="w-5 h-5" />
@@ -372,7 +372,7 @@ export default function CambiosSalidaPage() {
                             </div>
                         </div>
                         <div className="p-4 border-t border-gray-200 flex justify-end">
-                            <button onClick={() => setModalMotivo({ isOpen: false, content: '' })} className="px-5 py-2 rounded-lg bg-[#f59e0b] text-white text-xs font-bold hover:bg-[#d97706]">
+                            <button onClick={() => setModalMotivo({ isOpen: false, content: '' })} className="px-5 py-2 rounded-lg bg-[#002D5A] text-white text-xs font-bold hover:bg-[#001f3d]">
                                 Cerrar
                             </button>
                         </div>

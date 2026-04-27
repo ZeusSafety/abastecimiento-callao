@@ -618,8 +618,8 @@ export default function StockTotalPage() {
                     </div>
 
                     {/* Toolbar */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-6 border-b border-gray-100 bg-transparent">
-                        <div className="flex items-center gap-3">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 py-6 border-b border-gray-100 bg-transparent">
+                        <div className="flex items-center gap-2">
                             <div className="p-2.5 bg-blue-100 rounded-xl shadow-sm">
                                 <Search className="w-5 h-5 text-[#002D5A]" />
                             </div>
@@ -630,8 +630,8 @@ export default function StockTotalPage() {
                                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Control de Stock en Tiempo Real</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3 w-full sm:w-auto">
-                            <div className="relative flex-1 sm:w-72">
+                        <div className="flex flex-col lg:flex-row lg:items-center gap-3 w-full lg:w-auto">
+                            <div className="relative w-full md:w-72 lg:w-72">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
                                     type="text"
@@ -641,42 +641,44 @@ export default function StockTotalPage() {
                                     className="w-full pl-12 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
-                            <button
-                                onClick={handleExportExcel}
-                                className="px-5 py-2.5 text-sm font-bold text-white bg-green-600 border border-green-600 rounded-2xl hover:bg-green-700 transition-all flex items-center gap-2 shadow-sm active:scale-95"
-                            >
-                                <FileSpreadsheet className="w-4 h-4" />
-                                <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Exportar Excel</span>
-                            </button>
-                            <input
-                                id="stock-total-import-excel-input"
-                                type="file"
-                                accept=".xlsx,.xlsm,.xltx,.xltm"
-                                className="hidden"
-                                onChange={e => handleImportExcelSelected(e.target.files?.[0] || null)}
-                            />
-                            <button
-                                onClick={handleImportExcelClick}
-                                disabled={isImportingPreview || isLoading}
-                                className="px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-60"
-                            >
-                                <Upload className={`w-4 h-4 ${isImportingPreview ? 'animate-pulse' : ''}`} />
-                                <span className="hidden sm:inline uppercase tracking-wider text-[10px]">
-                                    {isImportingPreview ? 'Leyendo...' : 'Importar datos'}
-                                </span>
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setSearch('');
-                                    refreshProductos();
-                                    refreshEntradas();
-                                    showToast('info', 'Datos actualizados');
-                                }}
-                                className="px-5 py-2.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:text-[#002D5A] transition-all flex items-center gap-2 shadow-sm active:scale-95"
-                            >
-                                <RefreshCw className="w-4 h-4" />
-                                <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Limpiar</span>
-                            </button>
+                            <div className="flex flex-wrap items-center justify-start lg:justify-end gap-2 w-full lg:w-auto">
+                                <button
+                                    onClick={handleExportExcel}
+                                    className="px-5 py-2.5 text-sm font-bold text-white bg-green-600 border border-green-600 rounded-2xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 w-full sm:w-auto"
+                                >
+                                    <FileSpreadsheet className="w-4 h-4" />
+                                    <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Exportar Excel</span>
+                                </button>
+                                <input
+                                    id="stock-total-import-excel-input"
+                                    type="file"
+                                    accept=".xlsx,.xlsm,.xltx,.xltm"
+                                    className="hidden"
+                                    onChange={e => handleImportExcelSelected(e.target.files?.[0] || null)}
+                                />
+                                <button
+                                    onClick={handleImportExcelClick}
+                                    disabled={isImportingPreview || isLoading}
+                                    className="px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-60 w-full sm:w-auto"
+                                >
+                                    <Upload className={`w-4 h-4 ${isImportingPreview ? 'animate-pulse' : ''}`} />
+                                    <span className="hidden sm:inline uppercase tracking-wider text-[10px]">
+                                        {isImportingPreview ? 'Leyendo...' : 'Importar datos'}
+                                    </span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setSearch('');
+                                        refreshProductos();
+                                        refreshEntradas();
+                                        showToast('info', 'Datos actualizados');
+                                    }}
+                                    className="px-5 py-2.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:text-[#002D5A] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 w-full sm:w-auto"
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                    <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Recargar</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -771,7 +773,7 @@ export default function StockTotalPage() {
                                                     
                                                     <td className="px-4 py-3 text-center text-[11px]">
                                                         <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-bold">
-                                                            {p.unidadMedidaRegCalculo}
+                                                            {p.unidadMedida}
                                                         </span>
                                                     </td>
                                                     {TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda: t }) => {

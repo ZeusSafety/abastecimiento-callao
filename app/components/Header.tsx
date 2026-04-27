@@ -80,7 +80,7 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
                 {/* Entradas counter - hidden on mobile small */}
                 <div
                     className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
-                    style={{ background: '#dbeafe', color: '#1e40af', fontSize: 10 }}
+                    style={{ background: '#dbfef3', color: '#1eaf5f', fontSize: 10 }}
                 >
                     <span>Entradas: {state.entradas.length}</span>
                 </div>
@@ -91,6 +91,14 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
                     style={{ background: '#fce7f3', color: '#9d174d', fontSize: 10 }}
                 >
                     <span>Salidas: {state.salidas.length}</span>
+                </div>
+
+                {/* Traslados counter - hidden on mobile small */}
+                <div
+                    className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
+                    style={{ background: '#dbeafe', color: '#1e51af', fontSize: 10 }}
+                >
+                    <span>Traslados: {state.traslados.length}</span>
                 </div>
 
                 {/* Bell */}

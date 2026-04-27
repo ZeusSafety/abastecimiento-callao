@@ -157,7 +157,7 @@ function ModalEntrada({
         operador: OPERADORES[0],
         operadorCustom: '',
         cantidad: editData?.cantidad ?? 0,
-        unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
+        unidadMedida: (editData?.unidadMedida ?? 'CAJAS') as UnidadMedida,
         registradoPor: REGISTRADORES[0],
         registradoCustom: '',
         observaciones: editData?.observaciones ?? '',
@@ -204,7 +204,7 @@ function ModalEntrada({
                 operador: OPERADORES[0],
                 operadorCustom: '',
                 cantidad: 0,
-                unidadMedida: 'DOCENAS' as UnidadMedida,
+                unidadMedida: 'CAJAS' as UnidadMedida,
                 registradoPor: REGISTRADORES[0],
                 registradoCustom: '',
                 observaciones: '',
@@ -268,7 +268,7 @@ function ModalEntrada({
                 productoId: '',
                 producto: '',
                 codigo: '',
-                unidadMedida: 'DOCENAS' as UnidadMedida,
+                unidadMedida: 'CAJAS' as UnidadMedida,
             }));
             return;
         }
@@ -376,7 +376,7 @@ function ModalEntrada({
                         productoId: '',
                         producto: '',
                         codigo: '',
-                        unidadMedida: 'DOCENAS' as UnidadMedida,
+                        unidadMedida: 'CAJAS' as UnidadMedida,
                     };
                 }
                 return {
@@ -1675,7 +1675,7 @@ export default function EntradasPage() {
                                                                                                 }}
                                                                                                 className={`inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg transition-colors ${
                                                                                                     tieneObs
-                                                                                                        ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                                                                        ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                                                                                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                                                                                 }`}
                                                                                                 title="Ver observaciones"

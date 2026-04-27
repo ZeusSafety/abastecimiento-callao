@@ -793,7 +793,7 @@ export default function HistorialTrasladoPage() {
                                                                                                 }}
                                                                                                 className={`inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg transition-colors ${
                                                                                                     tieneObs
-                                                                                                        ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                                                                        ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                                                                                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                                                                                 }`}
                                                                                                 title="Ver observaciones"

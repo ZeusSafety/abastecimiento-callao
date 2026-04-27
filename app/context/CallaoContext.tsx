@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useCallback, useMemo, React
 import * as api from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-export type UnidadMedida = 'DOCENAS' | 'DECENAS' | 'UNIDADES' | 'CAJITAS' | 'BOLSITAS';
+export type UnidadMedida = 'DOCENAS' | 'DECENAS' | 'UNIDADES' | 'CAJITAS' | 'BOLSITAS' | 'CAJAS';
 /** Códigos en BD:OFICINA, OFICINA-DOCENAS, CALLAO 1-A, CALLAO 1-B, CALLAO 2. (`tiendas_gestion_sea_callao`). */
 export type Tienda = 'TIENDA OFICINA' | 'TIENDA OFICINA-DOCENAS' | 'TIENDA CALLAO-1-A' | 'TIENDA CALLAO-1-B' | 'TIENDA CALLAO-2';
 /** Incluye `ALMACEN CALLAO` solo por compatibilidad con histórico (API CALLAO). */
@@ -62,7 +62,7 @@ export function resolvePersonaCombo(val: string, otro: string): string {
   if (val === COMBO_OTROS_VALUE) return (otro || '').trim();
   return val;
 }
-export const UNIDADES: UnidadMedida[] = ['DOCENAS', 'DECENAS', 'UNIDADES', 'CAJITAS', 'BOLSITAS'];
+export const UNIDADES: UnidadMedida[] = ['DOCENAS', 'DECENAS', 'UNIDADES', 'CAJITAS', 'BOLSITAS', 'CAJAS'];
 export const OPS_ENTRADA = ['ENTRADA', 'OTROS'] as const;
 export const OPS_SALIDA = ['SALIDA', 'VENTA', 'OTROS'] as const;
 export const OPS_TRASLADOS = ['TRASLADO', 'OTROS'] as const;
@@ -93,6 +93,7 @@ const UNIDAD_MEDIDA_MAP: Record<number, UnidadMedida> = {
   3: 'UNIDADES',
   4: 'CAJITAS',
   5: 'BOLSITAS',
+  12: 'CAJAS',
 };
 
 const UNIDAD_MEDIDA_REVERSE_MAP: Record<UnidadMedida, number> = {
@@ -101,6 +102,7 @@ const UNIDAD_MEDIDA_REVERSE_MAP: Record<UnidadMedida, number> = {
   'UNIDADES': 3,
   'CAJITAS': 4,
   'BOLSITAS': 5,
+  'CAJAS': 12, 
 };
 
 // ─── Mapeo de Tiendas ────────────────────────────────────────────────────────
@@ -157,6 +159,7 @@ export interface Producto {
   cantidadRegCalculo: number;
   unidadMedidaRegCalculo: UnidadMedida;
   /** id `unidades_medida_sea_callao` para UM de reg. cálculo (guardar abastecimiento, etc.). */
+
   idUnidadMedidaReg?: number;
   // Stock mínimo por tienda
   stockMinimo: Record<Tienda, number>;

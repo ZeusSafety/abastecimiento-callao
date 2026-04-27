@@ -74,8 +74,8 @@ function ModalSalida({
     // Inicializar formulario cuando editData cambia
     useEffect(() => {
         if (editData) {
-            const producto = state.productos.find(p => 
-                p.codigo === editData.producto || 
+            const producto = state.productos.find(p =>
+                p.codigo === editData.producto ||
                 p.nombre === editData.producto ||
                 p.id === editData.productoId
             );
@@ -198,9 +198,8 @@ function ModalSalida({
                                         return (
                                             <div
                                                 key={tienda}
-                                                className={`p-3 rounded-lg border-2 transition-all ${
-                                                    bajoStock ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'
-                                                }`}
+                                                className={`p-3 rounded-lg border-2 transition-all ${bajoStock ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'
+                                                    }`}
                                             >
                                                 <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
                                                     {etiquetaTiendaMovimientosCallao(tienda)}
@@ -333,40 +332,40 @@ function ModalObservaciones({
 // ─── Función para formatear fecha en dos líneas ──────────────────────────────
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
     if (!fechaStr) return { fecha: '-', hora: '' };
-    
+
     try {
         // Intentar parsear diferentes formatos de fecha
         let fecha: Date;
-        
+
         // Si viene en formato "DD/MM/YYYY HH:MM A. M." o similar
         if (fechaStr.includes('/')) {
             const parts = fechaStr.split(' ');
             const fechaPart = parts[0]; // "DD/MM/YYYY"
             const horaPart = parts.slice(1).join(' '); // "HH:MM A. M."
-            
+
             const [dia, mes, anio] = fechaPart.split('/');
             fecha = new Date(`${anio}-${mes}-${dia} ${horaPart}`);
         } else {
             fecha = new Date(fechaStr);
         }
-        
+
         if (isNaN(fecha.getTime())) {
             return { fecha: fechaStr, hora: '' };
         }
-        
+
         // Formatear fecha: DD/MM/YYYY
         const dia = fecha.getDate().toString().padStart(2, '0');
         const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
         const anio = fecha.getFullYear();
         const fechaFormateada = `${dia}/${mes}/${anio}`;
-        
+
         // Formatear hora: HH:MM a. m. / p. m.
         let horas = fecha.getHours();
         const minutos = fecha.getMinutes().toString().padStart(2, '0');
         const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
         horas = horas % 12 || 12;
         const horaFormateada = `${horas}:${minutos} ${periodo}`;
-        
+
         return { fecha: fechaFormateada, hora: horaFormateada };
     } catch (error) {
         return { fecha: fechaStr, hora: '' };
@@ -741,7 +740,7 @@ export default function HistorialSalidasPage() {
                                         No se encontraron cargas para el criterio seleccionado.
                                     </div>
                                 ) : (
-                                paginatedCargas.map((carga, idx) => {
+                                    paginatedCargas.map((carga, idx) => {
                                         const detalleRep = carga.detalles[0];
                                         const repSalida = detalleRep
                                             ? state.salidas.find(en => en.id === String(detalleRep.id)) || null
@@ -810,26 +809,26 @@ export default function HistorialSalidasPage() {
                                                     <div className="pb-5">
                                                         <div className="bg-white rounded-2xl border border-gray-100 p-4">
                                                             <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-4">
-                                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full xl:flex-1">
-                                                                <div className="w-full sm:w-[180px]">
-                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
-                                                                        {detalleRep?.registrado_por || '-'}
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full xl:flex-1">
+                                                                    <div className="w-full sm:w-[180px]">
+                                                                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
+                                                                        <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
+                                                                            {detalleRep?.registrado_por || '-'}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="w-full sm:w-[180px]" hidden>
+                                                                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">ENTREGADO</div>
+                                                                        <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
+                                                                            {detalleRep?.entregado_por || '-'}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="w-full sm:w-[180px]">
+                                                                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">ASESOR/OPERADOR</div>
+                                                                        <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
+                                                                            {detalleRep?.asesor || carga.asesor || '-'}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
-                                                                <div className="w-full sm:w-[180px]">
-                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">ENTREGADO</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
-                                                                        {detalleRep?.entregado_por || '-'}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="w-full sm:w-[180px]">
-                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">OPERADOR</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
-                                                                        {detalleRep?.asesor || carga.asesor || '-'}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
 
                                                                 <div className="w-full xl:w-auto flex flex-wrap items-center justify-end gap-2">
                                                                     <div className="inline-flex items-center gap-1 text-[10px] text-gray-500 whitespace-nowrap">
@@ -923,11 +922,10 @@ export default function HistorialSalidasPage() {
                                                                                                         setObservacionesSeleccionadas(obs || '-');
                                                                                                         setModalObsOpen(true);
                                                                                                     }}
-                                                                                                    className={`inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg transition-colors ${
-                                                                                                        tieneObs
-                                                                                                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                                                                    className={`inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg transition-colors ${tieneObs
+                                                                                                            ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                                                                                             : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                                                                                    }`}
+                                                                                                        }`}
                                                                                                     title="Ver observaciones"
                                                                                                 >
                                                                                                     <Eye className="w-4 h-4" />

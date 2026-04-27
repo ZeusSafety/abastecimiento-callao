@@ -268,7 +268,7 @@ export default function CascadaMovimientosSalidas({
                                 </div>
                               </div>
                               <div className="w-full sm:w-[180px]">
-                                <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">ASESOR</div>
+                                <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">ASESOR/OPERADOR</div>
                                 <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
                                   {operador}
                                 </div>
@@ -344,7 +344,7 @@ export default function CascadaMovimientosSalidas({
                                             }}
                                             className={`inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg transition-colors ${
                                               tieneObs
-                                                ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                                 : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                             }`}
                                             title="Ver observaciones"

@@ -582,7 +582,7 @@ function ModalSalida({
 
                         {/* Asesor */}
                         <div>
-                            <label className="form-label">Asesor</label>
+                            <label className="form-label">Asesor/Operador</label>
                             <input
                                 type="text"
                                 value={form.asesor}
@@ -740,7 +740,7 @@ function ModalSalida({
                                                     <th className="px-3 py-2 text-left text-[9px] font-bold uppercase" style={{ minWidth: '100px' }}>Código</th>
                                                     <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Operación</th>
                                                     <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Comprobante</th>
-                                                    <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Asesor</th>
+                                                    <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Asesor/Operador</th>
                                                     <th className="px-2 py-2 text-center text-[9px] font-bold uppercase" style={{ width: '60px' }}>Cant.</th>
                                                     <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">U.M</th>
                                                     <th className="px-3 py-2 text-left text-[9px] font-bold uppercase">Almacén</th>

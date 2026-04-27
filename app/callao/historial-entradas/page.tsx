@@ -91,8 +91,8 @@ function ModalEntrada({
     // Inicializar formulario cuando editData cambia
     useEffect(() => {
         if (editData) {
-            const producto = state.productos.find(p => 
-                p.codigo === editData.producto || 
+            const producto = state.productos.find(p =>
+                p.codigo === editData.producto ||
                 p.nombre === editData.producto ||
                 p.id === editData.productoId
             );
@@ -237,9 +237,8 @@ function ModalEntrada({
                                         return (
                                             <div
                                                 key={tienda}
-                                                className={`p-3 rounded-lg border-2 transition-all ${
-                                                    bajoStock ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'
-                                                }`}
+                                                className={`p-3 rounded-lg border-2 transition-all ${bajoStock ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'
+                                                    }`}
                                             >
                                                 <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
                                                     {etiquetaTiendaMovimientosCallao(tienda)}
@@ -305,7 +304,7 @@ function ModalEntrada({
                                 placeholder="0"
                             />
                         </div>
-                        <div className="col-span-2">
+                        <div>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Operador</label>
                             <select
                                 value={form.operador}
@@ -336,7 +335,7 @@ function ModalEntrada({
                             )}
                         </div>
 
-                        <div>
+                        <div hidden>
                             <label className="form-label" style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Entregado</label>
                             <select
                                 value={form.entregado}
@@ -475,40 +474,40 @@ function ModalObservaciones({
 // ─── Función para formatear fecha en dos líneas ──────────────────────────────
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
     if (!fechaStr) return { fecha: '-', hora: '' };
-    
+
     try {
         // Intentar parsear diferentes formatos de fecha
         let fecha: Date;
-        
+
         // Si viene en formato "DD/MM/YYYY HH:MM A. M." o similar
         if (fechaStr.includes('/')) {
             const parts = fechaStr.split(' ');
             const fechaPart = parts[0]; // "DD/MM/YYYY"
             const horaPart = parts.slice(1).join(' '); // "HH:MM A. M."
-            
+
             const [dia, mes, anio] = fechaPart.split('/');
             fecha = new Date(`${anio}-${mes}-${dia} ${horaPart}`);
         } else {
             fecha = new Date(fechaStr);
         }
-        
+
         if (isNaN(fecha.getTime())) {
             return { fecha: fechaStr, hora: '' };
         }
-        
+
         // Formatear fecha: DD/MM/YYYY
         const dia = fecha.getDate().toString().padStart(2, '0');
         const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
         const anio = fecha.getFullYear();
         const fechaFormateada = `${dia}/${mes}/${anio}`;
-        
+
         // Formatear hora: HH:MM a. m. / p. m.
         let horas = fecha.getHours();
         const minutos = fecha.getMinutes().toString().padStart(2, '0');
         const periodo = horas >= 12 ? 'p. m.' : 'a. m.';
         horas = horas % 12 || 12;
         const horaFormateada = `${horas}:${minutos} ${periodo}`;
-        
+
         return { fecha: fechaFormateada, hora: horaFormateada };
     } catch (error) {
         return { fecha: fechaStr, hora: '' };
@@ -884,7 +883,7 @@ export default function HistorialEntradasPage() {
                                         No se encontraron cargas para el criterio seleccionado.
                                     </div>
                                 ) : (
-                                paginatedCargas.map((carga, idx) => {
+                                    paginatedCargas.map((carga, idx) => {
                                         const detalleRep = carga.detalles[0];
                                         const repEntrada = detalleRep
                                             ? state.entradas.find(en => en.id === String(detalleRep.id)) || null
@@ -952,67 +951,70 @@ export default function HistorialEntradasPage() {
                                                     <div className="pb-5">
                                                         <div className="bg-white rounded-2xl border border-gray-100 p-4">
                                                             <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-4">
-                                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full xl:flex-1">
-                                                                <div className="w-full sm:w-[180px]">
-                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
-                                                                        {detalleRep?.registrado_por || '-'}
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full xl:flex-1">
+                                                                    <div className="w-full sm:w-[180px]">
+                                                                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
+                                                                        <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
+                                                                            {detalleRep?.registrado_por || '-'}
+                                                                        </div>
                                                                     </div>
-                                                                </div>
-                                                                <div className="w-full sm:w-[180px]">
-                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">ENTREGADO</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
-                                                                        {detalleRep?.entregado_por || '-'}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="w-full sm:w-[180px]">
-                                                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">OPERADOR</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
-                                                                        {detalleRep?.operador || carga.operador || '-'}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
 
-                                                            <div className="w-full xl:w-auto flex flex-wrap items-center justify-end gap-2">
-                                                                <div className="inline-flex items-center gap-1 text-[10px] text-gray-500 whitespace-nowrap">
-                                                                    <span>Actas:</span>
-                                                                    <span className="text-gray-900 font-bold">{carga.actas.length}</span>
+                                                                    {/* CAMPO ENTREGADO OCULTO */}
+                                                                    <div className="w-full sm:w-[180px]" hidden>
+                                                                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">ENTREGADO</div>
+                                                                        <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
+                                                                            {detalleRep?.entregado_por || '-'}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="w-full sm:w-[180px]">
+                                                                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">OPERADOR</div>
+                                                                        <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[12px] font-bold text-gray-900">
+                                                                            {detalleRep?.operador || carga.operador || '-'}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setRepIdActasEntrada(detalleRep?.id || null);
-                                                                        setActasSeleccionadas(carga.actas);
-                                                                        setModalVerActasOpen(true);
-                                                                    }}
-                                                                    disabled={carga.actas.length === 0}
-                                                                    className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 whitespace-nowrap"
-                                                                >
-                                                                    <FileImage className="w-3.5 h-3.5" />
-                                                                    <span>Ver actas</span>
-                                                                </button>
-                                                                {carga.actas.length === 0 && (
+
+                                                                <div className="w-full xl:w-auto flex flex-wrap items-center justify-end gap-2">
+                                                                    <div className="inline-flex items-center gap-1 text-[10px] text-gray-500 whitespace-nowrap">
+                                                                        <span>Actas:</span>
+                                                                        <span className="text-gray-900 font-bold">{carga.actas.length}</span>
+                                                                    </div>
                                                                     <button
                                                                         onClick={() => {
                                                                             setRepIdActasEntrada(detalleRep?.id || null);
-                                                                            setModalSubirActasOpen(true);
+                                                                            setActasSeleccionadas(carga.actas);
+                                                                            setModalVerActasOpen(true);
                                                                         }}
-                                                                        className="px-4 py-2 text-[10px] rounded-xl font-bold bg-white border border-[#002D5A] text-[#002D5A] hover:bg-blue-50 transition-all shadow-sm whitespace-nowrap inline-flex items-center gap-2"
+                                                                        disabled={carga.actas.length === 0}
+                                                                        className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 whitespace-nowrap"
                                                                     >
-                                                                        <Upload className="w-3.5 h-3.5" />
-                                                                        <span>Agregar acta</span>
+                                                                        <FileImage className="w-3.5 h-3.5" />
+                                                                        <span>Ver actas</span>
                                                                     </button>
-                                                                )}
-                                                                <button
-                                                                    onClick={() => aplicarActualizacionCarga(carga)}
-                                                                    disabled={updatingCodigo === (carga.codigo_carga || '__sin_codigo__')}
-                                                                    className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
-                                                                >
-                                                                    {updatingCodigo === (carga.codigo_carga || '__sin_codigo__') && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                                                                    {updatingCodigo !== (carga.codigo_carga || '__sin_codigo__') && <Save className="w-3.5 h-3.5" />}
-                                                                    <span>{updatingCodigo === (carga.codigo_carga || '__sin_codigo__') ? 'Actualizando...' : 'Actualizar registro'}</span>
-                                                                </button>
+                                                                    {carga.actas.length === 0 && (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setRepIdActasEntrada(detalleRep?.id || null);
+                                                                                setModalSubirActasOpen(true);
+                                                                            }}
+                                                                            className="px-4 py-2 text-[10px] rounded-xl font-bold bg-white border border-[#002D5A] text-[#002D5A] hover:bg-blue-50 transition-all shadow-sm whitespace-nowrap inline-flex items-center gap-2"
+                                                                        >
+                                                                            <Upload className="w-3.5 h-3.5" />
+                                                                            <span>Agregar acta</span>
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => aplicarActualizacionCarga(carga)}
+                                                                        disabled={updatingCodigo === (carga.codigo_carga || '__sin_codigo__')}
+                                                                        className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                                                                    >
+                                                                        {updatingCodigo === (carga.codigo_carga || '__sin_codigo__') && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                                                        {updatingCodigo !== (carga.codigo_carga || '__sin_codigo__') && <Save className="w-3.5 h-3.5" />}
+                                                                        <span>{updatingCodigo === (carga.codigo_carga || '__sin_codigo__') ? 'Actualizando...' : 'Actualizar registro'}</span>
+                                                                    </button>
+                                                                </div>
                                                             </div>
-                                                        </div>
 
                                                             {/* Tabla interna */}
                                                             <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -1065,11 +1067,10 @@ export default function HistorialEntradasPage() {
                                                                                                         setObservacionesSeleccionadas(obs || '-');
                                                                                                         setModalObsOpen(true);
                                                                                                     }}
-                                                                                                    className={`inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg transition-colors ${
-                                                                                                        tieneObs
-                                                                                                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                                                                    className={`inline-flex items-center justify-center w-[46px] h-[28px] rounded-lg transition-colors ${tieneObs
+                                                                                                            ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                                                                                             : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                                                                                    }`}
+                                                                                                        }`}
                                                                                                     title="Ver observaciones"
                                                                                                 >
                                                                                                     <Eye className="w-4 h-4" />
