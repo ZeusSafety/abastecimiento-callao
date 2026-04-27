@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { 
-    useCallao, 
+import {  
+    useCallao,  
     TIENDAS,
     TIENDAS_VISTA_INVENTARIO_CALLAO,
     Tienda, 
