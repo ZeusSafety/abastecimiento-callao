@@ -378,6 +378,11 @@ export default function HistorialTrasladoPage() {
     const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
     const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
 
+    const [modalSubirActasOpen, setModalSubirActasOpen] = useState(false);
+    const [repIdActasTraslado, setRepIdActasTraslado] = useState<number | null>(null);
+    const [actasParaSubir, setActasParaSubir] = useState<Array<{ file: File; nombre: string; preview: string }>>([]);
+    const [subiendoActas, setSubiendoActas] = useState(false);
+
     const refreshCargas = async () => {
         setLoadingCargas(true);
         try {
@@ -400,6 +405,68 @@ export default function HistorialTrasladoPage() {
         };
         load();
     }, []);
+
+    const refreshActasSelectionReset = () => {
+        actasParaSubir.forEach(a => URL.revokeObjectURL(a.preview));
+        setActasParaSubir([]);
+    };
+
+    const handleFileSelectSubirActas = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const nuevas = files.map(file => ({
+            file,
+            nombre: file.name,
+            preview: URL.createObjectURL(file),
+        }));
+        setActasParaSubir(prev => [...prev, ...nuevas]);
+        e.target.value = '';
+    };
+
+    const handleUpdateNombreActaParaSubir = (index: number, nombre: string) => {
+        setActasParaSubir(prev => prev.map((a, i) => (i === index ? { ...a, nombre } : a)));
+    };
+
+    const handleRemoveActaParaSubir = (index: number) => {
+        setActasParaSubir(prev => {
+            const item = prev[index];
+            if (item) URL.revokeObjectURL(item.preview);
+            return prev.filter((_, i) => i !== index);
+        });
+    };
+
+    const guardarActasTraslado = async () => {
+        if (subiendoActas) return;
+        if (!repIdActasTraslado) {
+            showToast('error', 'No se encontró el registro de referencia para subir actas');
+            return;
+        }
+        if (actasParaSubir.length === 0) {
+            showToast('error', 'Selecciona al menos un archivo');
+            return;
+        }
+        if (actasParaSubir.some(a => !a.nombre.trim())) {
+            showToast('error', 'Asigna un nombre a cada acta');
+            return;
+        }
+
+        setSubiendoActas(true);
+        try {
+            await api.agregarActaTraslado(
+                repIdActasTraslado,
+                actasParaSubir.map(a => ({ file: a.file, nombre: a.nombre }))
+            );
+            showToast('success', 'Acta(s) agregada(s) correctamente');
+            refreshActasSelectionReset();
+            setModalSubirActasOpen(false);
+            setRepIdActasTraslado(null);
+            await refreshCargas();
+        } catch (error: any) {
+            console.error(error);
+            showToast('error', error?.message || 'Error subiendo actas');
+        } finally {
+            setSubiendoActas(false);
+        }
+    };
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase();
@@ -710,17 +777,36 @@ export default function HistorialTrasladoPage() {
                                                                     <span>Actas:</span>
                                                                     <span className="text-gray-900 font-bold">{carga.actas.length}</span>
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setActasSeleccionadas(carga.actas);
-                                                                        setModalVerActasOpen(true);
-                                                                    }}
-                                                                    disabled={carga.actas.length === 0}
-                                                                    className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 whitespace-nowrap"
-                                                                >
-                                                                    <FileImage className="w-3.5 h-3.5" />
-                                                                    <span>Ver actas</span>
-                                                                </button>
+                                                                {carga.actas.length > 0 ? (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const rep = carga.detalles?.[0]?.id;
+                                                                            setRepIdActasTraslado(rep ? Number(rep) : null);
+                                                                            setActasSeleccionadas(carga.actas);
+                                                                            setModalVerActasOpen(true);
+                                                                        }}
+                                                                        className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm inline-flex items-center gap-2 whitespace-nowrap"
+                                                                    >
+                                                                        <FileImage className="w-3.5 h-3.5" />
+                                                                        <span>Ver actas</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const rep = carga.detalles?.[0]?.id;
+                                                                            if (!rep) {
+                                                                                showToast('error', 'No se encontró un registro de traslado para adjuntar actas');
+                                                                                return;
+                                                                            }
+                                                                            setRepIdActasTraslado(Number(rep));
+                                                                            setModalSubirActasOpen(true);
+                                                                        }}
+                                                                        className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm whitespace-nowrap inline-flex items-center gap-2"
+                                                                    >
+                                                                        <Upload className="w-3.5 h-3.5" />
+                                                                        <span>Agregar acta</span>
+                                                                    </button>
+                                                                )}
                                                                 <button
                                                                     onClick={() => aplicarActualizacionCarga(carga)}
                                                                     disabled={updatingCodigo === (carga.codigo_carga || '__sin_codigo__')}
@@ -891,6 +977,21 @@ export default function HistorialTrasladoPage() {
                                 <X className="w-6 h-6 text-gray-400" />
                             </button>
                         </div>
+                        <div className="px-6 pt-3">
+                            <button
+                                onClick={() => {
+                                    if (!repIdActasTraslado) {
+                                        showToast('error', 'No se encontró la referencia de la carga');
+                                        return;
+                                    }
+                                    setModalVerActasOpen(false);
+                                    setModalSubirActasOpen(true);
+                                }}
+                                className="px-4 py-2 text-[11px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all"
+                            >
+                                Agregar acta
+                            </button>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-2">
                             {actasSeleccionadas.map((acta, i) => (
                                 <div key={i} className="group relative bg-gray-50 rounded-2xl p-4 border-2 border-transparent hover:border-blue-200 transition-all cursor-pointer shadow-sm hover:shadow-md" onClick={() => setLightboxUrl(acta.url_imagen)}>
@@ -913,13 +1014,150 @@ export default function HistorialTrasladoPage() {
                 </div>
             )}
 
+            {/* Modal Subir Actas (Subir más) */}
+            {modalSubirActasOpen && (
+                <div
+                    className="modal-backdrop"
+                    style={{ zIndex: 30005 }}
+                    onClick={e => e.target === e.currentTarget && setModalSubirActasOpen(false)}
+                >
+                    <div className="modal-box" style={{ maxWidth: 920, width: '95vw', maxHeight: '90vh', overflow: 'auto', zIndex: 30006 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h6 style={{ margin: 0, fontWeight: 800, fontSize: 16, color: '#002D5A' }}>
+                                    Subir Actas (Traslado)
+                                </h6>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    Selecciona imágenes y asigna un nombre a cada una
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    refreshActasSelectionReset();
+                                    setModalSubirActasOpen(false);
+                                    setRepIdActasTraslado(null);
+                                }}
+                                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            <div className="mb-6">
+                                <label className="block mb-2 text-sm font-semibold text-gray-700">
+                                    Seleccionar Imágenes
+                                </label>
+                                <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={handleFileSelectSubirActas}
+                                        className="hidden"
+                                        id="file-input-actas-subir-traslados-historial"
+                                    />
+                                    <label
+                                        htmlFor="file-input-actas-subir-traslados-historial"
+                                        className="cursor-pointer flex flex-col items-center gap-2"
+                                    >
+                                        <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
+                                            <Upload className="w-6 h-6 text-white" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {actasParaSubir.length > 0 && (
+                                <div className="space-y-4">
+                                    <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                        Actas Seleccionadas ({actasParaSubir.length})
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {actasParaSubir.map((acta, index) => (
+                                            <div key={index} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
+                                                <div className="flex gap-3">
+                                                    <div className="flex-shrink-0">
+                                                        <img
+                                                            src={acta.preview}
+                                                            alt={`Preview ${index + 1}`}
+                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                        />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                Nombre de la Acta *
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={acta.nombre}
+                                                                onChange={e => handleUpdateNombreActaParaSubir(index, e.target.value)}
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                                placeholder="Ej: Acta revisión 01"
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleRemoveActaParaSubir(index)}
+                                                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            Eliminar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            <button
+                                onClick={() => {
+                                    refreshActasSelectionReset();
+                                    setModalSubirActasOpen(false);
+                                    setRepIdActasTraslado(null);
+                                }}
+                                className="btn btn-secondary"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={guardarActasTraslado}
+                                disabled={actasParaSubir.length === 0 || subiendoActas}
+                                className="btn btn-primary"
+                            >
+                                {subiendoActas ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Subiendo...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="w-4 h-4" />
+                                        Guardar actas
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Lightbox */}
             {lightboxUrl && (
-                <div className="fixed inset-0 z-[40000] bg-black/90 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
-                    <button className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all shadow-2xl">
+                <div className="fixed inset-0 z-[40000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
+                    <button className="absolute top-6 right-6 p-3 bg-white/90 hover:bg-white rounded-2xl text-gray-700 transition-all shadow-2xl">
                         <X className="w-8 h-8" />
                     </button>
-                    <img src={lightboxUrl} alt="Vista previa" className="max-w-full max-h-full object-contain shadow-2xl animate-in zoom-in-95 duration-300" />
+                    <img src={lightboxUrl} alt="Vista previa" className="max-w-full max-h-full object-contain shadow-2xl animate-in zoom-in-95 duration-300 bg-white rounded-xl" />
                 </div>
             )}
 

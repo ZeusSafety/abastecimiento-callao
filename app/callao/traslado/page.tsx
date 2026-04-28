@@ -762,21 +762,7 @@ function ModalTraslado({
                                     </select>
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
-                                
-                            </div>
-                            {form.registradoPor === COMBO_OTROS_VALUE && (
-                                <input
-                                    type="text"
-                                    value={form.registradoCustom}
-                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
-                                    className="form-input mt-2"
-                                    style={{ fontSize: 12 }}
-                                    placeholder="Nombre"
-                                />
-                            )}
-                        </div>
-                        
-                        {!isEdit && (
+                                {!isEdit && (
                                     <button
                                         type="button"
                                         onClick={() => setModalActasOpen(true)}
@@ -792,6 +778,18 @@ function ModalTraslado({
                                         )}
                                     </button>
                                 )}
+                            </div>
+                            {form.registradoPor === COMBO_OTROS_VALUE && (
+                                <input
+                                    type="text"
+                                    value={form.registradoCustom}
+                                    onChange={e => setForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
+                                    className="form-input mt-2"
+                                    style={{ fontSize: 12 }}
+                                    placeholder="Nombre"
+                                />
+                            )}
+                        </div>
 
                         {/* Observaciones — ancho completo */}
                         <div className="col-span-2">
@@ -1023,78 +1021,121 @@ function ModalTraslado({
             </div>
         </div>
 
-        {modalActasOpen && (
-            <div className="modal-backdrop z-[10001] bg-black/60 backdrop-blur-md" onClick={e => e.target === e.currentTarget && setModalActasOpen(false)}>
-                <div className="modal-box max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl">
-                    <div className="bg-gradient-to-r from-[#002D5A] to-[#0056b3] px-6 py-5 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white backdrop-blur-sm">
-                                <FileImage className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <h3 className="text-white font-black text-lg m-0 leading-none">ADJUNTAR ACTAS</h3>
-                                <p className="text-blue-100 text-[10px] font-bold mt-1 uppercase tracking-widest opacity-80">Imágenes de respaldo (Opcional)</p>
-                            </div>
+        {/* Modal Subir Actas (solo para modo nuevo) */}
+        {modalActasOpen && !isEdit && (
+            <div
+                className="modal-backdrop"
+                style={{ zIndex: 20000 }}
+                onClick={e => e.target === e.currentTarget && setModalActasOpen(false)}
+            >
+                <div className="modal-box" style={{ maxWidth: '90vw', width: 900, zIndex: 20001 }}>
+                    <div className="modal-header">
+                        <div>
+                            <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16, color: '#002D5A' }}>
+                                Subir Actas (Globales)
+                            </h6>
+                            <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                Sube una o más actas y asigna un nombre a cada una
+                            </p>
                         </div>
-                        <button onClick={() => setModalActasOpen(false)} className="text-white hover:bg-white/20 p-2 rounded-xl transition-all">
-                            <X className="w-6 h-6" />
+                        <button onClick={() => setModalActasOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                            <X className="w-5 h-5 text-gray-500" />
                         </button>
                     </div>
 
-                    <div className="p-8">
-                        <div className="mb-8">
-                            <label className="group relative flex flex-col items-center justify-center w-full h-40 border-4 border-dashed border-gray-200 rounded-3xl hover:border-blue-400 hover:bg-blue-50/50 transition-all cursor-pointer overflow-hidden">
-                                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                    <div className="w-16 h-16 mb-4 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-blue-100 transition-all duration-500">
-                                        <Upload className="w-8 h-8" />
-                                    </div>
-                                    <p className="mb-2 text-sm text-gray-700 font-black uppercase tracking-tight">Haga clic para subir archivos</p>
-                                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">PNG, JPG o JPEG (MAX. 5MB)</p>
-                                </div>
-                                <input type="file" multiple accept="image/*" onChange={handleFileSelectActas} className="hidden" />
+                    <div className="modal-body">
+                        <div className="mb-6">
+                            <label className="block mb-2 text-sm font-semibold text-gray-700">
+                                Seleccionar Imágenes
                             </label>
+                            <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={handleFileSelectActas}
+                                    className="hidden"
+                                    id="file-input-actas-mov-traslados"
+                                />
+                                <label
+                                    htmlFor="file-input-actas-mov-traslados"
+                                    className="cursor-pointer flex flex-col items-center gap-2"
+                                >
+                                    <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
+                                        <Upload className="w-6 h-6 text-white" />
+                                    </div>
+                                    <div>
+                                        <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
+                                        <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                </label>
+                            </div>
                         </div>
 
-                        {actas.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-                                {actas.map((acta, i) => (
-                                    <div key={i} className="group relative bg-gray-50 rounded-2xl p-3 border-2 border-gray-100 hover:border-blue-200 transition-all duration-300">
-                                        <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-gray-200">
-                                            <img src={acta.preview} alt={acta.nombre} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                                            <button 
-                                                onClick={() => handleRemoveActa(i)}
-                                                className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-red-600 shadow-lg"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                        {actas.length > 0 && (
+                            <div className="space-y-4">
+                                <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                    Actas Seleccionadas ({actas.length})
+                                </h6>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {actas.map((acta, index) => (
+                                        <div
+                                            key={index}
+                                            className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
+                                        >
+                                            <div className="flex gap-3">
+                                                <div className="flex-shrink-0">
+                                                    <img
+                                                        src={acta.preview}
+                                                        alt={`Preview ${index + 1}`}
+                                                        className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                    />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="mb-2">
+                                                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                            Nombre de la Acta *
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={acta.nombre}
+                                                            onChange={e => handleUpdateNombreActa(index, e.target.value)}
+                                                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                            placeholder="Ej: Acta revisión 01"
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleRemoveActa(index)}
+                                                        className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        Eliminar
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <input 
-                                            type="text" 
-                                            value={acta.nombre}
-                                            onChange={e => handleUpdateNombreActa(i, e.target.value)}
-                                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-[11px] font-bold text-gray-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                            placeholder="Nombre del acta..."
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-10 opacity-40">
-                                <ImageIcon className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No hay imágenes seleccionadas</p>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
 
-                    <div className="bg-gray-50 px-8 py-5 flex justify-end items-center gap-4 border-t border-gray-100">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-auto italic">
-                            {actas.length} IMÁGENES SELECCIONADAS
-                        </span>
-                        <button 
+                    <div className="modal-footer">
+                        <button
                             onClick={() => setModalActasOpen(false)}
-                            className="px-6 py-2.5 text-xs font-black text-gray-500 hover:text-gray-700 uppercase tracking-widest transition-all"
+                            className="btn btn-secondary"
                         >
-                            Listo
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={() => setModalActasOpen(false)}
+                            className="btn"
+                            style={{ backgroundColor: '#002D5A', color: 'white' }}
+                            onMouseOver={(e) => e.currentTarget && (e.currentTarget.style.backgroundColor = '#001f3d')}
+                            onMouseOut={(e) => e.currentTarget && (e.currentTarget.style.backgroundColor = '#002D5A')}
+                        >
+                            Aceptar
                         </button>
                     </div>
                 </div>
@@ -1722,19 +1763,22 @@ export default function TrasladoPage() {
                 </div>
             )}
 
-            {/* Modal Subir Acta */}
+            {/* Modal Subir Actas (Subir más) */}
             {modalSubirActasOpen && (
                 <div
-                    className="modal-backdrop z-[30005] bg-black/80 backdrop-blur-md"
+                    className="modal-backdrop"
+                    style={{ zIndex: 30005 }}
                     onClick={e => e.target === e.currentTarget && setModalSubirActasOpen(false)}
                 >
-                    <div className="modal-box max-w-4xl w-[95vw] max-h-[90vh] overflow-auto bg-white rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 duration-500">
-                        <div className="flex justify-between items-center p-8 border-b border-gray-50">
+                    <div className="modal-box" style={{ maxWidth: 920, width: '95vw', maxHeight: '90vh', overflow: 'auto', zIndex: 30006 }}>
+                        <div className="modal-header">
                             <div>
-                                <h6 className="m-0 font-black text-xl text-[#002D5A] uppercase tracking-tighter">
-                                    Subir Acta (Traslado)
+                                <h6 style={{ margin: 0, fontWeight: 800, fontSize: 16, color: '#002D5A' }}>
+                                    Subir Actas (Traslado)
                                 </h6>
-                                <p className="m-0 text-xs text-gray-400 font-medium">Asigna un nombre a cada imagen seleccionada</p>
+                                <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+                                    Selecciona imágenes y asigna un nombre a cada una
+                                </p>
                             </div>
                             <button
                                 onClick={() => {
@@ -1742,18 +1786,18 @@ export default function TrasladoPage() {
                                     setModalSubirActasOpen(false);
                                     setRepIdActasTraslado(null);
                                 }}
-                                className="p-3 hover:bg-gray-100 rounded-2xl transition-colors"
+                                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                <X className="w-6 h-6 text-gray-400" />
+                                <X className="w-5 h-5 text-gray-500" />
                             </button>
                         </div>
 
-                        <div className="p-8">
-                            <div className="mb-8">
-                                <label className="block mb-3 text-[11px] font-black text-gray-400 uppercase tracking-widest">
+                        <div className="modal-body">
+                            <div className="mb-6">
+                                <label className="block mb-2 text-sm font-semibold text-gray-700">
                                     Seleccionar Imágenes
                                 </label>
-                                <div className="border-4 border-dashed border-gray-100 rounded-[2rem] p-10 text-center hover:border-[#002D5A]/20 transition-all bg-gray-50/50 group">
+                                <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
                                     <input
                                         type="file"
                                         accept="image/*"
@@ -1764,54 +1808,55 @@ export default function TrasladoPage() {
                                     />
                                     <label
                                         htmlFor="file-input-actas-subir-traslados-listado"
-                                        className="cursor-pointer flex flex-col items-center gap-4"
+                                        className="cursor-pointer flex flex-col items-center gap-2"
                                     >
-                                        <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform duration-300">
-                                            <Upload className="w-10 h-10 text-[#002D5A]" />
+                                        <div className="w-12 h-12 bg-[#002D5A] rounded-full flex items-center justify-center">
+                                            <Upload className="w-6 h-6 text-white" />
                                         </div>
                                         <div>
-                                            <span className="text-[#002D5A] font-black text-sm block mb-1">Cargar documentos</span>
-                                            <span className="text-gray-400 text-[10px] font-medium tracking-wide">JPG, PNG o WEBP (Máx. 5MB por archivo)</span>
+                                            <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
                                         </div>
+                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
                                     </label>
                                 </div>
                             </div>
 
                             {actasParaSubir.length > 0 && (
-                                <div className="space-y-6">
-                                    <h6 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
-                                        Cola de subida ({actasParaSubir.length})
+                                <div className="space-y-4">
+                                    <h6 className="text-sm font-bold text-gray-700 mb-3">
+                                        Actas Seleccionadas ({actasParaSubir.length})
                                     </h6>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {actasParaSubir.map((acta, index) => (
-                                            <div key={index} className="border border-gray-100 rounded-[1.5rem] p-5 bg-white shadow-sm hover:shadow-md transition-shadow">
-                                                <div className="flex gap-5">
+                                            <div key={index} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
+                                                <div className="flex gap-3">
                                                     <div className="flex-shrink-0">
                                                         <img
                                                             src={acta.preview}
                                                             alt={`Preview ${index + 1}`}
-                                                            className="w-24 h-24 object-cover rounded-2xl shadow-inner border border-gray-50"
+                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
                                                         />
                                                     </div>
-                                                    <div className="flex-1 min-w-0 flex flex-col justify-between">
-                                                        <div className="mb-4">
-                                                            <label className="block text-[10px] font-black text-[#002D5A] uppercase tracking-tighter mb-2">
-                                                                Nombre del documento
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                Nombre de la Acta *
                                                             </label>
                                                             <input
                                                                 type="text"
                                                                 value={acta.nombre}
                                                                 onChange={e => handleUpdateNombreActaParaSubir(index, e.target.value)}
-                                                                className="w-full px-4 py-3 text-xs bg-gray-50 border-2 border-gray-100 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all font-bold text-gray-900"
-                                                                placeholder="Ej: Acta de conformidad"
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                                placeholder="Ej: Acta revisión 01"
                                                             />
                                                         </div>
                                                         <button
                                                             onClick={() => handleRemoveActaParaSubir(index)}
-                                                            className="flex items-center gap-2 px-4 py-2 text-red-500 hover:text-red-700 text-[10px] font-black uppercase tracking-widest transition-colors"
+                                                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
                                                         >
-                                                            <Trash2 className="w-4 h-4" />
-                                                            Quitar
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            Eliminar
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1822,29 +1867,32 @@ export default function TrasladoPage() {
                             )}
                         </div>
 
-                        <div className="p-8 border-t border-gray-50 flex justify-end gap-4 bg-gray-50/50">
+                        <div className="modal-footer">
                             <button
                                 onClick={() => {
                                     refreshActasSelectionReset();
                                     setModalSubirActasOpen(false);
                                     setRepIdActasTraslado(null);
                                 }}
-                                className="px-8 py-3 text-xs font-black text-gray-400 hover:text-gray-600 transition-all uppercase tracking-widest"
+                                className="btn btn-secondary"
                             >
                                 Cancelar
                             </button>
                             <button
                                 onClick={guardarActasTraslado}
                                 disabled={actasParaSubir.length === 0 || subiendoActas}
-                                className="px-10 py-3 bg-[#002D5A] hover:bg-[#001F3D] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-900/20 transition-all active:scale-95 disabled:opacity-50"
+                                className="btn btn-primary"
                             >
                                 {subiendoActas ? (
-                                    <span className="flex items-center gap-2">
+                                    <>
                                         <Loader2 className="w-4 h-4 animate-spin" />
                                         Subiendo...
-                                    </span>
+                                    </>
                                 ) : (
-                                    'Iniciar subida'
+                                    <>
+                                        <Upload className="w-4 h-4" />
+                                        Guardar actas
+                                    </>
                                 )}
                             </button>
                         </div>

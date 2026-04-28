@@ -258,8 +258,8 @@ export default function CascadaMovimientosSalidas({
 
                   {isOpen && (
                     <div className="pb-5">
-                      <div className="bg-white rounded-2xl border border-gray-100 p-4">
-                          <div className="flex items-start justify-between gap-4 mb-4">
+                        <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
                               <div className="w-full sm:w-[180px]">
                                 <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
@@ -275,10 +275,9 @@ export default function CascadaMovimientosSalidas({
                               </div>
                             </div>
 
-                          <div className="flex items-center gap-4 mt-1">
-                            <div className="text-[10px] text-gray-500 whitespace-nowrap">
-                              Actas:{' '}
-                              <span className="text-gray-900 font-bold">{carga.actas.length}</span>
+                          <div className="w-full sm:w-auto flex flex-wrap items-center justify-end gap-2">
+                            <div className="text-[10px] text-gray-500">
+                              Actas: <span className="text-gray-900 font-bold">{carga.actas.length}</span>
                             </div>
                             <button
                               onClick={() => {

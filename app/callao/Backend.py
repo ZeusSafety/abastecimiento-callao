@@ -87,6 +87,53 @@ def bad_request_error(message="Solicitud incorrecta", headers=None):
     return (json.dumps({'success': False, 'error': message}), 400, headers)
 
 # ============================================================
+# HELPERS DE ACTAS
+# ============================================================
+def _obtener_actas_por_movimiento(cursor, *, id_entrada=None, id_salida=None, id_traslado=None):
+    """
+    Devuelve listado de actas para un movimiento específico (entrada/salida/traslado).
+    Formato: [{id, nombre_imagen, url_imagen, codigo_carga}, ...]
+    """
+    filtros = []
+    params = []
+    if id_entrada is not None:
+        filtros.append("id_movimiento_entrada = %s")
+        params.append(id_entrada)
+    if id_salida is not None:
+        filtros.append("id_movimiento_salida = %s")
+        params.append(id_salida)
+    if id_traslado is not None:
+        filtros.append("id_movimiento_traslado = %s")
+        params.append(id_traslado)
+
+    if len(filtros) != 1:
+        raise ValueError("Debe indicarse exactamente un tipo de movimiento (entrada/salida/traslado)")
+
+    sql = f"""
+        SELECT id, nombre_imagen, url_imagen, codigo_carga
+        FROM movimientos_actas_callao
+        WHERE {filtros[0]}
+        ORDER BY id ASC
+    """
+    cursor.execute(sql, tuple(params))
+    return cursor.fetchall()
+
+def _actas_payload(cursor, *, id_entrada=None, id_salida=None, id_traslado=None):
+    """Arma payload consistente para frontend: actas[], total_actas, actas_urls (string CSV)."""
+    actas = _obtener_actas_por_movimiento(
+        cursor,
+        id_entrada=id_entrada,
+        id_salida=id_salida,
+        id_traslado=id_traslado,
+    )
+    urls = [a.get('url_imagen') for a in actas if a.get('url_imagen')]
+    return {
+        'actas': actas,
+        'total_actas': len(actas),
+        'actas_urls': ",".join(urls)
+    }
+
+# ============================================================
 # FUNCIONES AUXILIARES
 # ============================================================
 def _get_id_tienda_por_nombre_o_codigo(nombre_o_codigo, conn):
@@ -2237,6 +2284,7 @@ def get_historial_entradas(request, headers):
     try:
         sql = """
             SELECT 
+                ce.id_movimiento_entrada as id_entrada,
                 ce.fecha_cambio as fecha,
                 p.codigo as producto_codigo, p.nombre as producto_nombre,
                 tos.nombre as operacion,
@@ -2248,7 +2296,17 @@ def get_historial_entradas(request, headers):
                 um.nombre as unidad_medida,
                 ce.entregado_por, ce.registrado_por, ce.observaciones,
                 ce.motivo_cambio,
-                ce.fecha_movimiento_orig
+                ce.fecha_movimiento_orig,
+                (
+                    SELECT COUNT(*)
+                    FROM movimientos_actas_callao ma
+                    WHERE ma.id_movimiento_entrada = me.id
+                ) as total_actas,
+                (
+                    SELECT GROUP_CONCAT(ma.url_imagen SEPARATOR ',')
+                    FROM movimientos_actas_callao ma
+                    WHERE ma.id_movimiento_entrada = me.id
+                ) as actas_urls
             FROM cambios_entrada_callao ce
             JOIN movimientos_entrada_callao me ON ce.id_movimiento_entrada = me.id
             JOIN productos_abastecimiento_callao p ON ce.id_producto = p.id
@@ -2272,6 +2330,7 @@ def get_historial_salidas(request, headers):
     try:
         sql = """
             SELECT 
+                cs.id_movimiento_salida as id_salida,
                 cs.fecha_cambio as fecha,
                 p.codigo as producto_codigo, p.nombre as producto_nombre,
                 tos.nombre as operacion, cs.nro_comprobante, cs.asesor,
@@ -2281,7 +2340,17 @@ def get_historial_salidas(request, headers):
                 t.codigo as tienda_codigo,
                 cs.entregado_por, cs.registrado_por, cs.observaciones,
                 cs.motivo_cambio,
-                cs.fecha_movimiento_orig
+                cs.fecha_movimiento_orig,
+                (
+                    SELECT COUNT(*)
+                    FROM movimientos_actas_callao ma
+                    WHERE ma.id_movimiento_salida = ms.id
+                ) as total_actas,
+                (
+                    SELECT GROUP_CONCAT(ma.url_imagen SEPARATOR ',')
+                    FROM movimientos_actas_callao ma
+                    WHERE ma.id_movimiento_salida = ms.id
+                ) as actas_urls
             FROM cambios_salida_callao cs
             JOIN movimientos_salida_callao ms ON cs.id_movimiento_salida = ms.id
             JOIN productos_abastecimiento_callao p ON cs.id_producto = p.id
@@ -2304,6 +2373,7 @@ def get_historial_traslados(request, headers):
     try:
         sql = """
             SELECT 
+                ct.id_movimiento_traslado as id_traslado,
                 ct.fecha_cambio as fecha,
                 p.codigo as producto_codigo, p.nombre as producto_nombre,
                 tos.nombre as operacion,
@@ -2315,7 +2385,17 @@ def get_historial_traslados(request, headers):
                 um.nombre as unidad_medida,
                 ct.entregado_por, ct.registrado_por, ct.observaciones,
                 ct.motivo_cambio,
-                ct.fecha_movimiento_orig
+                ct.fecha_movimiento_orig,
+                (
+                    SELECT COUNT(*)
+                    FROM movimientos_actas_callao ma
+                    WHERE ma.id_movimiento_traslado = mt.id
+                ) as total_actas,
+                (
+                    SELECT GROUP_CONCAT(ma.url_imagen SEPARATOR ',')
+                    FROM movimientos_actas_callao ma
+                    WHERE ma.id_movimiento_traslado = mt.id
+                ) as actas_urls
             FROM cambios_traslado_callao ct
             JOIN movimientos_traslado_callao mt ON ct.id_movimiento_traslado = mt.id
             JOIN productos_abastecimiento_callao p ON ct.id_producto = p.id
@@ -3130,6 +3210,8 @@ def agregar_acta_a_entrada(request, headers):
             return not_found_error("Entrada no encontrada", headers)
 
         codigo_carga = _codigo_carga_desde_actas_entrada(cursor, id_entrada)
+        # Importante para vista cascada: persistir codigo_carga en el movimiento (si existe columna)
+        _asignar_codigo_carga_entrada_si_existe_columna(cursor, id_entrada, codigo_carga)
 
         # Guardar archivo(s)
         for file in files:
@@ -3144,7 +3226,9 @@ def agregar_acta_a_entrada(request, headers):
                     )
 
         conn.commit()
-        return created_response(message="Acta agregada exitosamente", headers=headers)
+        payload = _actas_payload(cursor, id_entrada=id_entrada)
+        payload['id_entrada'] = id_entrada
+        return created_response(data=payload, message="Acta agregada exitosamente", headers=headers)
 
     except Exception as e:
         conn.rollback()
@@ -3182,6 +3266,8 @@ def agregar_acta_a_salida(request, headers):
             return not_found_error("Salida no encontrada", headers)
 
         codigo_carga = _codigo_carga_desde_actas_salida(cursor, id_salida)
+        # Importante para vista cascada: persistir codigo_carga en el movimiento (si existe columna)
+        _asignar_codigo_carga_salida_si_existe_columna(cursor, id_salida, codigo_carga)
 
         # Guardar archivo(s)
         for file in files:
@@ -3196,7 +3282,9 @@ def agregar_acta_a_salida(request, headers):
                     )
 
         conn.commit()
-        return created_response(message="Acta agregada exitosamente", headers=headers)
+        payload = _actas_payload(cursor, id_salida=id_salida)
+        payload['id_salida'] = id_salida
+        return created_response(data=payload, message="Acta agregada exitosamente", headers=headers)
 
     except Exception as e:
         conn.rollback()
@@ -3234,6 +3322,8 @@ def agregar_acta_a_traslado(request, headers):
             return not_found_error("Traslado no encontrado", headers)
 
         codigo_carga = _codigo_carga_desde_actas_traslado(cursor, id_traslado)
+        # Importante para vista cascada: persistir codigo_carga en el movimiento (si existe columna)
+        _asignar_codigo_carga_traslado_si_existe_columna(cursor, id_traslado, codigo_carga)
 
         # Guardar archivo(s)
         for file in files:
@@ -3248,7 +3338,9 @@ def agregar_acta_a_traslado(request, headers):
                     )
 
         conn.commit()
-        return created_response(message="Acta agregada exitosamente", headers=headers)
+        payload = _actas_payload(cursor, id_traslado=id_traslado)
+        payload['id_traslado'] = id_traslado
+        return created_response(data=payload, message="Acta agregada exitosamente", headers=headers)
 
     except Exception as e:
         conn.rollback()

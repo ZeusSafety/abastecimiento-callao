@@ -42,7 +42,6 @@ export default function NotificationModal({ isOpen, onClose }: NotificationModal
     return (
         <div
             className="fixed inset-0 z-[2000] flex items-start justify-end p-4 sm:p-6 bg-black/20 backdrop-blur-sm animate-in fade-in duration-300"
-            onClick={e => e.target === e.currentTarget && onClose()}
         >
             <div
                 className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-right-8 duration-500"

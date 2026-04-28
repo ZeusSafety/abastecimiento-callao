@@ -672,7 +672,22 @@ function ModalSalida({
                                     </select>
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
-                                
+                                {!isEdit && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setModalActasOpen(true)}
+                                        className="flex items-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm"
+                                        style={{ whiteSpace: 'nowrap' }}
+                                    >
+                                        <Upload className="w-4 h-4" />
+                                        <span>Subir Acta</span>
+                                        {actas.length > 0 && (
+                                            <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                                {actas.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                )}
                             </div>
                             {form.registradoPor === COMBO_OTROS_VALUE && (
                                 <input
@@ -685,21 +700,6 @@ function ModalSalida({
                                 />
                             )}
                         </div>
-
-                        <button
-                                    type="button"
-                                    onClick={() => setModalActasOpen(true)}
-                                    className="flex items-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm"
-                                    style={{ whiteSpace: 'nowrap' }}
-                                >
-                                    <Upload className="w-4 h-4" />
-                                    <span>Subir Acta</span>
-                                    {actas.length > 0 && (
-                                        <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                                            {actas.length}
-                                        </span>
-                                    )}
-                                </button>
 
                         {/* Observaciones */}
                         <div className="col-span-2">

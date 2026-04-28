@@ -365,17 +365,23 @@ export default function CambiosTrasladoPage() {
 
             {/* Modal Observaciones */}
             {modalObservaciones.isOpen && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setModalObservaciones({ isOpen: false, content: '' })}>
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-blue-50">
-                            <h2 className="text-xl font-bold text-gray-900">Observaciones</h2>
-                            <button onClick={() => setModalObservaciones({ isOpen: false, content: '' })}><X className="w-5 h-5 text-gray-500" /></button>
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[10000]">
+                        <div className="bg-gradient-to-r from-[#002D5A] to-[#003d7a] px-6 py-4 flex items-center justify-between">
+                            <h2 className="text-white font-black text-lg uppercase tracking-wider">Observaciones</h2>
+                            <button onClick={() => setModalObservaciones({ isOpen: false, content: '' })} className="text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
                         </div>
-                        <div className="p-6">
-                            <p className="text-gray-700 whitespace-pre-wrap">{modalObservaciones.content}</p>
+                        <div className="p-6 overflow-y-auto flex-1">
+                            <div className="text-gray-700 text-sm whitespace-pre-wrap">
+                                {modalObservaciones.content || 'Sin observaciones'}
+                            </div>
                         </div>
-                        <div className="flex justify-end p-6 border-t border-gray-200 bg-gray-50">
-                            <button onClick={() => setModalObservaciones({ isOpen: false, content: '' })} className="px-6 py-2 bg-[#002D5A] text-white rounded-lg font-semibold shadow-lg active:scale-95 transition-all">Cerrar</button>
+                        <div className="p-4 border-t border-gray-200 flex justify-end">
+                            <button onClick={() => setModalObservaciones({ isOpen: false, content: '' })} className="px-5 py-2 rounded-lg bg-[#002D5A] text-white text-xs font-bold hover:bg-[#001f3d]">
+                                Cerrar
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -383,17 +389,23 @@ export default function CambiosTrasladoPage() {
 
             {/* Modal Motivo */}
             {modalMotivo.isOpen && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setModalMotivo({ isOpen: false, content: '' })}>
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-amber-50">
-                            <h2 className="text-xl font-bold text-gray-900">Motivo del Cambio</h2>
-                            <button onClick={() => setModalMotivo({ isOpen: false, content: '' })}><X className="w-5 h-5 text-gray-500" /></button>
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[10000]">
+                        <div className="bg-gradient-to-r from-[#002D5A] to-[#003d7a] px-6 py-4 flex items-center justify-between">
+                            <h2 className="text-white font-black text-lg uppercase tracking-wider">Motivo del Cambio</h2>
+                            <button onClick={() => setModalMotivo({ isOpen: false, content: '' })} className="text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
                         </div>
-                        <div className="p-6">
-                            <p className="text-gray-700 whitespace-pre-wrap uppercase font-bold text-sm tracking-tight">{modalMotivo.content}</p>
+                        <div className="p-6 overflow-y-auto flex-1">
+                            <div className="text-gray-700 text-sm whitespace-pre-wrap">
+                                {modalMotivo.content || 'Sin motivo especificado'}
+                            </div>
                         </div>
-                        <div className="flex justify-end p-6 border-t border-gray-200 bg-gray-50">
-                            <button onClick={() => setModalMotivo({ isOpen: false, content: '' })} className="px-6 py-2 bg-[#002D5A] text-white rounded-lg font-semibold shadow-lg active:scale-95 transition-all">Cerrar</button>
+                        <div className="p-4 border-t border-gray-200 flex justify-end">
+                            <button onClick={() => setModalMotivo({ isOpen: false, content: '' })} className="px-5 py-2 rounded-lg bg-[#002D5A] text-white text-xs font-bold hover:bg-[#001f3d]">
+                                Cerrar
+                            </button>
                         </div>
                     </div>
                 </div>
