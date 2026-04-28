@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import {
+import { 
     useCallao,
     TIENDAS,
     OPERADORES,
