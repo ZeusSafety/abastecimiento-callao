@@ -167,6 +167,21 @@ export interface Producto {
   existencia: Record<Tienda, number>;
 }
 
+/**
+ * UM en modales de movimiento:
+ * - Entrada y traslado: **DOCENAS** solo si el destino **Ingreso (tienda)** es `TIENDA OFICINA-DOCENAS`.
+ * - Salida: **DOCENAS** solo si el **almacén** del movimiento es `TIENDA OFICINA-DOCENAS`.
+ * - En cualquier otro caso: UM del producto (`unidadMedida` = columna "U. MEDIDA"); sin producto: CAJAS.
+ */
+export function unidadMedidaParaFormularioMovimiento(
+  producto: Producto | null | undefined,
+  ingresoOAlmacenEsOficinaDocenas = false,
+): UnidadMedida {
+  if (ingresoOAlmacenEsOficinaDocenas) return 'DOCENAS';
+  if (producto) return producto.unidadMedida;
+  return 'CAJAS';
+}
+
 /** id en `unidades_medida_sea_callao` para la UM de reg. cálculo del producto. */
 export function resolveIdUnidadMedidaReg(producto: Producto): number {
   return producto.idUnidadMedidaReg ?? UNIDAD_MEDIDA_REVERSE_MAP[producto.unidadMedidaRegCalculo];

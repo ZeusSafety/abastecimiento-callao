@@ -175,8 +175,6 @@ export default function StockTotalPage() {
         almacenSalida: 'MALVINAS',
         operador: OPERADORES[0],
         operadorCustom: '',
-        entregado: OPERADORES[0],
-        entregadoCustom: '',
         registradoPor: REGISTRADORES[0],
         registradoCustom: '',
         observaciones: '',
@@ -460,7 +458,6 @@ export default function StockTotalPage() {
             '',
             '',
             '',
-            '',
             'DISPONIBLES',
             '',
             'DOC,DEC,UNI SUELTAS',
@@ -472,7 +469,6 @@ export default function StockTotalPage() {
             '',
             '',
             ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
-            'TOTAL',
             'TOTAL',
             'U.MED',
             '',
@@ -487,21 +483,15 @@ export default function StockTotalPage() {
             );
             // Doc,Dec,Uni Sueltas refleja exclusivamente la sede Oficina-Docenas por producto.
             const medidaValor = p.existencia['TIENDA OFICINA-DOCENAS'] || 0;
-            const totalExistencias = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
-                (acc, { tienda }) => acc + (p.existencia[tienda] || 0),
-                0
-            );
-
             return [
                 p.codigo, // 0
                 p.nombre, // 1
                 cantidadReg, // 2
                 p.unidadMedida, // 3
                 ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0), // 4..8 (5 tiendas)
-                totalExistencias, // 9
-                disponibles, // 10
-                p.unidadMedidaRegCalculo, // 11
-                medidaValor, // 12
+                disponibles, // 9 — Total bajo «Disponibles» (misma tabla en pantalla)
+                p.unidadMedida, // 10 — U.MED (Disponibles)
+                medidaValor, // 11 — Doc,Dec,Uni sueltas
             ];
         });
 
@@ -511,9 +501,9 @@ export default function StockTotalPage() {
             { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // PRODUCTO
             { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // CANT. EN CAJA
             { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } }, // U. MEDIDA
-            { s: { r: 0, c: 4 }, e: { r: 0, c: 9 } }, // EXISTENCIA ALMACEN (5 + TOTAL)
-            { s: { r: 0, c: 10 }, e: { r: 0, c: 11 } }, // DISPONIBLES (TOTAL + U.MED)
-            { s: { r: 0, c: 12 }, e: { r: 1, c: 12 } }, // DOC,DEC,UNI SUELTAS
+            { s: { r: 0, c: 4 }, e: { r: 0, c: 8 } }, // EXISTENCIA ALMACEN (solo 5 tiendas, sin TOTAL duplicado)
+            { s: { r: 0, c: 9 }, e: { r: 0, c: 10 } }, // DISPONIBLES (TOTAL + U.MED)
+            { s: { r: 0, c: 11 }, e: { r: 1, c: 11 } }, // DOC,DEC,UNI SUELTAS
         ];
         ws['!cols'] = [
             { wch: 12 }, // CODIGO
@@ -521,7 +511,6 @@ export default function StockTotalPage() {
             { wch: 14 }, // CANT. EN CAJA
             { wch: 12 }, // U. MEDIDA
             { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, // 5 tiendas
-            { wch: 12 }, // TOTAL existencia
             { wch: 12 }, // DISPONIBLES total
             { wch: 10 }, // U.MED
             { wch: 18 }, // DOC,DEC,UNI SUELTAS
@@ -623,14 +612,9 @@ export default function StockTotalPage() {
 
         if (!soloConfig) {
             const operador = resolvePersonaCombo(importForm.operador, importForm.operadorCustom);
-            const entregado = resolvePersonaCombo(importForm.entregado, importForm.entregadoCustom);
             const registrado = resolvePersonaCombo(importForm.registradoPor, importForm.registradoCustom);
             if (importForm.operador === COMBO_OTROS_VALUE && !operador) {
                 showToast('error', 'Indica el nombre del operador (OTROS)');
-                return;
-            }
-            if (importForm.entregado === COMBO_OTROS_VALUE && !entregado) {
-                showToast('error', 'Indica quién entrega (OTROS)');
                 return;
             }
             if (importForm.registradoPor === COMBO_OTROS_VALUE && !registrado) {
@@ -649,7 +633,6 @@ export default function StockTotalPage() {
             } else {
                 const actasPayload = importActas.length > 0 ? importActas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined;
                 const operador = resolvePersonaCombo(importForm.operador, importForm.operadorCustom);
-                const entregado = resolvePersonaCombo(importForm.entregado, importForm.entregadoCustom);
                 const registrado = resolvePersonaCombo(importForm.registradoPor, importForm.registradoCustom);
                 const entradasPayload = importMovs.map(m => ({
                     producto: m.producto,
@@ -659,7 +642,7 @@ export default function StockTotalPage() {
                     operador,
                     cantidad: m.cantidad,
                     unidad_medida: m.unidad_medida,
-                    entregado_por: entregado,
+                    entregado_por: operador,
                     registrado_por: registrado,
                     observaciones: importForm.observaciones,
                 }));
@@ -864,10 +847,10 @@ export default function StockTotalPage() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {isLoading ? (
-                                        <TableSkeleton rows={20} cols={11} />
+                                        <TableSkeleton rows={20} cols={12} />
                                     ) : filtered.length === 0 ? (
                                         <tr>
-                                            <td colSpan={11} className="px-4 py-12 text-center">
+                                            <td colSpan={12} className="px-4 py-12 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <Package className="w-12 h-12 text-gray-300" />
                                                     <p className="text-gray-400 text-sm font-medium">
@@ -948,7 +931,7 @@ export default function StockTotalPage() {
                                                         );
                                                     })}
                                                     <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{disponibles}</td>
-                                                    <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{p.unidadMedidaRegCalculo}</td>
+                                                    <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{p.unidadMedida}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: '#22c55e' }}>
                                                         {medida}
                                                     </td>
@@ -1065,58 +1048,63 @@ export default function StockTotalPage() {
 
             {/* Modal Importar Excel -> Registro de Entrada Masivo */}
             {showImportModal && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[10000]">
-                        <div className="p-6 border-b border-gray-200">
-                            <div className="flex items-start gap-3">
-                                <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#E9F1FF' }}>
-                                    <Upload className="w-5 h-5 text-[#002D5A]" />
+                <div
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+                    onClick={e => e.target === e.currentTarget && !isImportSaving && setShowImportModal(false)}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col z-[10000] border border-gray-100"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-gray-200 bg-gradient-to-b from-slate-50/90 to-white">
+                            <div className="flex items-center gap-4 min-w-0 flex-1">
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-[#002D5A] shadow-md shadow-[#002D5A]/20">
+                                    <Upload className="w-6 h-6 text-white" strokeWidth={2.25} />
                                 </div>
-                                <div className="min-w-0 flex-1 pr-1">
-                                    <h2 className="text-[18px] font-extrabold text-gray-900 leading-tight">
+                                <div className="min-w-0">
+                                    <h2 className="text-base font-bold text-[#002D5A] m-0 leading-tight tracking-tight">
                                         Importar Excel
                                     </h2>
-                                    <p className="text-sm text-gray-600 leading-relaxed mt-1.5 max-w-none">
+                                    <p className="text-sm text-gray-500 mt-1.5 m-0 leading-relaxed font-medium">
                                         Registro de entrada masivo desde el archivo Excel exportado desde la vista{' '}
-                                        <span className="font-semibold text-gray-800">Productos Detallados</span>.
+                                        <span className="text-gray-700 font-semibold">Productos Detallados</span>.
                                     </p>
-                                    <p className="text-sm text-gray-600 leading-relaxed mt-2 max-w-none">
+                                    <p className="text-sm text-gray-500 mt-2 m-0 leading-relaxed font-medium">
                                         Los ingresos se registrarán con la operación elegida y el{' '}
-                                        <strong className="font-semibold text-gray-800">origen de salida</strong>{' '}
-                                        que indiques en los campos de abajo.
+                                        <span className="text-gray-700 font-semibold">origen de salida</span> que indiques en los campos de
+                                        abajo.
                                     </p>
-                                    <p
-                                        className="mt-3 text-sm text-gray-600 leading-snug"
-                                        role="status"
-                                    >
-                                        <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                            <span>
-                                                Filas:{' '}
-                                                <span className="tabular-nums font-semibold text-gray-900">{importFilasProcesadas}</span>
-                                            </span>
-                                            <span className="text-gray-300 select-none" aria-hidden>
-                                                •
-                                            </span>
-                                            <span>
-                                                Movimientos:{' '}
-                                                <span className="tabular-nums font-semibold text-gray-900">{importMovs.length}</span>
-                                            </span>
-                                            <span className="text-gray-300 select-none" aria-hidden>
-                                                •
-                                            </span>
-                                            <span>
-                                                Cambios config:{' '}
-                                                <span className="tabular-nums font-semibold text-gray-900">{importFilasConfig}</span>
-                                            </span>
+                                    <div className="mt-4 flex flex-wrap gap-2" role="status" aria-live="polite">
+                                        <span className="inline-flex items-center gap-2 rounded-lg border border-gray-200/90 bg-white px-3 py-1.5 text-xs shadow-sm">
+                                            <span className="text-gray-500 font-semibold uppercase tracking-wide">Filas</span>
+                                            <span className="tabular-nums font-bold text-[#002D5A]">{importFilasProcesadas}</span>
                                         </span>
-                                    </p>
+                                        <span className="inline-flex items-center gap-2 rounded-lg border border-gray-200/90 bg-white px-3 py-1.5 text-xs shadow-sm">
+                                            <span className="text-gray-500 font-semibold uppercase tracking-wide">Movimientos</span>
+                                            <span className="tabular-nums font-bold text-[#002D5A]">{importMovs.length}</span>
+                                        </span>
+                                        <span className="inline-flex items-center gap-2 rounded-lg border border-gray-200/90 bg-white px-3 py-1.5 text-xs shadow-sm">
+                                            <span className="text-gray-500 font-semibold uppercase tracking-wide">Cambios config</span>
+                                            <span className="tabular-nums font-bold text-[#002D5A]">{importFilasConfig}</span>
+                                        </span>
+                                    </div>
                                     {importNegativos.length > 0 && (
-                                        <p className="text-xs text-blue-700 mt-2 font-semibold">
-                                            Aviso: se detectaron {importNegativos.length} ajuste(s) negativo(s) (Excel menor que sistema). No se registrarán automáticamente.
+                                        <p className="text-xs text-[#002D5A] mt-3 m-0 font-semibold rounded-lg border border-[#002D5A]/15 bg-[#E9F1FF] px-3 py-2">
+                                            Aviso: se detectaron {importNegativos.length} ajuste(s) negativo(s) (Excel menor que sistema). No
+                                            se registrarán automáticamente.
                                         </p>
                                     )}
                                 </div>
                             </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowImportModal(false)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors shrink-0 self-start"
+                                aria-label="Cerrar"
+                                disabled={isImportSaving}
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
                         </div>
 
                         <div className="p-6 overflow-y-auto flex-1">
@@ -1131,6 +1119,7 @@ export default function StockTotalPage() {
                                             { value: 'OTROS', label: 'OTROS' },
                                         ]}
                                         size="md"
+                                        placement="below"
                                     />
                                 </div>
                                 <div>
@@ -1148,6 +1137,7 @@ export default function StockTotalPage() {
                                             { value: 'CALLAO-2', label: 'CALLAO 2' },
                                         ]}
                                         size="md"
+                                        placement="below"
                                     />
                                 </div>
                                 <div>
@@ -1166,6 +1156,7 @@ export default function StockTotalPage() {
                                             { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
                                         ]}
                                         size="md"
+                                        placement="below"
                                     />
                                     {importForm.operador === COMBO_OTROS_VALUE && (
                                         <input
@@ -1174,33 +1165,6 @@ export default function StockTotalPage() {
                                             onChange={e => setImportForm(f => ({ ...f, operadorCustom: e.target.value.toUpperCase() }))}
                                             className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
                                             placeholder="Nombre del operador"
-                                        />
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-600 mb-1">Entregado por</label>
-                                    <PrettySelect
-                                        value={importForm.entregado}
-                                        onChange={v =>
-                                            setImportForm(f => ({
-                                                ...f,
-                                                entregado: v,
-                                                entregadoCustom: v !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
-                                            }))
-                                        }
-                                        options={[
-                                            ...OPERADORES.map(o => ({ value: o, label: o })),
-                                            { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
-                                        ]}
-                                        size="md"
-                                    />
-                                    {importForm.entregado === COMBO_OTROS_VALUE && (
-                                        <input
-                                            type="text"
-                                            value={importForm.entregadoCustom}
-                                            onChange={e => setImportForm(f => ({ ...f, entregadoCustom: e.target.value.toUpperCase() }))}
-                                            className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
-                                            placeholder="Nombre"
                                         />
                                     )}
                                 </div>
@@ -1220,6 +1184,7 @@ export default function StockTotalPage() {
                                             { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
                                         ]}
                                         size="md"
+                                        placement="below"
                                     />
                                     {importForm.registradoPor === COMBO_OTROS_VALUE && (
                                         <input
@@ -1502,14 +1467,14 @@ export default function StockTotalPage() {
             {/* Modal contraseña importación (siempre) */}
             {showImportPasswordModal && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 z-[10000]">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 z-[10000] border border-gray-100">
                         <div className="flex items-center justify-between p-6 border-b border-gray-200">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                                    <Lock className="w-5 h-5 text-orange-600" />
+                                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-[#E9F1FF]">
+                                    <Lock className="w-5 h-5 text-[#002D5A]" />
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-bold text-gray-900">Autorización</h2>
+                                    <h2 className="text-xl font-bold text-[#002D5A]">Autorización</h2>
                                     <p className="text-sm text-gray-500 mt-0.5">Ingresa la contraseña para guardar</p>
                                 </div>
                             </div>
@@ -1527,12 +1492,12 @@ export default function StockTotalPage() {
                                 type="password"
                                 value={importPassword}
                                 onChange={e => setImportPassword(e.target.value)}
-                                className="w-full px-4 py-3 border-2 rounded-xl text-sm font-medium transition-all outline-none border-gray-200 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
+                                className="w-full px-4 py-3 border-2 rounded-xl text-sm font-medium transition-all outline-none border-gray-200 bg-white focus:border-[#002D5A] focus:ring-4 focus:ring-blue-100"
                                 placeholder="Ingresa la contraseña"
                                 autoFocus
                             />
-                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mt-4">
-                                <p className="text-xs text-orange-800 font-medium">
+                            <div className="bg-[#E9F1FF] border border-[#002D5A]/20 rounded-lg p-3 mt-4">
+                                <p className="text-xs text-[#002D5A] font-medium">
                                     Se guardarán <strong>{importMovs.length}</strong> ingreso(s).
                                 </p>
                             </div>
@@ -1548,7 +1513,7 @@ export default function StockTotalPage() {
                             <button
                                 onClick={() => confirmImportSave(importPassword.trim())}
                                 disabled={isImportSaving || !importPassword.trim()}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#002D5A] to-[#003d7a] hover:from-[#001f3d] hover:to-[#002D5A] text-white rounded-xl font-semibold text-sm shadow-lg shadow-blue-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isImportSaving ? (
                                     <>

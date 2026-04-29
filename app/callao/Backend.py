@@ -2055,7 +2055,7 @@ def importar_stock_total_excel(request, headers):
     G: CALLAO 1-A
     H: CALLAO 1-B
     I: CALLAO 2
-    (J: TOTAL existencia, K: DISPONIBLES total, L: U.MED, M: DOC,DEC,UNI SUELTAS) -> se ignoran para importar
+    (J: DISPONIBLES total, K: U.MED, L: DOC,DEC,UNI SUELTAS) -> se ignoran para importar existencias
     """
     if request.method != 'POST':
         return bad_request_error("Método no permitido", headers)
@@ -2093,23 +2093,53 @@ def importar_stock_total_excel(request, headers):
             return ""
         return str(v).strip().upper()
 
-    # Validación mínima del formato (encabezados clave)
-    esperado = {
+    # Validación mínima del formato (encabezados clave).
+    # Hay dos layouts válidos (export actual 12 cols vs export anterior con TOTAL duplicado 13 cols):
+    #   Nuevo: DISPONIBLES en J1, DOC… en L1 (columnas E–I = solo 5 tiendas).
+    #   Legacy: DISPONIBLES en K1, DOC… en M1 (tras columna J = total existencias).
+    # Algunos lectores de .xlsx dejan el texto de celdas combinadas en la celda “siguiente”; por eso se aceptan ambos.
+    esperado_base = {
         "A1": "CODIGO",
         "B1": "PRODUCTO",
         "C1": "CANT. EN CAJA",
         "D1": "U. MEDIDA",
         "E1": "EXISTENCIA ALMACEN",
-        "K1": "DISPONIBLES",
-        "M1": "DOC,DEC,UNI SUELTAS",
     }
-    for addr, texto in esperado.items():
+    for addr, texto in esperado_base.items():
         if _norm_cell(ws[addr].value) != texto:
             return bad_request_error(
                 "El Excel no coincide con el formato exportado de 'Productos Detallados'. "
                 "Vuelve a exportar desde el sistema y edita ese mismo archivo.",
                 headers,
             )
+
+    # DISPONIBLES / DOC: no forzar J1/L1 fijos — Excel/SheetJS y celdas combinadas pueden dejar el
+    # texto en J o K (formato 12 vs 13 columnas). Se buscan en la fila 1 a partir de la columna J (10).
+    doc_label = "DOC,DEC,UNI SUELTAS"
+    disp_col = None
+    limite = max(int(ws.max_column or 0), 15)
+    for col in range(10, limite + 1):
+        if _norm_cell(ws.cell(row=1, column=col).value) == "DISPONIBLES":
+            disp_col = col
+            break
+    if disp_col is None:
+        return bad_request_error(
+            "El Excel no coincide con el formato exportado de 'Productos Detallados'. "
+            "En la fila 1 debe figurar el encabezado DISPONIBLES (columna J o K según el export). "
+            "Vuelve a exportar desde Stock Total o revisa que no falte esa celda.",
+            headers,
+        )
+    doc_col = None
+    for col in range(disp_col + 1, limite + 1):
+        if _norm_cell(ws.cell(row=1, column=col).value) == doc_label:
+            doc_col = col
+            break
+    if doc_col is None:
+        return bad_request_error(
+            "El Excel no coincide con el formato exportado de 'Productos Detallados'. "
+            "Falta el encabezado DOC,DEC,UNI SUELTAS a la derecha de DISPONIBLES.",
+            headers,
+        )
 
     tiendas_col_existencias = {
         "OFICINA": "E",

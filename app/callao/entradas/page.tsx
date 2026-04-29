@@ -3,7 +3,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     useCallao,
-    TIENDAS,
     OPERADORES,
     REGISTRADORES,
     OPS_ENTRADA,
@@ -21,6 +20,7 @@ import {
     UnidadMedida,
     Producto,
     getOperacionColor,
+    unidadMedidaParaFormularioMovimiento,
 } from '../../context/CallaoContext';
 import {
     Plus,
@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
+import { ExistenciaAlmacenCards } from '../../components/ExistenciaAlmacenCards';
 import { PrettySelect } from '../../components/PrettySelect';
 import * as api from '../../services/api';
 
@@ -269,7 +270,10 @@ function ModalEntrada({
                 productoId: '',
                 producto: '',
                 codigo: '',
-                unidadMedida: 'CAJAS' as UnidadMedida,
+                unidadMedida: unidadMedidaParaFormularioMovimiento(
+                    null,
+                    f.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
+                ),
             }));
             return;
         }
@@ -278,10 +282,10 @@ function ModalEntrada({
             productoId: productoId,
             producto: producto.nombre,
             codigo: producto.codigo, // Guardar código en el estado
-            unidadMedida:
-                f.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
-                    ? ('DOCENAS' as UnidadMedida)
-                    : ('CAJAS' as UnidadMedida),
+            unidadMedida: unidadMedidaParaFormularioMovimiento(
+                producto,
+                f.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
+            ),
         }));
     };
 
@@ -362,10 +366,10 @@ function ModalEntrada({
                         productoId: valor,
                         producto: producto?.nombre || p.producto,
                         codigo: producto?.codigo || p.codigo,
-                        unidadMedida:
-                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
-                                ? ('DOCENAS' as UnidadMedida)
-                                : ('CAJAS' as UnidadMedida),
+                        unidadMedida: unidadMedidaParaFormularioMovimiento(
+                            producto,
+                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
+                        ),
                     };
                 }
                 if (campo === 'almacenIngreso') {
@@ -373,10 +377,21 @@ function ModalEntrada({
                     return {
                         ...p,
                         almacenIngreso: valor,
-                        unidadMedida:
-                            valor === 'TIENDA OFICINA-DOCENAS'
-                                ? ('DOCENAS' as UnidadMedida)
-                                : ('CAJAS' as UnidadMedida),
+                        unidadMedida: unidadMedidaParaFormularioMovimiento(
+                            producto,
+                            valor === 'TIENDA OFICINA-DOCENAS',
+                        ),
+                    };
+                }
+                if (campo === 'almacenSalida') {
+                    const producto = state.productos.find(pr => pr.id === p.productoId);
+                    return {
+                        ...p,
+                        almacenSalida: valor,
+                        unidadMedida: unidadMedidaParaFormularioMovimiento(
+                            producto,
+                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
+                        ),
                     };
                 }
                 return { ...p, [campo]: valor };
@@ -394,7 +409,10 @@ function ModalEntrada({
                         productoId: '',
                         producto: '',
                         codigo: '',
-                        unidadMedida: 'CAJAS' as UnidadMedida,
+                        unidadMedida: unidadMedidaParaFormularioMovimiento(
+                            null,
+                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
+                        ),
                     };
                 }
                 return {
@@ -402,10 +420,10 @@ function ModalEntrada({
                     productoId: productoId,
                     producto: producto.nombre,
                     codigo: producto.codigo,
-                    unidadMedida:
-                        p.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
-                            ? ('DOCENAS' as UnidadMedida)
-                            : ('CAJAS' as UnidadMedida),
+                    unidadMedida: unidadMedidaParaFormularioMovimiento(
+                        producto,
+                        p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
+                    ),
                 };
             }
             return p;
@@ -633,39 +651,7 @@ function ModalEntrada({
                             </div>
 
                             {/* Existencia por Tienda */}
-                            {selectedProducto && (
-                                <div className="col-span-2">
-                                    <label className="form-label">Existencia Almacén</label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {TIENDAS.map(tienda => {
-                                            const existencia = selectedProducto.existencia[tienda] || 0;
-                                            const stockMinimo = selectedProducto.stockMinimo[tienda] || 0;
-                                            const bajoStock = existencia < stockMinimo && stockMinimo > 0;
-                                            return (
-                                                <div
-                                                    key={tienda}
-                                                    className={`p-3 rounded-lg border-2 transition-all ${bajoStock
-                                                        ? 'bg-red-50 border-red-200'
-                                                        : 'bg-blue-50 border-blue-200'
-                                                        }`}
-                                                >
-                                                    <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-1">
-                                                        {etiquetaTiendaMovimientosCallao(tienda)}
-                                                    </div>
-                                                    <div className={`text-lg font-black ${bajoStock ? 'text-red-700' : 'text-blue-700'}`}>
-                                                        {existencia}
-                                                    </div>
-                                                    {stockMinimo > 0 && (
-                                                        <div className="text-[8px] text-gray-500 mt-0.5">
-                                                            Mín: {stockMinimo}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
+                            {selectedProducto && <ExistenciaAlmacenCards producto={selectedProducto} />}
 
                             {/* Operación */}
                             <div>
@@ -683,7 +669,20 @@ function ModalEntrada({
                                 <label className="form-label">Almacén / Tienda de Salida</label>
                                 <PrettySelect
                                     value={form.almacenSalida}
-                                    onChange={v => setForm(f => ({ ...f, almacenSalida: v as AlmacenCompleto }))}
+                                    onChange={v => {
+                                        const salida = v as AlmacenCompleto;
+                                        setForm(f => {
+                                            const prod = state.productos.find(pr => pr.id === f.productoId);
+                                            return {
+                                                ...f,
+                                                almacenSalida: salida,
+                                                unidadMedida: unidadMedidaParaFormularioMovimiento(
+                                                    prod,
+                                                    f.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
+                                                ),
+                                            };
+                                        });
+                                    }}
                                     options={ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => ({
                                         value,
                                         label,
@@ -699,14 +698,17 @@ function ModalEntrada({
                                     value={form.almacenIngreso}
                                     onChange={v => {
                                         const dest = v as Tienda;
-                                        setForm(f => ({
-                                            ...f,
-                                            almacenIngreso: dest,
-                                            unidadMedida:
-                                                dest === 'TIENDA OFICINA-DOCENAS'
-                                                    ? ('DOCENAS' as UnidadMedida)
-                                                    : ('CAJAS' as UnidadMedida),
-                                        }));
+                                        setForm(f => {
+                                            const prod = state.productos.find(pr => pr.id === f.productoId);
+                                            return {
+                                                ...f,
+                                                almacenIngreso: dest,
+                                                unidadMedida: unidadMedidaParaFormularioMovimiento(
+                                                    prod,
+                                                    dest === 'TIENDA OFICINA-DOCENAS',
+                                                ),
+                                            };
+                                        });
                                     }}
                                     options={TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => ({
                                         value: tienda,
@@ -921,17 +923,14 @@ function ModalEntrada({
                                                                     {/* Operación */}
                                                                     <td className="px-3 py-2">
                                                                         {isEditing ? (
-                                                                            <div className="relative">
-                                                                                <select
+                                                                            <div className="min-w-[108px]" onClick={e => e.stopPropagation()}>
+                                                                                <PrettySelect
                                                                                     value={p.operacion}
-                                                                                    onChange={e => handleActualizarProducto(index, 'operacion', e.target.value)}
-                                                                                    className="form-input text-[9px] py-1 px-2"
-                                                                                    style={{ paddingRight: 20, appearance: 'none' }}
-                                                                                    onClick={e => e.stopPropagation()}
-                                                                                >
-                                                                                    {OPS_ENTRADA.map(op => <option key={op}>{op}</option>)}
-                                                                                </select>
-                                                                                <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                                                    onChange={v => handleActualizarProducto(index, 'operacion', v)}
+                                                                                    options={OPS_ENTRADA.map(op => ({ value: op, label: op }))}
+                                                                                    portal
+                                                                                    portalZIndex={28000}
+                                                                                />
                                                                             </div>
                                                                         ) : (
                                                                             <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold ${operacionColor.bg} ${operacionColor.text}`}>
@@ -942,19 +941,17 @@ function ModalEntrada({
                                                                     {/* Almacén Salida */}
                                                                     <td className="px-3 py-2">
                                                                         {isEditing ? (
-                                                                            <div className="relative">
-                                                                                <select
+                                                                            <div className="min-w-[132px]" onClick={e => e.stopPropagation()}>
+                                                                                <PrettySelect
                                                                                     value={p.almacenSalida}
-                                                                                    onChange={e => handleActualizarProducto(index, 'almacenSalida', e.target.value)}
-                                                                                    className="form-input text-[9px] py-1 px-2"
-                                                                                    style={{ paddingRight: 20, appearance: 'none' }}
-                                                                                    onClick={e => e.stopPropagation()}
-                                                                                >
-                                                                                    {ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => (
-                                                                                        <option key={value} value={value}>{label}</option>
-                                                                                    ))}
-                                                                                </select>
-                                                                                <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                                                    onChange={v => handleActualizarProducto(index, 'almacenSalida', v)}
+                                                                                    options={ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => ({
+                                                                                        value,
+                                                                                        label,
+                                                                                    }))}
+                                                                                    portal
+                                                                                    portalZIndex={28000}
+                                                                                />
                                                                             </div>
                                                                         ) : (
                                                                             <span className="text-[10px] text-gray-700">{etiquetaOrigenAlmacenSalidaEntrada(p.almacenSalida)}</span>
@@ -963,19 +960,17 @@ function ModalEntrada({
                                                                     {/* Ingreso */}
                                                                     <td className="px-3 py-2">
                                                                         {isEditing ? (
-                                                                            <div className="relative">
-                                                                                <select
+                                                                            <div className="min-w-[128px]" onClick={e => e.stopPropagation()}>
+                                                                                <PrettySelect
                                                                                     value={p.almacenIngreso}
-                                                                                    onChange={e => handleActualizarProducto(index, 'almacenIngreso', e.target.value)}
-                                                                                    className="form-input text-[9px] py-1 px-2"
-                                                                                    style={{ paddingRight: 20, appearance: 'none' }}
-                                                                                    onClick={e => e.stopPropagation()}
-                                                                                >
-                                                                                    {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
-                                                                                        <option key={tienda} value={tienda}>{label}</option>
-                                                                                    ))}
-                                                                                </select>
-                                                                                <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                                                                                    onChange={v => handleActualizarProducto(index, 'almacenIngreso', v)}
+                                                                                    options={TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => ({
+                                                                                        value: tienda,
+                                                                                        label,
+                                                                                    }))}
+                                                                                    portal
+                                                                                    portalZIndex={28000}
+                                                                                />
                                                                             </div>
                                                                         ) : (
                                                                             <span className="text-[10px] text-gray-700">{etiquetaTiendaMovimientosCallao(p.almacenIngreso)}</span>
