@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   useCallao,
   TIENDAS,
@@ -11,9 +11,26 @@ import {
   REGISTRADORES,
   COMBO_OTROS_VALUE,
   resolvePersonaCombo,
+  UnidadMedida,
 } from '../context/CallaoContext';
-import { Search, RefreshCw, TrendingUp, Package, AlertTriangle, Building, Box, Columns2, Check, X, Lock, FileSpreadsheet, Upload } from 'lucide-react';
+import {
+    Search,
+    RefreshCw,
+    TrendingUp,
+    Package,
+    AlertTriangle,
+    Building,
+    Box,
+    Columns2,
+    Check,
+    X,
+    Lock,
+    FileSpreadsheet,
+    Upload,
+    Trash2,
+} from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
+import { PrettySelect } from '../components/PrettySelect';
 import * as api from '../services/api';
 import * as XLSX from 'xlsx';
 
@@ -46,9 +63,93 @@ const TIENDAS_DISPONIBLES_CALLAO: ReadonlyArray<Tienda> = [
     'TIENDA CALLAO-2',
 ];
 
+function UnidadMedidaFilter({
+    value,
+    onChange,
+    counts,
+}: {
+    value: '__TODAS__' | UnidadMedida;
+    onChange: (v: '__TODAS__' | UnidadMedida) => void;
+    counts: Record<string, number>;
+}) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement | null>(null);
+
+    const options = useMemo(() => {
+        const keys = Object.keys(counts).sort();
+        return keys as UnidadMedida[];
+    }, [counts]);
+
+    useEffect(() => {
+        if (!open) return;
+        const onDown = (e: MouseEvent) => {
+            if (!ref.current) return;
+            if (e.target instanceof Node && ref.current.contains(e.target)) return;
+            setOpen(false);
+        };
+        window.addEventListener('mousedown', onDown);
+        return () => window.removeEventListener('mousedown', onDown);
+    }, [open]);
+
+    const label = value === '__TODAS__' ? 'U. Medida' : value;
+
+    return (
+        <div ref={ref} className="relative w-full md:w-44 lg:w-44">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-2xl shadow-sm transition-all outline-none ${
+                    open ? 'ring-4 ring-blue-50 border-[#002D5A]' : 'hover:border-gray-300'
+                }`}
+            >
+                <span className={`truncate ${value === '__TODAS__' ? 'text-gray-400 font-medium' : 'text-gray-700 font-medium'}`}>
+                    {label}
+                </span>
+                <span className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+
+            {open && (
+                <div className="absolute z-[60] mt-2 w-full rounded-2xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            onChange('__TODAS__');
+                            setOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors ${
+                            value === '__TODAS__' ? 'bg-blue-50 text-[#002D5A]' : 'hover:bg-gray-50 text-gray-700'
+                        }`}
+                    >
+                        U. Medida
+                    </button>
+                    <div className="max-h-64 overflow-auto">
+                        {options.map(u => (
+                            <button
+                                key={u}
+                                type="button"
+                                onClick={() => {
+                                    onChange(u);
+                                    setOpen(false);
+                                }}
+                                className={`w-full text-left px-4 py-2.5 text-sm font-semibold transition-colors flex items-center justify-between ${
+                                    value === u ? 'bg-blue-50 text-[#002D5A]' : 'hover:bg-gray-50 text-gray-700'
+                                }`}
+                            >
+                                <span className="truncate">{u}</span>
+                                <span className="text-xs font-bold text-gray-400">{counts[u] || 0}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function StockTotalPage() {
     const { state, refreshProductos, refreshEntradas, showToast } = useCallao();
     const [search, setSearch] = useState('');
+    const [unidadFilter, setUnidadFilter] = useState<'__TODAS__' | UnidadMedida>('__TODAS__');
     const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
     const [editingProducts, setEditingProducts] = useState<Map<string, EditingProduct>>(new Map());
     const [isSaving, setIsSaving] = useState(false);
@@ -64,11 +165,13 @@ export default function StockTotalPage() {
     const [importMovs, setImportMovs] = useState<api.ImportStockTotalResult['movimientos_entrada_sugeridos']>([]);
     const [importNegativos, setImportNegativos] = useState<api.ImportStockTotalResult['ajustes_negativos']>([]);
     const [importFilasConfig, setImportFilasConfig] = useState(0);
+    const [importFilasProcesadas, setImportFilasProcesadas] = useState(0);
+    const [importPreviewDetalle, setImportPreviewDetalle] = useState<api.ImportStockTotalResult['preview_detalle']>([]);
     const [isImportingPreview, setIsImportingPreview] = useState(false);
     const [isImportSaving, setIsImportSaving] = useState(false);
 
     const [importForm, setImportForm] = useState({
-        operacion: 'OTROS',
+        operacion: 'ENTRADA',
         almacenSalida: 'MALVINAS',
         operador: OPERADORES[0],
         operadorCustom: '',
@@ -79,6 +182,7 @@ export default function StockTotalPage() {
         observaciones: '',
     });
     const [importActas, setImportActas] = useState<Array<{ id: string; file: File; nombre: string; preview: string }>>([]);
+    const [importActasModalOpen, setImportActasModalOpen] = useState(false);
     const [showImportPasswordModal, setShowImportPasswordModal] = useState(false);
     const [importPassword, setImportPassword] = useState('');
 
@@ -179,10 +283,21 @@ export default function StockTotalPage() {
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
-        return state.productos.filter(
-            p => p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)
-        );
-    }, [state.productos, search]);
+        return state.productos.filter(p => {
+            const matchText = p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q);
+            const matchUnidad = unidadFilter === '__TODAS__' ? true : p.unidadMedida === unidadFilter;
+            return matchText && matchUnidad;
+        });
+    }, [state.productos, search, unidadFilter]);
+
+    const unidadCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        for (const p of state.productos) {
+            const k = (p.unidadMedida || 'UNIDADES') as string;
+            counts[k] = (counts[k] || 0) + 1;
+        }
+        return counts;
+    }, [state.productos]);
 
     // Stats cards
     const totalProductos = state.productos.length;
@@ -338,60 +453,55 @@ export default function StockTotalPage() {
         const headerTop = [
             'CODIGO',
             'PRODUCTO',
-            'CANT.',
-            'STOCK MINIMO',
-            '',
-            '',
-            '',
-            '',
-            'STOCK GLOBAL',
+            'CANT. EN CAJA',
             'U. MEDIDA',
             'EXISTENCIA ALMACEN',
             '',
             '',
             '',
             '',
+            '',
             'DISPONIBLES',
-            'STOCK DETALLADO',
+            '',
+            'DOC,DEC,UNI SUELTAS',
         ];
 
         const headerBottom = [
             '',
             '',
             '',
+            '',
             ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
+            'TOTAL',
             'TOTAL',
             'U.MED',
-            ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ etiqueta }) => etiqueta),
-            'TOTAL',
-            'DOC,DEC,UNI SUELTAS',
+            '',
         ];
 
         const rows = filtered.map(p => {
             const editing = editingProducts.get(p.id);
-            const stockMin = editing ? editing.editing.stockMinimo : p.stockMinimo;
             const cantidadReg = editing ? editing.editing.cantidadRegCalculo : p.cantidadRegCalculo;
-            const stockGlobalMin = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
-                (acc, { tienda }) => acc + (stockMin[tienda] || 0),
-                0
-            );
             const disponibles = TIENDAS_DISPONIBLES_CALLAO.reduce(
                 (acc, tienda) => acc + (p.existencia[tienda] || 0),
                 0
             );
             // Doc,Dec,Uni Sueltas refleja exclusivamente la sede Oficina-Docenas por producto.
             const medidaValor = p.existencia['TIENDA OFICINA-DOCENAS'] || 0;
+            const totalExistencias = TIENDAS_VISTA_INVENTARIO_CALLAO.reduce(
+                (acc, { tienda }) => acc + (p.existencia[tienda] || 0),
+                0
+            );
 
             return [
                 p.codigo, // 0
                 p.nombre, // 1
                 cantidadReg, // 2
-                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => stockMin[tienda] || 0), // 3,4,5,6,7
-                stockGlobalMin, // 8
-                p.unidadMedidaRegCalculo, // 9
-                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0), // 10,11,12,13,14
-                disponibles, // 15
-                medidaValor, // 16
+                p.unidadMedida, // 3
+                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0), // 4..8 (5 tiendas)
+                totalExistencias, // 9
+                disponibles, // 10
+                p.unidadMedidaRegCalculo, // 11
+                medidaValor, // 12
             ];
         });
 
@@ -399,20 +509,22 @@ export default function StockTotalPage() {
         ws['!merges'] = [
             { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } }, // CODIGO
             { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // PRODUCTO
-            { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // CANT.
-            { s: { r: 0, c: 3 }, e: { r: 0, c: 7 } }, // STOCK MINIMO (5 stores)
-            { s: { r: 0, c: 8 }, e: { r: 1, c: 8 } }, // STOCK GLOBAL
-            { s: { r: 0, c: 9 }, e: { r: 1, c: 9 } }, // U. MEDIDA
-            { s: { r: 0, c: 10 }, e: { r: 0, c: 14 } }, // EXISTENCIA ALMACEN (5 stores)
-            { s: { r: 0, c: 15 }, e: { r: 1, c: 15 } }, // DISPONIBLES
-            { s: { r: 0, c: 16 }, e: { r: 1, c: 16 } }, // STOCK DETALLADO (1 col)
+            { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // CANT. EN CAJA
+            { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } }, // U. MEDIDA
+            { s: { r: 0, c: 4 }, e: { r: 0, c: 9 } }, // EXISTENCIA ALMACEN (5 + TOTAL)
+            { s: { r: 0, c: 10 }, e: { r: 0, c: 11 } }, // DISPONIBLES (TOTAL + U.MED)
+            { s: { r: 0, c: 12 }, e: { r: 1, c: 12 } }, // DOC,DEC,UNI SUELTAS
         ];
         ws['!cols'] = [
-            { wch: 12 }, { wch: 34 }, { wch: 8 },
-            { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-            { wch: 12 }, { wch: 12 },
-            { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-            { wch: 12 }, { wch: 20 },
+            { wch: 12 }, // CODIGO
+            { wch: 34 }, // PRODUCTO
+            { wch: 14 }, // CANT. EN CAJA
+            { wch: 12 }, // U. MEDIDA
+            { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, // 5 tiendas
+            { wch: 12 }, // TOTAL existencia
+            { wch: 12 }, // DISPONIBLES total
+            { wch: 10 }, // U.MED
+            { wch: 18 }, // DOC,DEC,UNI SUELTAS
         ];
 
         const wb = XLSX.utils.book_new();
@@ -433,24 +545,22 @@ export default function StockTotalPage() {
             setImportFile(file);
             setImportMovs(preview.movimientos_entrada_sugeridos || []);
             setImportNegativos(preview.ajustes_negativos || []);
+            setImportFilasProcesadas(preview.filas_procesadas ?? 0);
+            setImportPreviewDetalle(preview.preview_detalle || []);
             const filasCfg = preview.filas_con_cambio_cant_reg_o_stock_min ?? 0;
             setImportFilasConfig(filasCfg);
 
             const hayMovs = (preview.movimientos_entrada_sugeridos || []).length > 0;
             const haySoloConfig = !hayMovs && filasCfg > 0;
 
-            if (!hayMovs && !haySoloConfig) {
-                showToast(
-                    'info',
-                    'No hay cambios: ni deltas de existencia para ingresos ni diferencias en cantidad registrada / stock mínimo.',
-                );
-                return;
-            }
             if (haySoloConfig) {
                 showToast(
                     'info',
                     `Se aplicará cantidad registrada y stock mínimo desde el Excel (${filasCfg} fila(s) con cambios). No hay movimientos de entrada automáticos.`,
                 );
+            }
+            if (!hayMovs && !haySoloConfig) {
+                showToast('info', 'Excel leído. No se detectaron cambios para aplicar.');
             }
             setShowImportModal(true);
         } catch (error: any) {
@@ -463,16 +573,33 @@ export default function StockTotalPage() {
         }
     };
 
+    const isImportActaImageFile = (file: File) => {
+        if (/image\/(jpeg|png|webp)/i.test(file.type)) return true;
+        return /\.(jpe?g|png|webp)$/i.test(file.name);
+    };
+
     const handleAddImportActas = (files: FileList | null) => {
         if (!files || files.length === 0) return;
-        const nuevas = Array.from(files).map(file => ({
-            id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            file,
-            nombre: file.name,
-            preview: URL.createObjectURL(file),
-        }));
+        const picked = Array.from(files).filter(isImportActaImageFile);
+        if (picked.length === 0) {
+            showToast('error', 'Solo se permiten imágenes JPG, PNG o WEBP');
+            return;
+        }
+        const nuevas = picked.map(file => {
+            const sinExt = file.name.replace(/\.[^/.]+$/i, '');
+            return {
+                id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                file,
+                nombre: sinExt || file.name,
+                preview: URL.createObjectURL(file),
+            };
+        });
         setImportActas(prev => [...prev, ...nuevas]);
     };
+
+    useEffect(() => {
+        if (!showImportModal) setImportActasModalOpen(false);
+    }, [showImportModal]);
 
     const removeImportActa = (idx: number) => {
         setImportActas(prev => {
@@ -641,6 +768,7 @@ export default function StockTotalPage() {
                                     className="w-full pl-12 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
+                            <UnidadMedidaFilter value={unidadFilter} onChange={setUnidadFilter} counts={unidadCounts} />
                             <div className="flex flex-wrap items-center justify-start lg:justify-end gap-2 w-full lg:w-auto">
                                 <button
                                     onClick={handleExportExcel}
@@ -659,10 +787,28 @@ export default function StockTotalPage() {
                                 <button
                                     onClick={handleImportExcelClick}
                                     disabled={isImportingPreview || isLoading}
-                                    className="px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-60 w-full sm:w-auto"
+                                    className="relative overflow-hidden px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-60 w-full sm:w-auto"
                                 >
+                                    {isImportingPreview && (
+                                        <>
+                                            {/* Capa oscura sutil */}
+                                            <div className="absolute inset-0 bg-black/10" />
+                                            {/* Barra de carga indeterminada */}
+                                            <div className="absolute inset-y-0 left-0 w-1/2 bg-white/25 animate-[importbar_1.1s_ease-in-out_infinite]" />
+                                            <style jsx>{`
+                                                @keyframes importbar {
+                                                    0% {
+                                                        transform: translateX(-120%);
+                                                    }
+                                                    100% {
+                                                        transform: translateX(240%);
+                                                    }
+                                                }
+                                            `}</style>
+                                        </>
+                                    )}
                                     <Upload className={`w-4 h-4 ${isImportingPreview ? 'animate-pulse' : ''}`} />
-                                    <span className="hidden sm:inline uppercase tracking-wider text-[10px]">
+                                    <span className="relative hidden sm:inline uppercase tracking-wider text-[10px]">
                                         {isImportingPreview ? 'Leyendo...' : 'Importar datos'}
                                     </span>
                                 </button>
@@ -921,86 +1067,111 @@ export default function StockTotalPage() {
             {showImportModal && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[10000]">
-                        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-900">Importar Excel - Registro de entrada</h2>
-                                <p className="text-sm text-gray-500 mt-0.5">
-                                    Se registrarán ingresos con la operación elegida y el <strong>origen de salida</strong> indicado abajo (Malvinas, Oficina o Callao 1 - 2).
-                                </p>
-                                {importNegativos.length > 0 && (
-                                    <p className="text-xs text-blue-700 mt-2 font-semibold">
-                                        Aviso: se detectaron {importNegativos.length} ajuste(s) negativo(s) (Excel menor que sistema). No se registrarán automáticamente.
+                        <div className="p-6 border-b border-gray-200">
+                            <div className="flex items-start gap-3">
+                                <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#E9F1FF' }}>
+                                    <Upload className="w-5 h-5 text-[#002D5A]" />
+                                </div>
+                                <div className="min-w-0 flex-1 pr-1">
+                                    <h2 className="text-[18px] font-extrabold text-gray-900 leading-tight">
+                                        Importar Excel
+                                    </h2>
+                                    <p className="text-sm text-gray-600 leading-relaxed mt-1.5 max-w-none">
+                                        Registro de entrada masivo desde el archivo Excel exportado desde la vista{' '}
+                                        <span className="font-semibold text-gray-800">Productos Detallados</span>.
                                     </p>
-                                )}
+                                    <p className="text-sm text-gray-600 leading-relaxed mt-2 max-w-none">
+                                        Los ingresos se registrarán con la operación elegida y el{' '}
+                                        <strong className="font-semibold text-gray-800">origen de salida</strong>{' '}
+                                        que indiques en los campos de abajo.
+                                    </p>
+                                    <p
+                                        className="mt-3 text-sm text-gray-600 leading-snug"
+                                        role="status"
+                                    >
+                                        <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                            <span>
+                                                Filas:{' '}
+                                                <span className="tabular-nums font-semibold text-gray-900">{importFilasProcesadas}</span>
+                                            </span>
+                                            <span className="text-gray-300 select-none" aria-hidden>
+                                                •
+                                            </span>
+                                            <span>
+                                                Movimientos:{' '}
+                                                <span className="tabular-nums font-semibold text-gray-900">{importMovs.length}</span>
+                                            </span>
+                                            <span className="text-gray-300 select-none" aria-hidden>
+                                                •
+                                            </span>
+                                            <span>
+                                                Cambios config:{' '}
+                                                <span className="tabular-nums font-semibold text-gray-900">{importFilasConfig}</span>
+                                            </span>
+                                        </span>
+                                    </p>
+                                    {importNegativos.length > 0 && (
+                                        <p className="text-xs text-blue-700 mt-2 font-semibold">
+                                            Aviso: se detectaron {importNegativos.length} ajuste(s) negativo(s) (Excel menor que sistema). No se registrarán automáticamente.
+                                        </p>
+                                    )}
+                                </div>
                             </div>
-                            <button
-                                onClick={() => {
-                                    setShowImportModal(false);
-                                    setImportPassword('');
-                                    setShowImportPasswordModal(false);
-                                }}
-                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                                disabled={isImportSaving}
-                            >
-                                <X className="w-5 h-5 text-gray-500" />
-                            </button>
                         </div>
 
                         <div className="p-6 overflow-y-auto flex-1">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Operación</label>
-                                    <select
+                                    <PrettySelect
                                         value={importForm.operacion}
-                                        onChange={e => setImportForm(f => ({ ...f, operacion: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
-                                    >
-                                        <option value="OTROS">OTROS</option>
-                                        <option value="TRASLADO">TRASLADO</option>
-                                        <option value="REPOSICION">REPOSICION</option>
-                                        <option value="DEVOLUCION">DEVOLUCION</option>
-                                        <option value="CAMBIO">CAMBIO</option>
-                                        <option value="MERMA">MERMA</option>
-                                    </select>
+                                        onChange={v => setImportForm(f => ({ ...f, operacion: v }))}
+                                        options={[
+                                            { value: 'ENTRADA', label: 'ENTRADA' },
+                                            { value: 'OTROS', label: 'OTROS' },
+                                        ]}
+                                        size="md"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Almacén salida</label>
-                                    <select
+                                    <PrettySelect
                                         value={importForm.almacenSalida}
-                                        onChange={e => setImportForm(f => ({ ...f, almacenSalida: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
-                                    >
-                                        <option value="MALVINAS">ALMACEN MALVINAS</option>
-                                        <option value="OFICINA">OFICINA</option>
-                                        <option value="CALLAO-1">CALLAO 1</option>
-                                        <option value="CALLAO-2">CALLAO 2</option>
-                                    </select>
+                                        onChange={v => setImportForm(f => ({ ...f, almacenSalida: v }))}
+                                        options={[
+                                            { value: 'IMPORTACION', label: 'IMPORTACION' },
+                                            { value: 'MALVINAS', label: 'ALMACEN MALVINAS' },
+                                            { value: 'OFICINA', label: 'OFICINA' },
+                                            { value: 'OFICINA-DOCENAS', label: 'OFICINA-DOCENAS' },
+                                            { value: 'CALLAO-1-A', label: 'CALLAO 1-A' },
+                                            { value: 'CALLAO-1-B', label: 'CALLAO 1-B' },
+                                            { value: 'CALLAO-2', label: 'CALLAO 2' },
+                                        ]}
+                                        size="md"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Operador</label>
-                                    <select
+                                    <PrettySelect
                                         value={importForm.operador}
-                                        onChange={e =>
+                                        onChange={v =>
                                             setImportForm(f => ({
                                                 ...f,
-                                                operador: e.target.value,
-                                                operadorCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.operadorCustom,
+                                                operador: v,
+                                                operadorCustom: v !== COMBO_OTROS_VALUE ? '' : f.operadorCustom,
                                             }))
                                         }
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
-                                    >
-                                        {OPERADORES.map(o => (
-                                            <option key={o} value={o}>
-                                                {o}
-                                            </option>
-                                        ))}
-                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                    </select>
+                                        options={[
+                                            ...OPERADORES.map(o => ({ value: o, label: o })),
+                                            { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
+                                        ]}
+                                        size="md"
+                                    />
                                     {importForm.operador === COMBO_OTROS_VALUE && (
                                         <input
                                             type="text"
                                             value={importForm.operadorCustom}
-                                            onChange={e => setImportForm(f => ({ ...f, operadorCustom: e.target.value }))}
+                                            onChange={e => setImportForm(f => ({ ...f, operadorCustom: e.target.value.toUpperCase() }))}
                                             className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
                                             placeholder="Nombre del operador"
                                         />
@@ -1008,29 +1179,26 @@ export default function StockTotalPage() {
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Entregado por</label>
-                                    <select
+                                    <PrettySelect
                                         value={importForm.entregado}
-                                        onChange={e =>
+                                        onChange={v =>
                                             setImportForm(f => ({
                                                 ...f,
-                                                entregado: e.target.value,
-                                                entregadoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
+                                                entregado: v,
+                                                entregadoCustom: v !== COMBO_OTROS_VALUE ? '' : f.entregadoCustom,
                                             }))
                                         }
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
-                                    >
-                                        {OPERADORES.map(o => (
-                                            <option key={o} value={o}>
-                                                {o}
-                                            </option>
-                                        ))}
-                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                    </select>
+                                        options={[
+                                            ...OPERADORES.map(o => ({ value: o, label: o })),
+                                            { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
+                                        ]}
+                                        size="md"
+                                    />
                                     {importForm.entregado === COMBO_OTROS_VALUE && (
                                         <input
                                             type="text"
                                             value={importForm.entregadoCustom}
-                                            onChange={e => setImportForm(f => ({ ...f, entregadoCustom: e.target.value }))}
+                                            onChange={e => setImportForm(f => ({ ...f, entregadoCustom: e.target.value.toUpperCase() }))}
                                             className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
                                             placeholder="Nombre"
                                         />
@@ -1038,29 +1206,26 @@ export default function StockTotalPage() {
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Registrado por</label>
-                                    <select
+                                    <PrettySelect
                                         value={importForm.registradoPor}
-                                        onChange={e =>
+                                        onChange={v =>
                                             setImportForm(f => ({
                                                 ...f,
-                                                registradoPor: e.target.value,
-                                                registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
+                                                registradoPor: v,
+                                                registradoCustom: v !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
                                             }))
                                         }
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
-                                    >
-                                        {REGISTRADORES.map(r => (
-                                            <option key={r} value={r}>
-                                                {r}
-                                            </option>
-                                        ))}
-                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                    </select>
+                                        options={[
+                                            ...REGISTRADORES.map(r => ({ value: r, label: r })),
+                                            { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
+                                        ]}
+                                        size="md"
+                                    />
                                     {importForm.registradoPor === COMBO_OTROS_VALUE && (
                                         <input
                                             type="text"
                                             value={importForm.registradoCustom}
-                                            onChange={e => setImportForm(f => ({ ...f, registradoCustom: e.target.value }))}
+                                            onChange={e => setImportForm(f => ({ ...f, registradoCustom: e.target.value.toUpperCase() }))}
                                             className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold"
                                             placeholder="Nombre"
                                         />
@@ -1070,7 +1235,7 @@ export default function StockTotalPage() {
                                     <label className="block text-xs font-bold text-gray-600 mb-1">Observaciones</label>
                                     <textarea
                                         value={importForm.observaciones}
-                                        onChange={e => setImportForm(f => ({ ...f, observaciones: e.target.value }))}
+                                        onChange={e => setImportForm(f => ({ ...f, observaciones: e.target.value.toUpperCase() }))}
                                         className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold min-h-[70px]"
                                         placeholder="Observaciones (opcional)"
                                     />
@@ -1082,66 +1247,54 @@ export default function StockTotalPage() {
                                     <div className="text-xs font-black uppercase tracking-wider text-gray-700">
                                         Productos a registrar ({importMovs.length})
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <input
-                                            id="import-actas-input"
-                                            type="file"
-                                            className="hidden"
-                                            multiple
-                                            onChange={e => handleAddImportActas(e.target.files)}
-                                        />
-                                        <label
-                                            htmlFor="import-actas-input"
-                                            className="px-3 py-1.5 text-xs font-black text-white bg-[#002D5A] rounded-xl cursor-pointer hover:bg-[#003d7a] transition-colors"
-                                        >
-                                            Subir actas ({importActas.length})
-                                        </label>
-                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setImportActasModalOpen(true)}
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-white bg-[#002D5A] border border-[#002D5A] hover:bg-[#001f3d] transition-all shadow-sm active:scale-[0.98]"
+                                    >
+                                        <Upload className="w-3.5 h-3.5 shrink-0" />
+                                        <span>Subir Actas</span>
+                                        {importActas.length > 0 && (
+                                            <span className="bg-white/20 px-1.5 py-px rounded-full text-[10px] font-bold tabular-nums min-w-[1.25rem] text-center">
+                                                {importActas.length}
+                                            </span>
+                                        )}
+                                    </button>
                                 </div>
                                 {importActas.length > 0 && (
-                                    <div className="px-4 py-3 border-b border-gray-200">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                            {importActas.map((a, idx) => (
-                                                <div key={a.id} className="flex items-center gap-2">
-                                                    <input
-                                                        value={a.nombre}
-                                                        onChange={e => {
-                                                            const v = e.target.value;
-                                                            setImportActas(prev => prev.map((x, i) => (i === idx ? { ...x, nombre: v } : x)));
-                                                        }}
-                                                        className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold"
-                                                    />
-                                                    <button
-                                                        onClick={() => removeImportActa(idx)}
-                                                        className="px-3 py-2 text-xs font-black bg-red-50 text-red-700 rounded-xl hover:bg-red-100"
-                                                        type="button"
-                                                    >
-                                                        Quitar
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
+                                    <div className="px-4 py-2 border-b border-gray-200 bg-blue-50/40 text-xs font-semibold text-[#002D5A]">
+                                        {importActas.length} acta(s) adjunta(s). Puedes editarlas con &quot;Subir Actas&quot;.
                                     </div>
                                 )}
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm">
-                                        <thead className="bg-white sticky top-0">
-                                            <tr className="text-[10px] uppercase tracking-wider font-black text-gray-600 border-b border-gray-200">
+                                        <thead className="sticky top-0">
+                                            <tr className="bg-[#002D5A] text-white text-[10px] uppercase tracking-wider font-black border-b border-[#ffffff20]">
                                                 <th className="px-4 py-3 text-left">Código</th>
+                                                <th className="px-4 py-3 text-left">Nombre</th>
                                                 <th className="px-4 py-3 text-left">Tienda ingreso</th>
                                                 <th className="px-4 py-3 text-right">Cantidad</th>
                                                 <th className="px-4 py-3 text-center">U. Med</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
-                                            {importMovs.map((m, idx) => (
-                                                <tr key={`${m.producto}-${m.almacen_ingreso}-${idx}`} className="text-[11px]">
-                                                    <td className="px-4 py-2 font-bold text-[#002D5A]">{m.producto}</td>
-                                                    <td className="px-4 py-2 font-semibold text-gray-700">{m.almacen_ingreso}</td>
-                                                    <td className="px-4 py-2 text-right font-extrabold">{m.cantidad}</td>
-                                                    <td className="px-4 py-2 text-center text-gray-600 font-bold">{m.unidad_medida}</td>
+                                            {importMovs.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={5} className="px-4 py-10 text-center text-xs font-semibold text-gray-500">
+                                                        No se detectaron ingresos (deltas positivos) para registrar.
+                                                    </td>
                                                 </tr>
-                                            ))}
+                                            ) : (
+                                                importMovs.map((m, idx) => (
+                                                    <tr key={`${m.producto}-${m.almacen_ingreso}-${idx}`} className="text-[11px]">
+                                                        <td className="px-4 py-2 font-bold text-[#002D5A]">{m.producto}</td>
+                                                        <td className="px-4 py-2 font-semibold text-gray-700 uppercase">{m.nombre || ''}</td>
+                                                        <td className="px-4 py-2 font-semibold text-gray-700">{m.almacen_ingreso}</td>
+                                                        <td className="px-4 py-2 text-right font-extrabold">{m.cantidad}</td>
+                                                        <td className="px-4 py-2 text-center text-gray-600 font-bold">{m.unidad_medida}</td>
+                                                    </tr>
+                                                ))
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
@@ -1160,18 +1313,21 @@ export default function StockTotalPage() {
                                 onClick={() => {
                                     const soloCfg = importMovs.length === 0 && importFilasConfig > 0;
                                     if (soloCfg) {
-                                        confirmImportSave(undefined);
-                                        return;
-                                    }
-                                    if (importActas.length === 0) {
+                                        // Requerimiento: siempre pedir contraseña antes de guardar
                                         setShowImportPasswordModal(true);
                                         setImportPassword('');
-                                    } else {
-                                        confirmImportSave(undefined);
+                                        return;
                                     }
+                                    if (importMovs.length === 0 && importFilasConfig === 0) {
+                                        showToast('info', 'No hay cambios para guardar.');
+                                        return;
+                                    }
+                                    // Requerimiento: siempre pedir contraseña antes de guardar (haya o no actas)
+                                    setShowImportPasswordModal(true);
+                                    setImportPassword('');
                                 }}
-                                disabled={isImportSaving}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#002D5A] to-[#0056b3] hover:from-[#003d7a] hover:to-[#0066cc] text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50"
+                                disabled={isImportSaving || (importMovs.length === 0 && importFilasConfig === 0)}
+                                className="px-6 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-60"
                             >
                                 {isImportSaving ? (
                                     <>
@@ -1190,7 +1346,160 @@ export default function StockTotalPage() {
                 </div>
             )}
 
-            {/* Modal contraseña importación (solo si no hay actas) */}
+            {/* Modal Subir Actas (importación masiva) — mismo diseño que Traslado / referencia */}
+            {importActasModalOpen && (
+                <div
+                    className="fixed inset-0 z-[10100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+                    onClick={e => e.target === e.currentTarget && setImportActasModalOpen(false)}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-2xl w-full max-w-[900px] max-h-[90vh] overflow-hidden flex flex-col z-[10101]"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-gray-200">
+                            <div className="min-w-0">
+                                <h2 className="text-base font-bold text-[#002D5A] m-0 leading-tight">
+                                    Subir Actas (Globales)
+                                </h2>
+                                <p className="text-sm text-gray-500 mt-1 m-0 font-medium">
+                                    Sube una o más actas y asigna un nombre a cada una
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setImportActasModalOpen(false)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors shrink-0"
+                                aria-label="Cerrar"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="px-6 py-5 overflow-y-auto flex-1">
+                            <div className="mb-6">
+                                <label className="block mb-2 text-sm font-bold text-[#002D5A]">
+                                    Seleccionar Imágenes
+                                </label>
+                                <div
+                                    className="border-2 border-dashed border-[#002D5A]/25 rounded-2xl p-8 text-center hover:border-[#002D5A]/45 transition-colors bg-[#002D5A]/5"
+                                    onDragOver={e => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                    onDrop={e => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleAddImportActas(e.dataTransfer.files);
+                                    }}
+                                >
+                                    <input
+                                        id="import-actas-modal-input"
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                                        multiple
+                                        className="hidden"
+                                        onChange={e => {
+                                            handleAddImportActas(e.target.files);
+                                            e.target.value = '';
+                                        }}
+                                    />
+                                    <label
+                                        htmlFor="import-actas-modal-input"
+                                        className="cursor-pointer flex flex-col items-center gap-3"
+                                    >
+                                        <div className="w-14 h-14 bg-[#002D5A] rounded-full flex items-center justify-center shadow-md">
+                                            <Upload className="w-7 h-7 text-white" strokeWidth={2.25} />
+                                        </div>
+                                        <div>
+                                            <span className="text-[#002D5A] font-bold text-sm block">
+                                                Haz clic para seleccionar
+                                            </span>
+                                            <span className="text-gray-500 text-sm block mt-1 font-medium">
+                                                o arrastra las imágenes aquí
+                                            </span>
+                                        </div>
+                                        <span className="text-xs text-gray-400 font-medium">
+                                            Formatos: JPG, PNG, WEBP
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {importActas.length > 0 && (
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-bold text-gray-800">
+                                        Actas Seleccionadas ({importActas.length})
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {importActas.map((acta, index) => (
+                                            <div
+                                                key={acta.id}
+                                                className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
+                                            >
+                                                <div className="flex gap-3">
+                                                    <div className="flex-shrink-0">
+                                                        <img
+                                                            src={acta.preview}
+                                                            alt={`Vista previa ${index + 1}`}
+                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                                        />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                Nombre de la Acta *
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={acta.nombre}
+                                                                onChange={e => {
+                                                                    const v = e.target.value;
+                                                                    setImportActas(prev =>
+                                                                        prev.map((x, i) => (i === index ? { ...x, nombre: v } : x)),
+                                                                    );
+                                                                }}
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#002D5A]/30 focus:border-[#002D5A] outline-none"
+                                                                placeholder="Ej: Acta revisión 01"
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeImportActa(index)}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            Eliminar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50/80">
+                            <button
+                                type="button"
+                                onClick={() => setImportActasModalOpen(false)}
+                                className="px-6 py-2.5 text-sm font-bold text-[#002D5A] bg-white border-2 border-[#002D5A] rounded-xl hover:bg-gray-50 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setImportActasModalOpen(false)}
+                                className="px-6 py-2.5 text-sm font-bold text-white bg-[#002D5A] rounded-xl hover:bg-[#001f3d] transition-colors shadow-sm"
+                            >
+                                Aceptar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal contraseña importación (siempre) */}
             {showImportPasswordModal && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 z-[10000]">
@@ -1201,7 +1510,7 @@ export default function StockTotalPage() {
                                 </div>
                                 <div>
                                     <h2 className="text-xl font-bold text-gray-900">Autorización</h2>
-                                    <p className="text-sm text-gray-500 mt-0.5">No hay actas. Ingresa la contraseña para guardar</p>
+                                    <p className="text-sm text-gray-500 mt-0.5">Ingresa la contraseña para guardar</p>
                                 </div>
                             </div>
                             <button
@@ -1224,7 +1533,7 @@ export default function StockTotalPage() {
                             />
                             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mt-4">
                                 <p className="text-xs text-orange-800 font-medium">
-                                    Se guardarán <strong>{importMovs.length}</strong> ingreso(s) sin actas.
+                                    Se guardarán <strong>{importMovs.length}</strong> ingreso(s).
                                 </p>
                             </div>
                         </div>
@@ -1237,8 +1546,8 @@ export default function StockTotalPage() {
                                 Cancelar
                             </button>
                             <button
-                                onClick={() => confirmImportSave(importPassword)}
-                                disabled={isImportSaving || !importPassword}
+                                onClick={() => confirmImportSave(importPassword.trim())}
+                                disabled={isImportSaving || !importPassword.trim()}
                                 className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-semibold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isImportSaving ? (

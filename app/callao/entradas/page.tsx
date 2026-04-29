@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
+import { PrettySelect } from '../../components/PrettySelect';
 import * as api from '../../services/api';
 
 // ─── Función para formatear fecha en dos líneas ──────────────────────────────
@@ -277,7 +278,10 @@ function ModalEntrada({
             productoId: productoId,
             producto: producto.nombre,
             codigo: producto.codigo, // Guardar código en el estado
-            unidadMedida: producto.unidadMedidaRegCalculo,
+            unidadMedida:
+                f.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
+                    ? ('DOCENAS' as UnidadMedida)
+                    : ('CAJAS' as UnidadMedida),
         }));
     };
 
@@ -358,7 +362,21 @@ function ModalEntrada({
                         productoId: valor,
                         producto: producto?.nombre || p.producto,
                         codigo: producto?.codigo || p.codigo,
-                        unidadMedida: producto?.unidadMedidaRegCalculo || p.unidadMedida,
+                        unidadMedida:
+                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
+                                ? ('DOCENAS' as UnidadMedida)
+                                : ('CAJAS' as UnidadMedida),
+                    };
+                }
+                if (campo === 'almacenIngreso') {
+                    const producto = state.productos.find(pr => pr.id === p.productoId);
+                    return {
+                        ...p,
+                        almacenIngreso: valor,
+                        unidadMedida:
+                            valor === 'TIENDA OFICINA-DOCENAS'
+                                ? ('DOCENAS' as UnidadMedida)
+                                : ('CAJAS' as UnidadMedida),
                     };
                 }
                 return { ...p, [campo]: valor };
@@ -384,7 +402,10 @@ function ModalEntrada({
                     productoId: productoId,
                     producto: producto.nombre,
                     codigo: producto.codigo,
-                    unidadMedida: producto.unidadMedidaRegCalculo,
+                    unidadMedida:
+                        p.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
+                            ? ('DOCENAS' as UnidadMedida)
+                            : ('CAJAS' as UnidadMedida),
                 };
             }
             return p;
@@ -457,7 +478,7 @@ function ModalEntrada({
 
             await api.createEntradasMasivo(entradasData, {
                 actas: archivosActas,
-                passwordAutorizacion: archivosActas ? undefined : password,
+                passwordAutorizacion: password,
             });
 
             await Promise.all([refreshEntradas(), refreshProductos()]);
@@ -539,13 +560,9 @@ function ModalEntrada({
                 return;
             }
 
-            // Seguridad: si NO hay actas, solicitar contraseña; si SÍ hay actas, guardar directo.
-            if (actas.length === 0) {
-                setModalPasswordOpen(true);
-                return;
-            }
-
-            await ejecutarGuardadoEntradas();
+            // Requerimiento: siempre solicitar contraseña antes de guardar (haya o no actas).
+            setModalPasswordOpen(true);
+            return;
         }
     };
 
@@ -653,80 +670,70 @@ function ModalEntrada({
                             {/* Operación */}
                             <div>
                                 <label className="form-label">Operación *</label>
-                                <div className="relative">
-                                    <select
-                                        value={form.operacion}
-                                        onChange={e => setForm(f => ({ ...f, operacion: e.target.value }))}
-                                        className="form-input"
-                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                    >
-                                        {OPS_ENTRADA.map(op => <option key={op}>{op}</option>)}
-                                    </select>
-                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                </div>
+                                <PrettySelect
+                                    value={form.operacion}
+                                    onChange={v => setForm(f => ({ ...f, operacion: v }))}
+                                    options={OPS_ENTRADA.map(op => ({ value: op, label: op }))}
+                                    size="sm"
+                                />
                             </div>
 
                             {/* Almacén Salida */}
                             <div>
                                 <label className="form-label">Almacén / Tienda de Salida</label>
-                                <div className="relative">
-                                    <select
-                                        value={form.almacenSalida}
-                                        onChange={e => setForm(f => ({ ...f, almacenSalida: e.target.value as AlmacenCompleto }))}
-                                        className="form-input"
-                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                    >
-                                        {ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => (
-                                            <option key={value} value={value}>{label}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                </div>
+                                <PrettySelect
+                                    value={form.almacenSalida}
+                                    onChange={v => setForm(f => ({ ...f, almacenSalida: v as AlmacenCompleto }))}
+                                    options={ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => ({
+                                        value,
+                                        label,
+                                    }))}
+                                    size="sm"
+                                />
                             </div>
 
                             {/* Almacén Ingreso */}
                             <div>
                                 <label className="form-label">Ingreso (Tienda Destino)</label>
-                                <div className="relative">
-                                    <select
-                                        value={form.almacenIngreso}
-                                        onChange={e => setForm(f => ({ ...f, almacenIngreso: e.target.value as Tienda }))}
-                                        className="form-input"
-                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                    >
-                                        {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
-                                            <option key={tienda} value={tienda}>{label}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                </div>
+                                <PrettySelect
+                                    value={form.almacenIngreso}
+                                    onChange={v => {
+                                        const dest = v as Tienda;
+                                        setForm(f => ({
+                                            ...f,
+                                            almacenIngreso: dest,
+                                            unidadMedida:
+                                                dest === 'TIENDA OFICINA-DOCENAS'
+                                                    ? ('DOCENAS' as UnidadMedida)
+                                                    : ('CAJAS' as UnidadMedida),
+                                        }));
+                                    }}
+                                    options={TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => ({
+                                        value: tienda,
+                                        label,
+                                    }))}
+                                    size="sm"
+                                />
                             </div>
 
                             {/* Operador */}
                             <div>
                                 <label className="form-label">Operador</label>
-                                <div className="relative">
-                                    <select
-                                        value={form.operador}
-                                        onChange={e =>
-                                            setForm(f => ({
-                                                ...f,
-                                                operador: e.target.value,
-                                                operadorCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.operadorCustom,
-                                            }))
-                                        }
-                                        className="form-input"
-                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                    >
-                                        {OPERADORES.map(o => (
-                                            <option key={o} value={o}>
-                                                {o}
-                                            </option>
-                                        ))}
-                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                    </select>
-                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                </div>
+                                <PrettySelect
+                                    value={form.operador}
+                                    onChange={v =>
+                                        setForm(f => ({
+                                            ...f,
+                                            operador: v,
+                                            operadorCustom: v !== COMBO_OTROS_VALUE ? '' : f.operadorCustom,
+                                        }))
+                                    }
+                                    options={[
+                                        ...OPERADORES.map(o => ({ value: o, label: o })),
+                                        { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
+                                    ]}
+                                    size="sm"
+                                />
                                 {form.operador === COMBO_OTROS_VALUE && (
                                     <input
                                         type="text"
@@ -780,31 +787,22 @@ function ModalEntrada({
                             <div>
                                 <label className="form-label">Registrado Por</label>
                                 <div className="flex items-end gap-2">
-                                    <div className="relative flex-1">
-                                        <select
+                                    <div className="flex-1">
+                                        <PrettySelect
                                             value={form.registradoPor}
-                                            onChange={e =>
+                                            onChange={v =>
                                                 setForm(f => ({
                                                     ...f,
-                                                    registradoPor: e.target.value,
-                                                    registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
+                                                    registradoPor: v,
+                                                    registradoCustom: v !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
                                                 }))
                                             }
-                                            className="form-input"
-                                            style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                        >
-                                            {REGISTRADORES.map(r => (
-                                                <option key={r} value={r}>
-                                                    {r}
-                                                </option>
-                                            ))}
-                                            <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                        </select>
-
-
-                                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-
-
+                                            options={[
+                                                ...REGISTRADORES.map(r => ({ value: r, label: r })),
+                                                { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
+                                            ]}
+                                            size="sm"
+                                        />
                                     </div>
                                     {!isEdit && (
                                         <button
@@ -1207,7 +1205,7 @@ function ModalEntrada({
                 </div>
             )}
 
-            {/* Modal Contraseña (solo si NO hay actas al guardar) */}
+            {/* Modal Contraseña (siempre al guardar) */}
             {modalPasswordOpen && !isEdit && (
                 <div
                     className="modal-backdrop"
@@ -1221,7 +1219,7 @@ function ModalEntrada({
                                     Confirmación Requerida
                                 </h6>
                                 <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
-                                    No se han adjuntado actas. Para proceder con el guardado, ingrese la contraseña de autorización
+                                    Para proceder con el guardado, ingrese la contraseña de autorización
                                 </p>
                             </div>
                             <button

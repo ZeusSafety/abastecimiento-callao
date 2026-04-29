@@ -22,6 +22,7 @@ import {
     Plus, Search, Edit3, X, Save, PackageMinus, ChevronDown, Loader2, Trash2, Upload, Lock
 } from 'lucide-react';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
+import { PrettySelect } from '../../components/PrettySelect';
 import * as api from '../../services/api';
 import CascadaMovimientosSalidas from './CascadaMovimientosSalidas';
 
@@ -46,7 +47,7 @@ function ModalSalida({
         comprobante: editData?.comprobante ?? '',
         asesor: editData?.asesor ?? '',
         cantidad: editData?.cantidad ?? 0,
-        unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
+        unidadMedida: (editData?.unidadMedida ?? 'CAJAS') as UnidadMedida,
         almacen: (editData?.almacen ?? 'TIENDA OFICINA') as Tienda,
         entregado: OPERADORES[0],
         entregadoCustom: '',
@@ -95,7 +96,7 @@ function ModalSalida({
                 comprobante: '',
                 asesor: '',
                 cantidad: 0,
-                unidadMedida: 'DOCENAS' as UnidadMedida,
+                unidadMedida: 'CAJAS' as UnidadMedida,
                 almacen: 'TIENDA OFICINA',
                 entregado: OPERADORES[0],
                 entregadoCustom: '',
@@ -161,7 +162,7 @@ function ModalSalida({
                 productoId: '',
                 producto: '',
                 codigo: '',
-                unidadMedida: 'DOCENAS' as UnidadMedida,
+                unidadMedida: 'CAJAS' as UnidadMedida,
             }));
             return;
         }
@@ -170,7 +171,10 @@ function ModalSalida({
             productoId: productoId,
             producto: producto.nombre,
             codigo: producto.codigo, // Guardar código en el estado
-            unidadMedida: producto.unidadMedidaRegCalculo,
+            unidadMedida:
+                f.almacen === 'TIENDA OFICINA-DOCENAS'
+                    ? ('DOCENAS' as UnidadMedida)
+                    : ('CAJAS' as UnidadMedida),
         }));
     };
 
@@ -248,7 +252,21 @@ function ModalSalida({
                         productoId: valor,
                         producto: producto?.nombre || p.producto,
                         codigo: producto?.codigo || p.codigo,
-                        unidadMedida: producto?.unidadMedidaRegCalculo || p.unidadMedida,
+                        unidadMedida:
+                            p.almacen === 'TIENDA OFICINA-DOCENAS'
+                                ? ('DOCENAS' as UnidadMedida)
+                                : ('CAJAS' as UnidadMedida),
+                    };
+                }
+                if (campo === 'almacen') {
+                    const producto = state.productos.find(pr => pr.id === p.productoId);
+                    return {
+                        ...p,
+                        almacen: valor,
+                        unidadMedida:
+                            valor === 'TIENDA OFICINA-DOCENAS'
+                                ? ('DOCENAS' as UnidadMedida)
+                                : ('CAJAS' as UnidadMedida),
                     };
                 }
                 return { ...p, [campo]: valor };
@@ -266,7 +284,7 @@ function ModalSalida({
                         productoId: '',
                         producto: '',
                         codigo: '',
-                        unidadMedida: 'DOCENAS' as UnidadMedida,
+                        unidadMedida: 'CAJAS' as UnidadMedida,
                     };
                 }
                 return {
@@ -274,7 +292,10 @@ function ModalSalida({
                     productoId: productoId,
                     producto: producto.nombre,
                     codigo: producto.codigo,
-                    unidadMedida: producto.unidadMedidaRegCalculo,
+                    unidadMedida:
+                        p.almacen === 'TIENDA OFICINA-DOCENAS'
+                            ? ('DOCENAS' as UnidadMedida)
+                            : ('CAJAS' as UnidadMedida),
                 };
             }
             return p;
@@ -536,24 +557,17 @@ function ModalSalida({
                         {/* Operación */}
                         <div>
                             <label className="form-label">Operación *</label>
-                            <div className="relative">
-                                <select
-                                    value={form.operacion}
-                                    onChange={e => {
-                                        const nuevaOperacion = e.target.value;
-                                        setForm(f => ({ 
-                                            ...f, 
-                                            operacion: nuevaOperacion, 
-                                    // Mantener comprobante/asesor para no borrar lo que el usuario ingresó
-                                        }));
-                                    }}
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {OPS_SALIDA.map(op => <option key={op}>{op}</option>)}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
+                            <PrettySelect
+                                value={form.operacion}
+                                onChange={v =>
+                                    setForm(f => ({
+                                        ...f,
+                                        operacion: v,
+                                    }))
+                                }
+                                options={OPS_SALIDA.map(op => ({ value: op, label: op }))}
+                                size="sm"
+                            />
                         </div>
 
                         {/* N° Comprobante */}
@@ -631,46 +645,47 @@ function ModalSalida({
                         {/* Almacén */}
                         <div>
                             <label className="form-label">Almacén</label>
-                            <div className="relative">
-                                <select
-                                    value={form.almacen}
-                                    onChange={e => setForm(f => ({ ...f, almacen: e.target.value as Tienda }))}
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
-                                        <option key={tienda} value={tienda}>{label}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
+                            <PrettySelect
+                                value={form.almacen}
+                                onChange={v => {
+                                    const dest = v as Tienda;
+                                    setForm(f => ({
+                                        ...f,
+                                        almacen: dest,
+                                        unidadMedida:
+                                            dest === 'TIENDA OFICINA-DOCENAS'
+                                                ? ('DOCENAS' as UnidadMedida)
+                                                : ('CAJAS' as UnidadMedida),
+                                    }));
+                                }}
+                                options={TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => ({
+                                    value: tienda,
+                                    label,
+                                }))}
+                                size="sm"
+                            />
                         </div>
 
                         {/* Registrado por */}
                         <div>
                             <label className="form-label">Registrado Por</label>
                             <div className="flex items-end gap-2">
-                                <div className="relative flex-1">
-                                    <select
+                                <div className="flex-1">
+                                    <PrettySelect
                                         value={form.registradoPor}
-                                        onChange={e =>
+                                        onChange={v =>
                                             setForm(f => ({
                                                 ...f,
-                                                registradoPor: e.target.value,
-                                                registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
+                                                registradoPor: v,
+                                                registradoCustom: v !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
                                             }))
                                         }
-                                        className="form-input"
-                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                    >
-                                        {REGISTRADORES.map(r => (
-                                            <option key={r} value={r}>
-                                                {r}
-                                            </option>
-                                        ))}
-                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                    </select>
-                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                        options={[
+                                            ...REGISTRADORES.map(r => ({ value: r, label: r })),
+                                            { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
+                                        ]}
+                                        size="sm"
+                                    />
                                 </div>
                                 {!isEdit && (
                                     <button

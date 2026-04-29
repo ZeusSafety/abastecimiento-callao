@@ -700,6 +700,7 @@ export interface ImportStockTotalResult {
   productos_no_encontrados_muestra: string[];
   movimientos_entrada_sugeridos: Array<{
     producto: string; // código
+    nombre?: string;
     operacion: string; // OTROS
     almacen_salida: string; // CALLAO
     almacen_ingreso: string; // OFICINA / CALLAO-1 / CALLAO-2
@@ -714,6 +715,22 @@ export interface ImportStockTotalResult {
     cantidad_actual: number;
     cantidad_excel: number;
     delta: number;
+  }>;
+  /**
+   * Previsualización: valores del Excel vs sistema por producto/tienda.
+   * Se usa para mostrar la tabla completa (ej. 210 filas), aunque no existan deltas positivos.
+   */
+  preview_detalle?: Array<{
+    producto: string; // código
+    nombre_excel: string;
+    cant_caja_excel: number;
+    cant_caja_sistema: number;
+    unidad_medida_excel: string;
+    unidad_medida_sistema: string;
+    existencias: Record<
+      'OFICINA' | 'OFICINA-DOCENAS' | 'CALLAO-1-A' | 'CALLAO-1-B' | 'CALLAO-2',
+      { excel: number; sistema: number; delta: number }
+    >;
   }>;
   /** Filas donde CANT. (C) o STOCK MÍN. (D–F) difieren de la BD (import solo configuración). */
   filas_con_cambio_cant_reg_o_stock_min?: number;

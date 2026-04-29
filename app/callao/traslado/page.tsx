@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
+import { PrettySelect } from '../../components/PrettySelect';
 import * as api from '../../services/api';
 
 // ─── Función para formatear fecha en dos líneas ──────────────────────────────
@@ -151,7 +152,7 @@ function ModalTraslado({
         operador: OPERADORES[0],
         operadorCustom: '',
         cantidad: editData?.cantidad ?? 0,
-        unidadMedida: (editData?.unidadMedida ?? 'DOCENAS') as UnidadMedida,
+        unidadMedida: (editData?.unidadMedida ?? 'CAJAS') as UnidadMedida,
         registradoPor: REGISTRADORES[0],
         registradoCustom: '',
         observaciones: editData?.observaciones ?? '',
@@ -196,7 +197,7 @@ function ModalTraslado({
                 operador: OPERADORES[0],
                 operadorCustom: '',
                 cantidad: 0,
-                unidadMedida: 'DOCENAS' as UnidadMedida,
+                unidadMedida: 'CAJAS' as UnidadMedida,
                 registradoPor: REGISTRADORES[0],
                 registradoCustom: '',
                 observaciones: '',
@@ -256,7 +257,7 @@ function ModalTraslado({
                 productoId: '',
                 producto: '',
                 codigo: '',
-                unidadMedida: 'DOCENAS' as UnidadMedida,
+                unidadMedida: 'CAJAS' as UnidadMedida,
             }));
             return;
         }
@@ -265,7 +266,10 @@ function ModalTraslado({
             productoId: productoId,
             producto: producto.nombre,
             codigo: producto.codigo,
-            unidadMedida: producto.unidadMedidaRegCalculo,
+            unidadMedida:
+                f.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
+                    ? ('DOCENAS' as UnidadMedida)
+                    : ('CAJAS' as UnidadMedida),
         }));
     };
 
@@ -341,7 +345,7 @@ function ModalTraslado({
                         productoId: '',
                         producto: '',
                         codigo: '',
-                        unidadMedida: 'DOCENAS' as UnidadMedida,
+                        unidadMedida: 'CAJAS' as UnidadMedida,
                     };
                 }
                 return {
@@ -349,7 +353,10 @@ function ModalTraslado({
                     productoId: productoId,
                     producto: producto.nombre,
                     codigo: producto.codigo,
-                    unidadMedida: producto.unidadMedidaRegCalculo,
+                    unidadMedida:
+                        p.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
+                            ? ('DOCENAS' as UnidadMedida)
+                            : ('CAJAS' as UnidadMedida),
                 };
             }
             return p;
@@ -359,6 +366,30 @@ function ModalTraslado({
     const handleActualizarProducto = (index: number, field: string, value: any) => {
         setProductosAgregados(productosAgregados.map((p, i) => {
             if (i === index) {
+                if (field === 'almacenIngreso') {
+                    const producto = state.productos.find(pr => pr.id === p.productoId);
+                    return {
+                        ...p,
+                        almacenIngreso: value,
+                        unidadMedida:
+                            value === 'TIENDA OFICINA-DOCENAS'
+                                ? ('DOCENAS' as UnidadMedida)
+                                : ('CAJAS' as UnidadMedida),
+                    };
+                }
+                if (field === 'productoId' || field === 'producto') {
+                    const producto = state.productos.find(pr => pr.id === value);
+                    return {
+                        ...p,
+                        productoId: value,
+                        producto: producto?.nombre || p.producto,
+                        codigo: producto?.codigo || p.codigo,
+                        unidadMedida:
+                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS'
+                                ? ('DOCENAS' as UnidadMedida)
+                                : ('CAJAS' as UnidadMedida),
+                    };
+                }
                 return { ...p, [field]: value };
             }
             return p;
@@ -626,77 +657,67 @@ function ModalTraslado({
 
                         <div>
                             <label className="form-label">Operación *</label>
-                            <div className="relative">
-                                <select
-                                    value={form.operacion}
-                                    onChange={e => setForm(f => ({ ...f, operacion: e.target.value }))}
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {OPS_TRASLADOS.map(op => <option key={op}>{op}</option>)}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
+                            <PrettySelect
+                                value={form.operacion}
+                                onChange={v => setForm(f => ({ ...f, operacion: v }))}
+                                options={OPS_TRASLADOS.map(op => ({ value: op, label: op }))}
+                                size="sm"
+                            />
                         </div>
 
                         <div>
                             <label className="form-label">Almacén / Tienda de Salida</label>
-                            <div className="relative">
-                                <select
-                                    value={form.almacenSalida}
-                                    onChange={e => setForm(f => ({ ...f, almacenSalida: e.target.value as AlmacenCompleto }))}
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => (
-                                        <option key={value} value={value}>{label}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
+                            <PrettySelect
+                                value={form.almacenSalida}
+                                onChange={v => setForm(f => ({ ...f, almacenSalida: v as AlmacenCompleto }))}
+                                options={ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO.map(({ value, label }) => ({
+                                    value,
+                                    label,
+                                }))}
+                                size="sm"
+                            />
                         </div>
 
                         <div>
                             <label className="form-label">Almacén / Tienda de Ingreso</label>
-                            <div className="relative">
-                                <select
-                                    value={form.almacenIngreso}
-                                    onChange={e => setForm(f => ({ ...f, almacenIngreso: e.target.value as Tienda }))}
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => (
-                                        <option key={tienda} value={tienda}>{label}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
+                            <PrettySelect
+                                value={form.almacenIngreso}
+                                onChange={v => {
+                                    const dest = v as Tienda;
+                                    setForm(f => ({
+                                        ...f,
+                                        almacenIngreso: dest,
+                                        unidadMedida:
+                                            dest === 'TIENDA OFICINA-DOCENAS'
+                                                ? ('DOCENAS' as UnidadMedida)
+                                                : ('CAJAS' as UnidadMedida),
+                                    }));
+                                }}
+                                options={TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.map(({ tienda, label }) => ({
+                                    value: tienda,
+                                    label,
+                                }))}
+                                size="sm"
+                            />
                         </div>
 
                         <div>
                             <label className="form-label">Operador</label>
-                            <div className="relative">
-                                <select
-                                    value={form.operador}
-                                    onChange={e =>
-                                        setForm(f => ({
-                                            ...f,
-                                            operador: e.target.value,
-                                            operadorCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.operadorCustom,
-                                        }))
-                                    }
-                                    className="form-input"
-                                    style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                >
-                                    {OPERADORES.map(o => (
-                                        <option key={o} value={o}>
-                                            {o}
-                                        </option>
-                                    ))}
-                                    <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
+                            <PrettySelect
+                                value={form.operador}
+                                onChange={v =>
+                                    setForm(f => ({
+                                        ...f,
+                                        operador: v,
+                                        operadorCustom: v !== COMBO_OTROS_VALUE ? '' : f.operadorCustom,
+                                    }))
+                                }
+                                options={[
+                                    ...OPERADORES.map(o => ({ value: o, label: o })),
+                                    { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
+                                ]}
+                                size="sm"
+                            />
                             {form.operador === COMBO_OTROS_VALUE && (
                                 <input
                                     type="text"
@@ -740,27 +761,22 @@ function ModalTraslado({
                         <div>
                             <label className="form-label">Registrado Por</label>
                             <div className="flex items-end gap-2">
-                                <div className="relative flex-1">
-                                    <select
+                                <div className="flex-1">
+                                    <PrettySelect
                                         value={form.registradoPor}
-                                        onChange={e =>
+                                        onChange={v =>
                                             setForm(f => ({
                                                 ...f,
-                                                registradoPor: e.target.value,
-                                                registradoCustom: e.target.value !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
+                                                registradoPor: v,
+                                                registradoCustom: v !== COMBO_OTROS_VALUE ? '' : f.registradoCustom,
                                             }))
                                         }
-                                        className="form-input"
-                                        style={{ paddingRight: 28, appearance: 'none', fontSize: 12 }}
-                                    >
-                                        {REGISTRADORES.map(r => (
-                                            <option key={r} value={r}>
-                                                {r}
-                                            </option>
-                                        ))}
-                                        <option value={COMBO_OTROS_VALUE}>OTROS (especificar)</option>
-                                    </select>
-                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                        options={[
+                                            ...REGISTRADORES.map(r => ({ value: r, label: r })),
+                                            { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
+                                        ]}
+                                        size="sm"
+                                    />
                                 </div>
                                 {!isEdit && (
                                     <button

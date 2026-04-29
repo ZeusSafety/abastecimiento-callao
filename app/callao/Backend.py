@@ -2030,7 +2030,7 @@ def get_stock_total(request, headers):
             # stock_detallado_medida = solo existencia_oficina_docenas
             row['stock_detallado_medida'] = _n(row.get('existencia_oficina_docenas'))
 
-            row['stock_detallado_unidad_medida'] = row['unidad_medida_reg']
+            row['stock_detallado_unidad_medida'] = row.get('unidad_medida_reg') or "UNIDADES"
 
         return success_response(data=resultados, message="Stock total obtenido correctamente", headers=headers)
     finally:
@@ -2039,11 +2039,23 @@ def get_stock_total(request, headers):
 
 def importar_stock_total_excel(request, headers):
     """
-    Importa un Excel con el mismo formato que el export de Stock Total.
-    Lee la hoja 'Inventario' y actualiza únicamente:
-    - productos_abastecimiento_callao.cantidad_reg_calculo (columna C)
-    - stock_minimo para OFICINA, CALLAO-1, CALLAO-2 (columnas D, E, F)
-    - existencias para las mismas (columnas I, J, K) según export actual del front
+    Importa un Excel con el mismo formato que el export de "Productos Detallados" (Stock Total Callao).
+    Lee la hoja 'Inventario' y:
+    - actualiza productos_abastecimiento_callao.cantidad_reg_calculo (columna C: "CANT. EN CAJA")
+    - calcula deltas de existencias (columnas E–I: 5 tiendas) y devuelve movimientos sugeridos para registrarlos
+      como ENTRADAS en el frontend (con actas / contraseña).
+
+    Formato esperado (2 filas de encabezado, data desde fila 3):
+    A: CODIGO
+    B: PRODUCTO
+    C: CANT. EN CAJA
+    D: U. MEDIDA
+    E: OFICINA
+    F: OFICINA-DOCENAS
+    G: CALLAO 1-A
+    H: CALLAO 1-B
+    I: CALLAO 2
+    (J: TOTAL existencia, K: DISPONIBLES total, L: U.MED, M: DOC,DEC,UNI SUELTAS) -> se ignoran para importar
     """
     if request.method != 'POST':
         return bad_request_error("Método no permitido", headers)
@@ -2076,15 +2088,35 @@ def importar_stock_total_excel(request, headers):
 
     ws = wb["Inventario"]
 
-    tiendas_col_stock_min = {
-        "OFICINA": "D",
-        "CALLAO-1": "E",
-        "CALLAO-2": "F",
+    def _norm_cell(v):
+        if v is None:
+            return ""
+        return str(v).strip().upper()
+
+    # Validación mínima del formato (encabezados clave)
+    esperado = {
+        "A1": "CODIGO",
+        "B1": "PRODUCTO",
+        "C1": "CANT. EN CAJA",
+        "D1": "U. MEDIDA",
+        "E1": "EXISTENCIA ALMACEN",
+        "K1": "DISPONIBLES",
+        "M1": "DOC,DEC,UNI SUELTAS",
     }
+    for addr, texto in esperado.items():
+        if _norm_cell(ws[addr].value) != texto:
+            return bad_request_error(
+                "El Excel no coincide con el formato exportado de 'Productos Detallados'. "
+                "Vuelve a exportar desde el sistema y edita ese mismo archivo.",
+                headers,
+            )
+
     tiendas_col_existencias = {
-        "OFICINA": "I",
-        "CALLAO-1": "J",
-        "CALLAO-2": "K",
+        "OFICINA": "E",
+        "OFICINA-DOCENAS": "F",
+        "CALLAO-1-A": "G",
+        "CALLAO-1-B": "H",
+        "CALLAO-2": "I",
     }
 
     def _to_int(value):
@@ -2129,12 +2161,6 @@ def importar_stock_total_excel(request, headers):
         if faltantes_tiendas:
             return server_error(f"No existen tiendas en BD: {', '.join(faltantes_tiendas)}", headers)
 
-        sql_upsert_stock_min = """
-            INSERT INTO stock_minimo_almacen_callao (id_producto, id_tienda, stock_minimo)
-            VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE stock_minimo = VALUES(stock_minimo)
-        """
-
         procesadas = 0
         actualizadas_productos = 0
         actualizadas_stock_min = 0
@@ -2144,6 +2170,7 @@ def importar_stock_total_excel(request, headers):
         movimientos_sugeridos = []
         ajustes_negativos = []
         filas_con_cambio_cant_reg_o_stock_min = 0
+        preview_detalle = []
 
         # Encabezados ocupan 2 filas, data inicia desde fila 3
         for row_idx in range(3, ws.max_row + 1):
@@ -2171,26 +2198,13 @@ def importar_stock_total_excel(request, headers):
 
             id_producto = int(prod_row["id"])
             unidad_medida_reg = prod_row.get("unidad_medida_reg") or "UNIDADES"
+            nombre_sistema = (prod_row.get("nombre") or "").strip()
             procesadas += 1
 
-            # Comparar CANT. (C) y STOCK MÍNIMO (D–F) vs BD para permitir importar solo configuración sin deltas de existencia
+            # Comparar CANT. EN CAJA (C) vs BD para permitir importar solo configuración sin deltas de existencia
             c_excel = _to_int(ws[f"C{row_idx}"].value)
             cr_db_val = int(prod_row.get("cantidad_reg_calculo") or 0)
             fila_difiere_config = c_excel != cr_db_val
-            for codigo_tienda_sm, col_sm in tiendas_col_stock_min.items():
-                val_excel_sm = _to_int(ws[f"{col_sm}{row_idx}"].value)
-                cursor.execute(
-                    """
-                    SELECT COALESCE(stock_minimo, 0) AS sm
-                    FROM stock_minimo_almacen_callao
-                    WHERE id_producto = %s AND id_tienda = %s
-                    """,
-                    (id_producto, tienda_id_por_codigo[codigo_tienda_sm]),
-                )
-                sm_row = cursor.fetchone()
-                sm_db = int(sm_row["sm"]) if sm_row else 0
-                if val_excel_sm != sm_db:
-                    fila_difiere_config = True
             if fila_difiere_config:
                 filas_con_cambio_cant_reg_o_stock_min += 1
 
@@ -2203,17 +2217,15 @@ def importar_stock_total_excel(request, headers):
                 )
                 actualizadas_productos += cursor.rowcount
 
-            # Stock mínimo por tienda (D-G)
-            if modo in ("aplicar", "aplicar_directo"):
-                for codigo_tienda, col in tiendas_col_stock_min.items():
-                    val = _to_int(ws[f"{col}{row_idx}"].value)
-                    cursor.execute(
-                        sql_upsert_stock_min,
-                        (id_producto, tienda_id_por_codigo[codigo_tienda], val)
-                    )
-                    actualizadas_stock_min += 1
+            # Previsualización completa (Excel vs sistema) por producto/tienda
+            nombre_excel = ws[f"B{row_idx}"].value
+            nombre_excel = str(nombre_excel).strip() if nombre_excel is not None else ""
+            unidad_excel = ws[f"D{row_idx}"].value
+            unidad_excel = str(unidad_excel).strip().upper() if unidad_excel is not None else ""
 
-            # Existencias por tienda (J-M): calcular deltas para movimientos sugeridos
+            detalle_exist = {}
+
+            # Existencias por tienda (E–I): calcular deltas para movimientos sugeridos
             for codigo_tienda, col in tiendas_col_existencias.items():
                 nuevo_val = _to_int(ws[f"{col}{row_idx}"].value)
                 id_tienda = tienda_id_por_codigo[codigo_tienda]
@@ -2225,9 +2237,16 @@ def importar_stock_total_excel(request, headers):
                 actual_val = int(ex_row["cantidad"]) if ex_row and ex_row.get("cantidad") is not None else 0
                 delta = int(nuevo_val) - int(actual_val)
 
+                detalle_exist[codigo_tienda] = {
+                    "excel": int(nuevo_val),
+                    "sistema": int(actual_val),
+                    "delta": int(delta),
+                }
+
                 if delta > 0:
                     movimientos_sugeridos.append({
                         "producto": codigo,
+                        "nombre": nombre_excel or nombre_sistema,
                         "operacion": "OTROS",
                         "almacen_salida": "CALLAO",
                         "almacen_ingreso": codigo_tienda,
@@ -2245,6 +2264,16 @@ def importar_stock_total_excel(request, headers):
                         "cantidad_excel": nuevo_val,
                         "delta": delta,
                     })
+
+            preview_detalle.append({
+                "producto": codigo,
+                "nombre_excel": nombre_excel,
+                "cant_caja_excel": int(c_excel),
+                "cant_caja_sistema": int(cr_db_val),
+                "unidad_medida_excel": unidad_excel,
+                "unidad_medida_sistema": unidad_medida_reg,
+                "existencias": detalle_exist,
+            })
 
         if modo == "preview":
             conn.rollback()
@@ -2264,6 +2293,7 @@ def importar_stock_total_excel(request, headers):
                 "movimientos_entrada_sugeridos": movimientos_sugeridos,
                 "ajustes_negativos": ajustes_negativos,
                 "filas_con_cambio_cant_reg_o_stock_min": filas_con_cambio_cant_reg_o_stock_min,
+                "preview_detalle": preview_detalle,
             },
             message="Excel procesado correctamente",
             headers=headers
