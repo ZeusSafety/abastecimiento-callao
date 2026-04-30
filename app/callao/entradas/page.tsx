@@ -1,4 +1,4 @@
-'use client';
+'use client';   
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
@@ -383,17 +383,6 @@ function ModalEntrada({
                         ),
                     };
                 }
-                if (campo === 'almacenSalida') {
-                    const producto = state.productos.find(pr => pr.id === p.productoId);
-                    return {
-                        ...p,
-                        almacenSalida: valor,
-                        unidadMedida: unidadMedidaParaFormularioMovimiento(
-                            producto,
-                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-                        ),
-                    };
-                }
                 return { ...p, [campo]: valor };
             }
             return p;
@@ -676,10 +665,6 @@ function ModalEntrada({
                                             return {
                                                 ...f,
                                                 almacenSalida: salida,
-                                                unidadMedida: unidadMedidaParaFormularioMovimiento(
-                                                    prod,
-                                                    f.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-                                                ),
                                             };
                                         });
                                     }}
