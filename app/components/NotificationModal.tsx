@@ -11,7 +11,7 @@ interface NotificationModalProps {
 
 export default function NotificationModal({ isOpen, onClose }: NotificationModalProps) {
     const { state, markNotificationsAsRead } = useCallao();
-    const [activeTab, setActiveTab] = useState<'todos' | 'entrada' | 'salida' | 'cambio' | 'abastecimiento'>('todos');
+    const [activeTab, setActiveTab] = useState<'todos' | 'entrada' | 'salida' | 'traslado' | 'abastecimiento'>('todos');
 
     if (!isOpen) return null;
 
@@ -23,7 +23,7 @@ export default function NotificationModal({ isOpen, onClose }: NotificationModal
         switch (type) {
             case 'entrada': return <PackagePlus className="w-4 h-4 text-emerald-500" />;
             case 'salida': return <PackageMinus className="w-4 h-4 text-rose-500" />;
-            case 'cambio': return <RefreshCw className="w-4 h-4 text-amber-500" />;
+            case 'traslado': return <RefreshCw className="w-4 h-4 text-amber-500" />;
             case 'abastecimiento': return <Layers className="w-4 h-4 text-blue-500" />;
             default: return <Bell className="w-4 h-4 text-gray-500" />;
         }
@@ -33,7 +33,7 @@ export default function NotificationModal({ isOpen, onClose }: NotificationModal
         switch (type) {
             case 'entrada': return 'bg-emerald-50';
             case 'salida': return 'bg-rose-50';
-            case 'cambio': return 'bg-amber-50';
+            case 'traslado': return 'bg-amber-50';
             case 'abastecimiento': return 'bg-blue-50';
             default: return 'bg-gray-50';
         }
@@ -74,7 +74,7 @@ export default function NotificationModal({ isOpen, onClose }: NotificationModal
 
                 {/* Tabs */}
                 <div className="px-6 py-3 border-b border-gray-50 bg-gray-50/30 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                    {(['todos', 'entrada', 'salida', 'cambio', 'abastecimiento'] as const).map(tab => (
+                    {(['todos', 'entrada', 'salida', 'traslado', 'abastecimiento'] as const).map(tab => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -108,7 +108,7 @@ export default function NotificationModal({ isOpen, onClose }: NotificationModal
                                         <span className="text-[9px] font-bold text-gray-300 uppercase tracking-widest">{n.timestamp}</span>
                                         <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter ${n.type === 'entrada' ? 'text-emerald-500 bg-emerald-50' :
                                                 n.type === 'salida' ? 'text-rose-500 bg-rose-50' :
-                                                    n.type === 'cambio' ? 'text-amber-500 bg-amber-50' :
+                                                    n.type === 'traslado' ? 'text-amber-500 bg-amber-50' :
                                                         'text-blue-500 bg-blue-50'
                                             }`}>
                                             {n.type}
