@@ -2,7 +2,7 @@
   
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {  
-    useCallao,  
+    useCallao,   
     TIENDAS,
     TIENDAS_VISTA_INVENTARIO_CALLAO,
     Tienda, 
