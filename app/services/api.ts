@@ -709,6 +709,16 @@ export interface ImportStockTotalResult {
     cantidad_anterior: number;
     cantidad_objetivo_excel: number;
   }>;
+  movimientos_salida_sugeridos?: Array<{
+    producto: string; // código
+    nombre?: string;
+    operacion: string; // OTROS
+    almacen: string; // tienda donde se descuenta
+    cantidad: number; // abs(delta negativo)
+    unidad_medida: string;
+    cantidad_anterior: number;
+    cantidad_objetivo_excel: number;
+  }>;
   ajustes_negativos: Array<{
     producto: string;
     tienda: string;

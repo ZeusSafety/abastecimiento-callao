@@ -147,7 +147,15 @@ function UnidadMedidaFilter({
 }
 
 export default function StockTotalPage() {
-    const { state, refreshProductos, refreshEntradas, showToast } = useCallao();
+    const {
+        state,
+        refreshProductos,
+        refreshEntradas,
+        refreshSalidas,
+        refreshHistorialEntradas,
+        refreshHistorialSalidas,
+        showToast,
+    } = useCallao();
     const [search, setSearch] = useState('');
     const [unidadFilter, setUnidadFilter] = useState<'__TODAS__' | UnidadMedida>('__TODAS__');
     const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -163,10 +171,12 @@ export default function StockTotalPage() {
     const [importFile, setImportFile] = useState<File | null>(null);
     const [showImportModal, setShowImportModal] = useState(false);
     const [importMovs, setImportMovs] = useState<api.ImportStockTotalResult['movimientos_entrada_sugeridos']>([]);
+    const [importSalidas, setImportSalidas] = useState<NonNullable<api.ImportStockTotalResult['movimientos_salida_sugeridos']>>([]);
     const [importNegativos, setImportNegativos] = useState<api.ImportStockTotalResult['ajustes_negativos']>([]);
     const [importFilasConfig, setImportFilasConfig] = useState(0);
     const [importFilasProcesadas, setImportFilasProcesadas] = useState(0);
     const [importPreviewDetalle, setImportPreviewDetalle] = useState<api.ImportStockTotalResult['preview_detalle']>([]);
+    const [importNoEncontrados, setImportNoEncontrados] = useState<string[]>([]);
     const [isImportingPreview, setIsImportingPreview] = useState(false);
     const [isImportSaving, setIsImportSaving] = useState(false);
 
@@ -533,9 +543,11 @@ export default function StockTotalPage() {
             const preview = await api.importStockTotalExcel(file, 'preview');
             setImportFile(file);
             setImportMovs(preview.movimientos_entrada_sugeridos || []);
+            setImportSalidas(preview.movimientos_salida_sugeridos || []);
             setImportNegativos(preview.ajustes_negativos || []);
             setImportFilasProcesadas(preview.filas_procesadas ?? 0);
             setImportPreviewDetalle(preview.preview_detalle || []);
+            setImportNoEncontrados(preview.productos_no_encontrados_muestra || []);
             const filasCfg = preview.filas_con_cambio_cant_reg_o_stock_min ?? 0;
             setImportFilasConfig(filasCfg);
 
@@ -590,6 +602,21 @@ export default function StockTotalPage() {
         if (!showImportModal) setImportActasModalOpen(false);
     }, [showImportModal]);
 
+    const importCambiosDetectados = useMemo(() => {
+        const detalle = importPreviewDetalle || [];
+        return detalle.filter(d => {
+            const cantCajaCambio = (d.cant_caja_excel ?? 0) !== (d.cant_caja_sistema ?? 0);
+            const exist = d.existencias || ({} as any);
+            const hayDelta =
+                (exist['OFICINA']?.delta || 0) !== 0 ||
+                (exist['OFICINA-DOCENAS']?.delta || 0) !== 0 ||
+                (exist['CALLAO-1-A']?.delta || 0) !== 0 ||
+                (exist['CALLAO-1-B']?.delta || 0) !== 0 ||
+                (exist['CALLAO-2']?.delta || 0) !== 0;
+            return cantCajaCambio || hayDelta;
+        });
+    }, [importPreviewDetalle]);
+
     const removeImportActa = (idx: number) => {
         setImportActas(prev => {
             const copy = [...prev];
@@ -604,8 +631,9 @@ export default function StockTotalPage() {
             showToast('error', 'No se encontró el archivo Excel seleccionado');
             return;
         }
-        const soloConfig = importMovs.length === 0 && importFilasConfig > 0;
-        if (importMovs.length === 0 && !soloConfig) {
+        const totalMovs = importMovs.length + importSalidas.length;
+        const soloConfig = totalMovs === 0 && importFilasConfig > 0;
+        if (totalMovs === 0 && !soloConfig) {
             showToast('error', 'No hay movimientos ni cambios de configuración para aplicar');
             return;
         }
@@ -628,7 +656,7 @@ export default function StockTotalPage() {
             await api.importStockTotalExcel(importFile, 'aplicar');
 
             if (soloConfig) {
-                await refreshProductos();
+                await Promise.all([refreshProductos(), refreshHistorialEntradas(), refreshHistorialSalidas()]);
                 showToast('success', 'Cantidad registrada y stock mínimo actualizados desde el Excel.');
             } else {
                 const actasPayload = importActas.length > 0 ? importActas.map(a => ({ file: a.file, nombre: a.nombre })) : undefined;
@@ -646,25 +674,55 @@ export default function StockTotalPage() {
                     registrado_por: registrado,
                     observaciones: importForm.observaciones,
                 }));
+                const salidasPayload = importSalidas.map(s => ({
+                    producto: s.producto,
+                    operacion: 'OTROS',
+                    almacen: s.almacen,
+                    cantidad: s.cantidad,
+                    unidad_medida: s.unidad_medida,
+                    entregado_por: operador,
+                    registrado_por: registrado,
+                    observaciones: importForm.observaciones,
+                }));
 
-                await api.createEntradasMasivo(entradasPayload, {
+                const opts = {
                     actas: actasPayload,
                     passwordAutorizacion: actasPayload ? undefined : passwordAutorizacion,
-                });
+                };
+                if (entradasPayload.length > 0) {
+                    await api.createEntradasMasivo(entradasPayload, opts);
+                }
+                if (salidasPayload.length > 0) {
+                    await api.createSalidasMasivo(salidasPayload, opts);
+                }
 
-                await Promise.all([refreshProductos(), refreshEntradas()]);
-                showToast('success', `Importación exitosa: ${importMovs.length} ingreso(s) registrado(s)`);
+                await Promise.all([
+                    refreshProductos(),
+                    refreshEntradas(),
+                    refreshSalidas(),
+                    refreshHistorialEntradas(),
+                    refreshHistorialSalidas(),
+                ]);
+                showToast(
+                    'success',
+                    `Importación exitosa: ${entradasPayload.length} ingreso(s) y ${salidasPayload.length} salida(s) registrada(s)`,
+                );
             }
 
             importActas.forEach(a => URL.revokeObjectURL(a.preview));
             setImportActas([]);
             setImportFile(null);
             setImportMovs([]);
+            setImportSalidas([]);
             setImportNegativos([]);
             setImportFilasConfig(0);
             setImportPassword('');
             setShowImportPasswordModal(false);
             setShowImportModal(false);
+
+            // Post-import: mostrar resultados inmediatamente (evita "no se encontraron" por filtros previos).
+            setSearch('');
+            setUnidadFilter('__TODAS__');
         } catch (error: any) {
             showToast('error', error.message || 'Error al guardar la importación');
         } finally {
@@ -752,10 +810,10 @@ export default function StockTotalPage() {
                                 />
                             </div>
                             <UnidadMedidaFilter value={unidadFilter} onChange={setUnidadFilter} counts={unidadCounts} />
-                            <div className="flex flex-wrap items-center justify-start lg:justify-end gap-2 w-full lg:w-auto">
+                            <div className="flex items-center justify-start lg:justify-end gap-2 w-full lg:w-auto flex-nowrap overflow-x-auto">
                                 <button
                                     onClick={handleExportExcel}
-                                    className="px-5 py-2.5 text-sm font-bold text-white bg-green-600 border border-green-600 rounded-2xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 w-full sm:w-auto"
+                                    className="px-5 py-2.5 text-sm font-bold text-white bg-green-600 border border-green-600 rounded-2xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 whitespace-nowrap"
                                 >
                                     <FileSpreadsheet className="w-4 h-4" />
                                     <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Exportar Excel</span>
@@ -770,7 +828,7 @@ export default function StockTotalPage() {
                                 <button
                                     onClick={handleImportExcelClick}
                                     disabled={isImportingPreview || isLoading}
-                                    className="relative overflow-hidden px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-60 w-full sm:w-auto"
+                                    className="relative overflow-hidden px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-60 whitespace-nowrap"
                                 >
                                     {isImportingPreview && (
                                         <>
@@ -800,12 +858,16 @@ export default function StockTotalPage() {
                                         setSearch('');
                                         refreshProductos();
                                         refreshEntradas();
+                                        refreshSalidas();
+                                        refreshHistorialEntradas();
+                                        refreshHistorialSalidas();
                                         showToast('info', 'Datos actualizados');
                                     }}
-                                    className="px-5 py-2.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:text-[#002D5A] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 w-full sm:w-auto"
+                                    className="p-2.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:text-[#002D5A] transition-all flex items-center justify-center shadow-sm active:scale-95 whitespace-nowrap"
+                                    aria-label="Recargar"
+                                    title="Recargar"
                                 >
                                     <RefreshCw className="w-4 h-4" />
-                                    <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Recargar</span>
                                 </button>
                             </div>
                         </div>
@@ -1087,11 +1149,21 @@ export default function StockTotalPage() {
                                             <span className="text-gray-500 font-semibold uppercase tracking-wide">Cambios config</span>
                                             <span className="tabular-nums font-bold text-[#002D5A]">{importFilasConfig}</span>
                                         </span>
+                                        <span className="inline-flex items-center gap-2 rounded-lg border border-gray-200/90 bg-white px-3 py-1.5 text-xs shadow-sm">
+                                            <span className="text-gray-500 font-semibold uppercase tracking-wide">Cambios detectados</span>
+                                            <span className="tabular-nums font-bold text-[#002D5A]">{importCambiosDetectados.length}</span>
+                                        </span>
                                     </div>
                                     {importNegativos.length > 0 && (
                                         <p className="text-xs text-[#002D5A] mt-3 m-0 font-semibold rounded-lg border border-[#002D5A]/15 bg-[#E9F1FF] px-3 py-2">
                                             Aviso: se detectaron {importNegativos.length} ajuste(s) negativo(s) (Excel menor que sistema). No
                                             se registrarán automáticamente.
+                                        </p>
+                                    )}
+                                    {importNoEncontrados.length > 0 && (
+                                        <p className="text-xs text-amber-900 mt-3 m-0 font-semibold rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                                            Aviso: hay {importNoEncontrados.length} código(s) del Excel que no existen en el sistema (muestra):
+                                            <span className="ml-1 font-black">{importNoEncontrados.join(', ')}</span>
                                         </p>
                                     )}
                                 </div>
@@ -1210,7 +1282,7 @@ export default function StockTotalPage() {
                             <div className="border border-gray-200 rounded-2xl overflow-hidden">
                                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
                                     <div className="text-xs font-black uppercase tracking-wider text-gray-700">
-                                        Productos a registrar ({importMovs.length})
+                                        Movimientos a registrar ({importMovs.length + importSalidas.length})
                                     </div>
                                     <button
                                         type="button"
@@ -1243,26 +1315,93 @@ export default function StockTotalPage() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
-                                            {importMovs.length === 0 ? (
+                                            {importMovs.length + importSalidas.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={5} className="px-4 py-10 text-center text-xs font-semibold text-gray-500">
-                                                        No se detectaron ingresos (deltas positivos) para registrar.
+                                                        No se detectaron movimientos (deltas) para registrar.
                                                     </td>
                                                 </tr>
                                             ) : (
-                                                importMovs.map((m, idx) => (
-                                                    <tr key={`${m.producto}-${m.almacen_ingreso}-${idx}`} className="text-[11px]">
-                                                        <td className="px-4 py-2 font-bold text-[#002D5A]">{m.producto}</td>
-                                                        <td className="px-4 py-2 font-semibold text-gray-700 uppercase">{m.nombre || ''}</td>
-                                                        <td className="px-4 py-2 font-semibold text-gray-700">{m.almacen_ingreso}</td>
-                                                        <td className="px-4 py-2 text-right font-extrabold">{m.cantidad}</td>
-                                                        <td className="px-4 py-2 text-center text-gray-600 font-bold">{m.unidad_medida}</td>
-                                                    </tr>
-                                                ))
+                                                <>
+                                                    {importMovs.map((m, idx) => (
+                                                        <tr key={`E-${m.producto}-${m.almacen_ingreso}-${idx}`} className="text-[11px]">
+                                                            <td className="px-4 py-2 font-bold text-[#002D5A]">{m.producto}</td>
+                                                            <td className="px-4 py-2 font-semibold text-gray-700 uppercase">{m.nombre || ''}</td>
+                                                            <td className="px-4 py-2 font-semibold text-gray-700">{m.almacen_ingreso}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold text-emerald-700">+{m.cantidad}</td>
+                                                            <td className="px-4 py-2 text-center text-gray-600 font-bold">{m.unidad_medida}</td>
+                                                        </tr>
+                                                    ))}
+                                                    {importSalidas.map((s, idx) => (
+                                                        <tr key={`S-${s.producto}-${s.almacen}-${idx}`} className="text-[11px]">
+                                                            <td className="px-4 py-2 font-bold text-[#002D5A]">{s.producto}</td>
+                                                            <td className="px-4 py-2 font-semibold text-gray-700 uppercase">{s.nombre || ''}</td>
+                                                            <td className="px-4 py-2 font-semibold text-gray-700">{s.almacen}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold text-rose-700">-{s.cantidad}</td>
+                                                            <td className="px-4 py-2 text-center text-gray-600 font-bold">{s.unidad_medida}</td>
+                                                        </tr>
+                                                    ))}
+                                                </>
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
+                            </div>
+
+                            <div className="mt-5 border border-gray-200 rounded-2xl overflow-hidden">
+                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                    <div className="text-xs font-black uppercase tracking-wider text-gray-700">
+                                        Filas con cambios detectados ({importCambiosDetectados.length})
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="sticky top-0">
+                                            <tr className="bg-[#0B3A6B] text-white text-[10px] uppercase tracking-wider font-black border-b border-[#ffffff20]">
+                                                <th className="px-4 py-3 text-left">Código</th>
+                                                <th className="px-4 py-3 text-left">Nombre (Excel)</th>
+                                                <th className="px-4 py-3 text-right">Δ Oficina</th>
+                                                <th className="px-4 py-3 text-right">Δ Docenas</th>
+                                                <th className="px-4 py-3 text-right">Δ 1-A</th>
+                                                <th className="px-4 py-3 text-right">Δ 1-B</th>
+                                                <th className="px-4 py-3 text-right">Δ 2</th>
+                                                <th className="px-4 py-3 text-right">Δ Cant/Caja</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {importCambiosDetectados.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={8} className="px-4 py-10 text-center text-xs font-semibold text-gray-500">
+                                                        No se detectaron diferencias entre Excel y sistema para ninguna fila.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                importCambiosDetectados.slice(0, 200).map((d, idx) => {
+                                                    const ex = d.existencias as any;
+                                                    const dc = (d.cant_caja_excel ?? 0) - (d.cant_caja_sistema ?? 0);
+                                                    const fmt = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+                                                    return (
+                                                        <tr key={`${d.producto}-${idx}`} className="text-[11px]">
+                                                            <td className="px-4 py-2 font-bold text-[#002D5A]">{d.producto}</td>
+                                                            <td className="px-4 py-2 font-semibold text-gray-700 uppercase">{d.nombre_excel || ''}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['OFICINA']?.delta || 0)}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['OFICINA-DOCENAS']?.delta || 0)}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['CALLAO-1-A']?.delta || 0)}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['CALLAO-1-B']?.delta || 0)}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['CALLAO-2']?.delta || 0)}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(dc)}</td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {importCambiosDetectados.length > 200 && (
+                                    <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600">
+                                        Mostrando 200 de {importCambiosDetectados.length} filas con cambios.
+                                    </div>
+                                )}
                             </div>
                         </div>
 
