@@ -5,6 +5,7 @@ import * as api from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type UnidadMedida = 'DOCENAS' | 'DECENAS' | 'UNIDADES' | 'CAJITAS' | 'BOLSITAS' | 'CAJAS';
+
 /** Códigos en BD:OFICINA, OFICINA-DOCENAS, CALLAO 1-A, CALLAO 1-B, CALLAO 2. (`tiendas_gestion_sea_callao`). */
 export type Tienda = 'TIENDA OFICINA' | 'TIENDA OFICINA-DOCENAS' | 'TIENDA CALLAO-1-A' | 'TIENDA CALLAO-1-B' | 'TIENDA CALLAO-2';
 /** Incluye `ALMACEN CALLAO` solo por compatibilidad con histórico (API CALLAO). */
@@ -105,6 +106,36 @@ const UNIDAD_MEDIDA_REVERSE_MAP: Record<UnidadMedida, number> = {
   'CAJAS': 12, 
 };
 
+function normalizarUnidadMedida(nombre: string | null | undefined): UnidadMedida | null {
+  const raw = (nombre || '').trim();
+  if (!raw) return null;
+  const n = raw
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[ÁÀÄÂ]/g, 'A')
+    .replace(/[ÉÈËÊ]/g, 'E')
+    .replace(/[ÍÌÏÎ]/g, 'I')
+    .replace(/[ÓÒÖÔ]/g, 'O')
+    .replace(/[ÚÙÜÛ]/g, 'U');
+
+  if (n === 'DOCENA' || n === 'DOCENAS') return 'DOCENAS';
+  if (n === 'DECENA' || n === 'DECENAS') return 'DECENAS';
+  if (n === 'UNIDAD' || n === 'UNIDADES') return 'UNIDADES';
+  if (n === 'CAJITA' || n === 'CAJITAS') return 'CAJITAS';
+  if (n === 'BOLSITA' || n === 'BOLSITAS') return 'BOLSITAS';
+  if (n === 'CAJA' || n === 'CAJAS') return 'CAJAS';
+  return null;
+}
+
+function buildUnidadMedidaMap(unidades: api.UnidadMedidaDB[]): Record<number, UnidadMedida> {
+  const out: Record<number, UnidadMedida> = { ...UNIDAD_MEDIDA_MAP };
+  for (const u of unidades || []) {
+    const norm = normalizarUnidadMedida(u?.nombre);
+    if (norm) out[u.id] = norm;
+  }
+  return out;
+}
+
 // ─── Mapeo de Tiendas ────────────────────────────────────────────────────────
 function getTiendaFromCodigo(codigo: string): Tienda | null {
   const map: Record<string, Tienda> = {
@@ -167,24 +198,27 @@ export interface Producto {
   existencia: Record<Tienda, number>;
 }
 
-/**
- * UM en modales de movimiento:
- * - Entrada y traslado: **DOCENAS** solo si el destino **Ingreso (tienda)** es `TIENDA OFICINA-DOCENAS`.
- * - Salida: **DOCENAS** solo si el **almacén** del movimiento es `TIENDA OFICINA-DOCENAS`.
- * - En cualquier otro caso: UM del producto (`unidadMedida` = columna "U. MEDIDA"); sin producto: CAJAS.
- */
-export function unidadMedidaParaFormularioMovimiento(
-  producto: Producto | null | undefined,
-  ingresoOAlmacenEsOficinaDocenas = false,
-): UnidadMedida {
-  if (ingresoOAlmacenEsOficinaDocenas) return 'DOCENAS';
-  if (producto) return producto.unidadMedida;
-  return 'CAJAS';
-}
-
 /** id en `unidades_medida_sea_callao` para la UM de reg. cálculo del producto. */
 export function resolveIdUnidadMedidaReg(producto: Producto): number {
   return producto.idUnidadMedidaReg ?? UNIDAD_MEDIDA_REVERSE_MAP[producto.unidadMedidaRegCalculo];
+}
+
+/**
+ * Unidad de medida a usar en formularios de movimientos (Entrada/Salida/Traslado).
+ *
+ * Regla:
+ * - Si el movimiento es para `TIENDA OFICINA-DOCENAS`, se usa la UM "info" del producto (`unidadMedida`)
+ *   (DOCENAS/UNIDADES/CAJITAS/BOLSITAS/DECENAS/CAJAS según el producto).
+ * - Para cualquier otro almacén/tienda, se usa la UM de registro (`unidadMedidaRegCalculo`) que el sistema
+ *   viene manejando (casi siempre CAJAS).
+ */
+export function unidadMedidaParaFormularioMovimiento(
+  producto: Producto | null | undefined,
+  esOficinaDocenas: boolean,
+): UnidadMedida {
+  if (!producto) return 'CAJAS';
+  if (esOficinaDocenas) return producto.unidadMedida ?? producto.unidadMedidaRegCalculo;
+  return producto.unidadMedidaRegCalculo ?? 'CAJAS';
 }
 
 export interface RegistroEntrada {
@@ -275,7 +309,7 @@ export interface AbastecimientoRow {
 
 export interface NotificationItem {
   id: string;
-  type: 'entrada' | 'salida' | 'cambio' | 'abastecimiento' | 'producto';
+  type: 'entrada' | 'salida' | 'traslado' | 'abastecimiento' | 'producto';
   title: string;
   message: string;
   timestamp: string;
@@ -350,9 +384,15 @@ function fmtDate(dateStr: string | Date): string {
 }
 
 // ─── Conversores de datos ────────────────────────────────────────────────────
-function convertirProductoDB(productoDB: api.ProductoDB, stockTotal?: api.StockTotalDB): Producto {
-  const unidadMedidaInfo = UNIDAD_MEDIDA_MAP[productoDB.id_unidad_medida_info] || 'UNIDADES';
-  const unidadMedidaReg = UNIDAD_MEDIDA_MAP[productoDB.id_unidad_medida_reg] || 'UNIDADES';
+function convertirProductoDB(
+  productoDB: api.ProductoDB,
+  stockTotal?: api.StockTotalDB,
+  unidadMedidaMap: Record<number, UnidadMedida> = UNIDAD_MEDIDA_MAP,
+): Producto {
+  // `unidadMedida` debe reflejar la columna "U. MEDIDA" (info del producto)
+  const unidadMedidaInfo = unidadMedidaMap[productoDB.id_unidad_medida_info] || 'UNIDADES';
+  // `unidadMedidaRegCalculo` es la UM usada para registrar (casi siempre CAJAS)
+  const unidadMedidaReg = unidadMedidaMap[productoDB.id_unidad_medida_reg] || 'UNIDADES';
 
   // Obtener stock mínimo y existencia del stockTotal si está disponible
   let stockMinimo: Record<Tienda, number> = {
@@ -578,7 +618,8 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
     const cargarDatos = async () => {
       setState(s => ({ ...s, loading: true, error: null }));
       try {
-        const [productosDB, stockTotalDB, entradasDB, salidasDB, trasladosDB] = await Promise.all([
+        const [unidadesDB, productosDB, stockTotalDB, entradasDB, salidasDB, trasladosDB] = await Promise.all([
+          api.getUnidadesMedida(),
           api.getProductos(true),
           api.getStockTotal(),
           api.getEntradas(),
@@ -590,9 +631,10 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
         const stockMap = new Map<string, api.StockTotalDB>();
         stockTotalDB.forEach(st => stockMap.set(st.codigo, st));
 
+        const unidadMedidaMap = buildUnidadMedidaMap(unidadesDB);
         const productos = productosDB.map(p => {
           const stock = stockMap.get(p.codigo);
-          return convertirProductoDB(p, stock);
+          return convertirProductoDB(p, stock, unidadMedidaMap);
         });
 
         // Convertir entradas, salidas y traslados
@@ -613,7 +655,8 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
 
   const refreshProductos = useCallback(async () => {
     try {
-      const [productosDB, stockTotalDB] = await Promise.all([
+      const [unidadesDB, productosDB, stockTotalDB] = await Promise.all([
+        api.getUnidadesMedida(),
         api.getProductos(true),
         api.getStockTotal(),
       ]);
@@ -621,9 +664,10 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
       const stockMap = new Map<string, api.StockTotalDB>();
       stockTotalDB.forEach(st => stockMap.set(st.codigo, st));
 
+      const unidadMedidaMap = buildUnidadMedidaMap(unidadesDB);
       const productos = productosDB.map(p => {
         const stock = stockMap.get(p.codigo);
-        return convertirProductoDB(p, stock);
+        return convertirProductoDB(p, stock, unidadMedidaMap);
       });
 
       setState(s => ({ ...s, productos }));
@@ -812,7 +856,7 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
       });
 
       await Promise.all([refreshEntradas(), refreshProductos(), refreshHistorialEntradas()]);
-      addNotification('cambio', 'Entrada Actualizada', `Se modificó un registro de entrada. Motivo: ${motivo}`);
+      addNotification('traslado', 'Entrada Actualizada', `Se modificó un registro de entrada. Motivo: ${motivo}`);
       showToast('success', 'Entrada actualizada correctamente');
     } catch (error: any) {
       console.error('Error actualizando entrada:', error);
@@ -879,7 +923,7 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
       });
 
       await Promise.all([refreshSalidas(), refreshProductos(), refreshHistorialSalidas()]);
-      addNotification('cambio', 'Salida Actualizada', `Se modificó un registro de salida. Motivo: ${motivo}`);
+      addNotification('traslado', 'Salida Actualizada', `Se modificó un registro de salida. Motivo: ${motivo}`);
       showToast('success', 'Salida actualizada correctamente');
     } catch (error: any) {
       console.error('Error actualizando salida:', error);
@@ -949,7 +993,7 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
       });
 
       await Promise.all([refreshTraslados(), refreshProductos(), refreshHistorialTraslados()]);
-      addNotification('cambio', 'Traslado Actualizado', `Se modificó un registro de traslado. Motivo: ${motivo}`);
+      addNotification('traslado', 'Traslado Actualizado', `Se modificó un registro de traslado. Motivo: ${motivo}`);
       showToast('success', 'Traslado actualizado correctamente');
     } catch (error: any) {
       console.error('Error actualizando traslado:', error);

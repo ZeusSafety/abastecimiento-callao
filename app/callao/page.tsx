@@ -980,7 +980,7 @@ export default function StockTotalPage() {
                                                         const existenciaActual = p.existencia[t];
                                                         
                                                         return (
-                                                            <td 
+                                                            <td
                                                                 key={`ex-${t}`} 
                                                                 className={`px-2 py-3 text-center text-[11px] ${
                                                                     existenciaActual < stockMinActual && stockMinActual > 0 
@@ -993,7 +993,7 @@ export default function StockTotalPage() {
                                                         );
                                                     })}
                                                     <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{disponibles}</td>
-                                                    <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{p.unidadMedida}</td>
+                                                    <td className="px-4 py-3 text-center font-extrabold text-[#002D5A] bg-blue-50/50 text-[11px]">{p.unidadMedidaRegCalculo}</td>
                                                     <td className="px-4 py-3 text-center font-bold text-[11px]" style={{ color: '#22c55e' }}>
                                                         {medida}
                                                     </td>

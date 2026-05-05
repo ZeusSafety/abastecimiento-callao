@@ -48,6 +48,7 @@ export interface EntradaDB {
   cantidad: number;
   cantidad_anterior?: number | null;
   unidad_medida: string;
+  unidad_medida_reg_calculo: string;
   entregado_por: string | null;
   registrado_por: string | null;
   observaciones: string | null;
@@ -68,6 +69,7 @@ export interface SalidaDB {
   cantidad: number;
   cantidad_anterior?: number | null;
   unidad_medida: string;
+  unidad_medida_reg_calculo: string;
   tienda_codigo: string;
   tienda_nombre: string | null;
   entregado_por: string | null;
@@ -93,6 +95,7 @@ export interface TrasladoDB {
   cantidad: number;
   cantidad_anterior?: number | null;
   unidad_medida: string;
+  unidad_medida_reg_calculo: string;
   entregado_por: string | null;
   registrado_por: string | null;
   observaciones: string | null;
