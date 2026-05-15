@@ -478,6 +478,80 @@ def _asegurar_fila_existencia(cursor, id_producto, id_tienda):
     )
 
 
+_CODIGO_TIENDA_OFICINA_DOCENAS = 'OFICINA-DOCENAS'
+
+
+def _get_codigo_tienda_por_id(cursor, id_tienda):
+    """Código de tienda/almacén (ej. OFICINA, OFICINA-DOCENAS) a partir de su id."""
+    if not id_tienda:
+        return None
+    cursor.execute(
+        "SELECT UPPER(TRIM(codigo)) AS codigo FROM tiendas_gestion_sea_callao WHERE id = %s LIMIT 1",
+        (id_tienda,),
+    )
+    row = cursor.fetchone()
+    return row['codigo'] if row and row.get('codigo') else None
+
+
+def _aplicar_conversion_traslado_oficina_docenas(
+    cursor, producto_id, cantidad, um_id, tienda_salida_id, tienda_ingreso_id
+):
+    """
+    Traslados hacia OFICINA-DOCENAS desde almacenes que operan en CAJAS:
+    convierte cantidad (cajas) × cantidad_reg_calculo y usa id_unidad_medida_info.
+
+    Retorna (cantidad_destino, id_unidad_medida_destino, cantidad_cajas_origen).
+    cantidad_cajas_origen se usa para descontar stock en la tienda de salida (sigue en cajas).
+    """
+    try:
+        cantidad_in = int(cantidad or 0)
+    except (TypeError, ValueError):
+        cantidad_in = 0
+
+    cantidad_cajas_origen = cantidad_in
+    cantidad_out = cantidad_in
+    um_out = um_id
+
+    if _get_codigo_tienda_por_id(cursor, tienda_ingreso_id) != _CODIGO_TIENDA_OFICINA_DOCENAS:
+        return cantidad_out, um_out, cantidad_cajas_origen
+
+    if _get_codigo_tienda_por_id(cursor, tienda_salida_id) == _CODIGO_TIENDA_OFICINA_DOCENAS:
+        return cantidad_out, um_out, cantidad_cajas_origen
+
+    cursor.execute(
+        """
+        SELECT cantidad_reg_calculo, id_unidad_medida_info, id_unidad_medida_reg
+        FROM productos_abastecimiento_callao
+        WHERE id = %s
+        """,
+        (producto_id,),
+    )
+    prod = cursor.fetchone()
+    if not prod:
+        return cantidad_out, um_out, cantidad_cajas_origen
+
+    um_info_id = prod.get('id_unidad_medida_info')
+    um_reg_id = prod.get('id_unidad_medida_reg')
+
+    # Ya registrado en la UM nativa del almacén OFICINA-DOCENAS (info del producto).
+    if um_id is not None and um_info_id is not None and int(um_id) == int(um_info_id):
+        return cantidad_out, um_out, cantidad_cajas_origen
+
+    factor = int(prod.get('cantidad_reg_calculo') or 0)
+    if factor <= 0:
+        factor = 1
+
+    # Origen en cajas (UM registro / CAJAS) → unidades del producto en OFICINA-DOCENAS.
+    cantidad_out = cantidad_in * factor
+    um_out = um_info_id if um_info_id is not None else um_id
+
+    logging.info(
+        "Traslado a OFICINA-DOCENAS: producto=%s, %s caja(s) × %s → %s (um_id %s → %s)",
+        producto_id, cantidad_in, factor, cantidad_out, um_id, um_out,
+    )
+    return cantidad_out, um_out, cantidad_cajas_origen
+
+
 def _ejecutar_sp_con_transaccion(conn, sp_call, params):
     """Ejecuta un Stored Procedure y maneja commit/rollback."""
     cursor = conn.cursor()
@@ -1631,10 +1705,18 @@ def create_traslado(request, headers):
         # Fila en existencias para tienda de INGRESO: sin ella el SP deja v_cant_anterior NULL (MySQL INTO sin filas).
         _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
 
+        try:
+            cantidad_sp = int(data.get('cantidad') or 0)
+        except (TypeError, ValueError):
+            cantidad_sp = 0
+        cantidad_sp, um_id, cantidad_cajas_origen = _aplicar_conversion_traslado_oficina_docenas(
+            cursor, producto_id, cantidad_sp, um_id, tienda_salida_id, tienda_ingreso_id
+        )
+
         # Llamar al SP manualmente para mantener control de la transacción
         params = [
             producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
-            data.get('operador'), data.get('cantidad'), um_id,
+            data.get('operador'), cantidad_sp, um_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones')
         ]
         try:
@@ -1649,9 +1731,8 @@ def create_traslado(request, headers):
 
             # cantidad_anterior la calcula el SP (stock en tienda ingreso antes del movimiento); no sobrescribir.
 
-            # Si la tienda de salida NO es un almacén (es una tienda), restar del stock
+            # Si la tienda de salida NO es un almacén (es una tienda), restar del stock (en cajas)
             if not es_almacen_salida:
-                cantidad = data.get('cantidad', 0)
                 _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
                 cursor.execute(
                     "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
@@ -1660,7 +1741,7 @@ def create_traslado(request, headers):
                 existencia_row = cursor.fetchone()
 
                 if existencia_row:
-                    nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
+                    nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad_cajas_origen)
                     cursor.execute(
                         "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
                         (nueva_cantidad, producto_id, tienda_salida_id)
@@ -1775,6 +1856,10 @@ def create_traslados_masivo(request, headers):
                 except (TypeError, ValueError):
                     cantidad_val = 0
 
+                cantidad_val, um_id, cantidad_cajas_origen = _aplicar_conversion_traslado_oficina_docenas(
+                    cursor, producto_id, cantidad_val, um_id, tienda_salida_id, tienda_ingreso_id
+                )
+
                 _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
 
                 # Llamar al SP
@@ -1796,9 +1881,8 @@ def create_traslados_masivo(request, headers):
                     continue
 
                 _asignar_codigo_carga_traslado_si_existe_columna(cursor, nuevo_id, codigo_carga)
-                # Restar stock si la tienda de salida no es almacén (el SP ya actualizó ingreso)
+                # Restar stock si la tienda de salida no es almacén (el SP ya actualizó ingreso; descuento en cajas)
                 if not es_almacen_salida:
-                    cantidad = cantidad_val
                     _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
                     cursor.execute(
                         "SELECT id, cantidad FROM existencias_almacen_callao WHERE id_producto = %s AND id_tienda = %s",
@@ -1806,7 +1890,7 @@ def create_traslados_masivo(request, headers):
                     )
                     existencia_row = cursor.fetchone()
                     if existencia_row:
-                        nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad)
+                        nueva_cantidad = max(0, (existencia_row['cantidad'] or 0) - cantidad_cajas_origen)
                         cursor.execute(
                             "UPDATE existencias_almacen_callao SET cantidad = %s WHERE id_producto = %s AND id_tienda = %s",
                             (nueva_cantidad, producto_id, tienda_salida_id)
@@ -1922,9 +2006,17 @@ def update_traslado(request, headers, id_traslado):
         _asegurar_fila_existencia(cursor, producto_id, tienda_ingreso_id)
         _asegurar_fila_existencia(cursor, producto_id, tienda_salida_id)
 
+        try:
+            cantidad_sp = int(data.get('cantidad') or 0)
+        except (TypeError, ValueError):
+            cantidad_sp = 0
+        cantidad_sp, um_id, _cantidad_cajas_origen = _aplicar_conversion_traslado_oficina_docenas(
+            cursor, producto_id, cantidad_sp, um_id, tienda_salida_id, tienda_ingreso_id
+        )
+
         params = [
             id_traslado, producto_id, tipo_op_id, tienda_salida_id, tienda_ingreso_id,
-            data.get('operador'), data.get('cantidad'), um_id,
+            data.get('operador'), cantidad_sp, um_id,
             data.get('entregado_por'), data.get('registrado_por'), data.get('observaciones'),
             motivo_cambio
         ]
@@ -2093,6 +2185,34 @@ def importar_stock_total_excel(request, headers):
             return ""
         return str(v).strip().upper()
 
+    def _norm_codigo_producto(v):
+        """
+        Normaliza el código leído desde Excel para evitar pérdidas típicas:
+        - Excel puede convertir códigos a numéricos (123, 123.0) -> "123"
+        - textos con espacios invisibles -> strip()
+        """
+        if v is None:
+            return ""
+        if isinstance(v, bool):
+            return ""
+        if isinstance(v, int):
+            return str(v).strip()
+        if isinstance(v, float):
+            try:
+                if float(v).is_integer():
+                    return str(int(v)).strip()
+            except Exception:
+                pass
+            s = str(v).strip()
+            if s.endswith(".0"):
+                s = s[:-2]
+            return s.strip()
+        s = str(v).strip()
+        # Caso común: "123.0" como texto
+        if s.endswith(".0") and s[:-2].isdigit():
+            s = s[:-2]
+        return s.strip()
+
     # Validación mínima del formato (encabezados clave).
     # Hay dos layouts válidos (export actual 12 cols vs export anterior con TOTAL duplicado 13 cols):
     #   Nuevo: DISPONIBLES en J1, DOC… en L1 (columnas E–I = solo 5 tiendas).
@@ -2198,24 +2318,24 @@ def importar_stock_total_excel(request, headers):
         omitidas_producto_no_existe = 0
         productos_no_encontrados = []
         movimientos_sugeridos = []
+        salidas_sugeridas = []
         ajustes_negativos = []
         filas_con_cambio_cant_reg_o_stock_min = 0
         preview_detalle = []
 
         # Encabezados ocupan 2 filas, data inicia desde fila 3
         for row_idx in range(3, ws.max_row + 1):
-            codigo = ws[f"A{row_idx}"].value
-            if codigo is None or str(codigo).strip() == "":
+            codigo_raw = ws[f"A{row_idx}"].value
+            codigo = _norm_codigo_producto(codigo_raw)
+            if not codigo:
                 omitidas_sin_codigo += 1
                 continue
-
-            codigo = str(codigo).strip()
             cursor.execute(
                 """
-                SELECT p.id, p.codigo, p.cantidad_reg_calculo, um_reg.nombre AS unidad_medida_reg
+                SELECT p.id, p.codigo, p.nombre, p.cantidad_reg_calculo, um_reg.nombre AS unidad_medida_reg
                 FROM productos_abastecimiento_callao p
                 JOIN unidades_medida_sea_callao um_reg ON p.id_unidad_medida_reg = um_reg.id
-                WHERE p.codigo = %s
+                WHERE TRIM(p.codigo) = TRIM(%s)
                 """,
                 (codigo,)
             )
@@ -2294,6 +2414,18 @@ def importar_stock_total_excel(request, headers):
                         "cantidad_excel": nuevo_val,
                         "delta": delta,
                     })
+                    # También devolvemos salidas sugeridas para sincronizar con el Excel (si el front decide aplicarlas).
+                    # SALIDA descuenta desde la tienda indicada.
+                    salidas_sugeridas.append({
+                        "producto": codigo,
+                        "nombre": nombre_excel or nombre_sistema,
+                        "operacion": "OTROS",
+                        "almacen": codigo_tienda,
+                        "cantidad": abs(delta),
+                        "unidad_medida": unidad_medida_reg,
+                        "cantidad_anterior": actual_val,
+                        "cantidad_objetivo_excel": nuevo_val,
+                    })
 
             preview_detalle.append({
                 "producto": codigo,
@@ -2321,6 +2453,7 @@ def importar_stock_total_excel(request, headers):
                 "filas_omitidas_producto_no_existe": omitidas_producto_no_existe,
                 "productos_no_encontrados_muestra": productos_no_encontrados,
                 "movimientos_entrada_sugeridos": movimientos_sugeridos,
+                "movimientos_salida_sugeridos": salidas_sugeridas,
                 "ajustes_negativos": ajustes_negativos,
                 "filas_con_cambio_cant_reg_o_stock_min": filas_con_cambio_cant_reg_o_stock_min,
                 "preview_detalle": preview_detalle,

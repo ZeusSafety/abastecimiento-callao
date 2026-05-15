@@ -20,7 +20,7 @@ import {
     UnidadMedida,
     Producto,
     getOperacionColor,
-    unidadMedidaParaFormularioMovimiento,
+    unidadMedidaParaTraslado,
 } from '../../context/CallaoContext';
 import {
     Plus,
@@ -258,10 +258,7 @@ function ModalTraslado({
                 productoId: '',
                 producto: '',
                 codigo: '',
-                unidadMedida: unidadMedidaParaFormularioMovimiento(
-                    null,
-                    f.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-                ),
+                unidadMedida: unidadMedidaParaTraslado(null, f.almacenIngreso, f.almacenSalida),
             }));
             return;
         }
@@ -270,10 +267,7 @@ function ModalTraslado({
             productoId: productoId,
             producto: producto.nombre,
             codigo: producto.codigo,
-            unidadMedida: unidadMedidaParaFormularioMovimiento(
-                producto,
-                f.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-            ),
+            unidadMedida: unidadMedidaParaTraslado(producto, f.almacenIngreso, f.almacenSalida),
         }));
     };
 
@@ -349,10 +343,7 @@ function ModalTraslado({
                         productoId: '',
                         producto: '',
                         codigo: '',
-                        unidadMedida: unidadMedidaParaFormularioMovimiento(
-                            null,
-                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-                        ),
+                        unidadMedida: unidadMedidaParaTraslado(null, p.almacenIngreso, p.almacenSalida),
                     };
                 }
                 return {
@@ -360,10 +351,7 @@ function ModalTraslado({
                     productoId: productoId,
                     producto: producto.nombre,
                     codigo: producto.codigo,
-                    unidadMedida: unidadMedidaParaFormularioMovimiento(
-                        producto,
-                        p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-                    ),
+                    unidadMedida: unidadMedidaParaTraslado(producto, p.almacenIngreso, p.almacenSalida),
                 };
             }
             return p;
@@ -378,10 +366,7 @@ function ModalTraslado({
                     return {
                         ...p,
                         almacenIngreso: value,
-                        unidadMedida: unidadMedidaParaFormularioMovimiento(
-                            producto,
-                            value === 'TIENDA OFICINA-DOCENAS',
-                        ),
+                        unidadMedida: unidadMedidaParaTraslado(producto, value, p.almacenSalida),
                     };
                 }
                 if (field === 'almacenSalida') {
@@ -389,10 +374,7 @@ function ModalTraslado({
                     return {
                         ...p,
                         almacenSalida: value,
-                        unidadMedida: unidadMedidaParaFormularioMovimiento(
-                            producto,
-                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-                        ),
+                        unidadMedida: unidadMedidaParaTraslado(producto, p.almacenIngreso, value),
                     };
                 }
                 if (field === 'productoId' || field === 'producto') {
@@ -402,10 +384,7 @@ function ModalTraslado({
                         productoId: value,
                         producto: producto?.nombre || p.producto,
                         codigo: producto?.codigo || p.codigo,
-                        unidadMedida: unidadMedidaParaFormularioMovimiento(
-                            producto,
-                            p.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-                        ),
+                        unidadMedida: unidadMedidaParaTraslado(producto, p.almacenIngreso, p.almacenSalida),
                     };
                 }
                 return { ...p, [field]: value };
@@ -661,10 +640,7 @@ function ModalTraslado({
                                         return {
                                             ...f,
                                             almacenSalida: salida,
-                                            unidadMedida: unidadMedidaParaFormularioMovimiento(
-                                                prod,
-                                                f.almacenIngreso === 'TIENDA OFICINA-DOCENAS',
-                                            ),
+                                            unidadMedida: unidadMedidaParaTraslado(prod, f.almacenIngreso, f.almacenSalida),
                                         };
                                     });
                                 }}
@@ -687,10 +663,7 @@ function ModalTraslado({
                                         return {
                                             ...f,
                                             almacenIngreso: dest,
-                                            unidadMedida: unidadMedidaParaFormularioMovimiento(
-                                                prod,
-                                                dest === 'TIENDA OFICINA-DOCENAS',
-                                            ),
+                                            unidadMedida: unidadMedidaParaTraslado(prod, dest, f.almacenSalida),
                                         };
                                     });
                                 }}

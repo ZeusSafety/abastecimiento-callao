@@ -221,6 +221,24 @@ export function unidadMedidaParaFormularioMovimiento(
   return producto.unidadMedidaRegCalculo ?? 'CAJAS';
 }
 
+/**
+ * UM en formularios de traslado.
+ * Hacia OFICINA-DOCENAS desde otro almacén: la cantidad se ingresa en CAJAS (origen);
+ * el backend convierte a la UM info del producto (DOCENAS, etc.).
+ */
+export function unidadMedidaParaTraslado(
+  producto: Producto | null | undefined,
+  almacenIngreso: Tienda,
+  almacenSalida: AlmacenCompleto,
+): UnidadMedida {
+  const destDocenas = almacenIngreso === 'TIENDA OFICINA-DOCENAS';
+  const origenDocenas = almacenSalida === 'TIENDA OFICINA-DOCENAS';
+  if (destDocenas && !origenDocenas) {
+    return producto?.unidadMedidaRegCalculo ?? 'CAJAS';
+  }
+  return unidadMedidaParaFormularioMovimiento(producto, destDocenas);
+}
+
 export interface RegistroEntrada {
   id: string;
   fecha: string;
