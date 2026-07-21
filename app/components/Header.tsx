@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Menu, Bell, Package } from 'lucide-react';
 import { useCallao } from '../context/CallaoContext'; 
 import NotificationModal from './NotificationModal';
-
+ 
 interface HeaderProps {
     onToggleSidebar: () => void;
     sidebarOpen: boolean;
