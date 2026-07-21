@@ -21,6 +21,7 @@ import {
     Producto,
     getOperacionColor,
     unidadMedidaParaTraslado,
+    validarTrasladoDesdeOficinaDocenas,
 } from '../../context/CallaoContext';
 import {
     Plus,
@@ -294,6 +295,32 @@ function ModalTraslado({
             return;
         }
 
+        // Reserva de stock ya agregada en la lista (mismo producto desde Oficina-Docenas)
+        const stockReservado = productosAgregados
+            .filter(
+                p =>
+                    p.productoId === form.productoId &&
+                    p.almacenSalida === 'TIENDA OFICINA-DOCENAS' &&
+                    p.almacenIngreso !== 'TIENDA OFICINA-DOCENAS',
+            )
+            .reduce((acc, p) => {
+                const prod = state.productos.find(pr => pr.id === p.productoId);
+                const factor = Number(prod?.cantidadRegCalculo) || 0;
+                return acc + p.cantidad * (factor > 0 ? factor : 0);
+            }, 0);
+
+        const errConversion = validarTrasladoDesdeOficinaDocenas(
+            selectedProducto,
+            Number(form.cantidad),
+            form.almacenSalida,
+            form.almacenIngreso,
+            stockReservado,
+        );
+        if (errConversion) {
+            showToast('error', errConversion);
+            return;
+        }
+
         const nuevoProducto = {
             productoId: form.productoId,
             producto: form.producto,
@@ -450,6 +477,32 @@ function ModalTraslado({
             if (productosAgregados.length === 0) {
                 showToast('error', 'Agrega al menos un producto antes de guardar');
                 return;
+            }
+
+            // Revalidar conversión Oficina-Docenas → cajas (incluye acumulación por producto)
+            const reservadoPorProducto: Record<string, number> = {};
+            for (const p of productosAgregados) {
+                const prod = state.productos.find(pr => pr.id === p.productoId);
+                const yaReservado = reservadoPorProducto[p.productoId] || 0;
+                const errConversion = validarTrasladoDesdeOficinaDocenas(
+                    prod,
+                    Number(p.cantidad),
+                    p.almacenSalida,
+                    p.almacenIngreso,
+                    yaReservado,
+                );
+                if (errConversion) {
+                    showToast('error', `${p.producto}: ${errConversion}`);
+                    return;
+                }
+                if (
+                    p.almacenSalida === 'TIENDA OFICINA-DOCENAS' &&
+                    p.almacenIngreso !== 'TIENDA OFICINA-DOCENAS'
+                ) {
+                    const factor = Number(prod?.cantidadRegCalculo) || 0;
+                    reservadoPorProducto[p.productoId] =
+                        yaReservado + Number(p.cantidad) * (factor > 0 ? factor : 0);
+                }
             }
 
             const trasladosData = prepararTrasladosData();
@@ -640,7 +693,7 @@ function ModalTraslado({
                                         return {
                                             ...f,
                                             almacenSalida: salida,
-                                            unidadMedida: unidadMedidaParaTraslado(prod, f.almacenIngreso, f.almacenSalida),
+                                            unidadMedida: unidadMedidaParaTraslado(prod, f.almacenIngreso, salida),
                                         };
                                     });
                                 }}
@@ -719,6 +772,18 @@ function ModalTraslado({
                                 style={{ fontSize: 12 }}
                                 placeholder="0"
                             />
+                            {form.almacenSalida === 'TIENDA OFICINA-DOCENAS' &&
+                                form.almacenIngreso !== 'TIENDA OFICINA-DOCENAS' &&
+                                selectedProducto && (
+                                <p className="mt-1 text-[10px] text-amber-700 leading-snug">
+                                    Desde Oficina-Docenas: se descontarán{' '}
+                                    {(Number(form.cantidad) || 0) *
+                                        (Number(selectedProducto.cantidadRegCalculo) || 0)}{' '}
+                                    {selectedProducto.unidadMedida || 'unidades'} (
+                                    {selectedProducto.cantidadRegCalculo || 0} por caja). Debe haber
+                                    stock suficiente en cajas completas.
+                                </p>
+                            )}
                         </div>
 
                         <div>
@@ -1162,7 +1227,7 @@ function ModalTraslado({
                             <div>
                                 <p className="text-sm font-semibold text-[#002D5A] mb-1">Contraseña de autorización requerida</p>
                                 <p className="text-xs text-blue-700">
-                                    Se valida contra la contraseña dinámica del sistema.
+                                    Validar contraseña dinámica del sistema.
                                 </p>
                             </div>
                         </div>

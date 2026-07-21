@@ -1219,7 +1219,7 @@ function ModalEntrada({
                                 <div>
                                     <p className="text-sm font-semibold text-[#002D5A] mb-1">Contraseña de autorización requerida</p>
                                     <p className="text-xs text-blue-700">
-                                        Se valida contra la contraseña dinámica del sistema.
+                                        Validar contraseña dinámica del sistema.
                                     </p>
                                 </div>
                             </div>

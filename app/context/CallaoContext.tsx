@@ -223,8 +223,9 @@ export function unidadMedidaParaFormularioMovimiento(
 
 /**
  * UM en formularios de traslado.
- * Hacia OFICINA-DOCENAS desde otro almacén: la cantidad se ingresa en CAJAS (origen);
- * el backend convierte a la UM info del producto (DOCENAS, etc.).
+ * - Hacia OFICINA-DOCENAS desde otro almacén: cantidad en CAJAS (origen); backend convierte a UM info.
+ * - Desde OFICINA-DOCENAS hacia otro almacén: cantidad en CAJAS (destino); backend descuenta
+ *   cajas × cantidad_reg_calculo en OFICINA-DOCENAS.
  */
 export function unidadMedidaParaTraslado(
   producto: Producto | null | undefined,
@@ -233,10 +234,48 @@ export function unidadMedidaParaTraslado(
 ): UnidadMedida {
   const destDocenas = almacenIngreso === 'TIENDA OFICINA-DOCENAS';
   const origenDocenas = almacenSalida === 'TIENDA OFICINA-DOCENAS';
-  if (destDocenas && !origenDocenas) {
+  // Ambos sentidos de conversión: el formulario pide CAJAS
+  if ((destDocenas && !origenDocenas) || (origenDocenas && !destDocenas)) {
     return producto?.unidadMedidaRegCalculo ?? 'CAJAS';
   }
   return unidadMedidaParaFormularioMovimiento(producto, destDocenas);
+}
+
+/**
+ * Valida traslados desde OFICINA-DOCENAS hacia almacenes en cajas.
+ * Solo permite cajas completas según cantidadRegCalculo y stock disponible.
+ * Retorna mensaje de error o null si es válido.
+ */
+export function validarTrasladoDesdeOficinaDocenas(
+  producto: Producto | null | undefined,
+  cantidadCajas: number,
+  almacenSalida: AlmacenCompleto,
+  almacenIngreso: Tienda,
+  stockReservado = 0,
+): string | null {
+  if (!producto) return null;
+  if (almacenSalida !== 'TIENDA OFICINA-DOCENAS') return null;
+  if (almacenIngreso === 'TIENDA OFICINA-DOCENAS') return null;
+
+  const factor = Number(producto.cantidadRegCalculo) || 0;
+  if (factor <= 0) {
+    return 'El producto no tiene cantidad por caja (cantidad_reg_calculo) configurada';
+  }
+  if (!cantidadCajas || cantidadCajas <= 0) {
+    return 'Ingresa una cantidad válida mayor a 0';
+  }
+
+  const requerido = cantidadCajas * factor;
+  const stock = (producto.existencia?.['TIENDA OFICINA-DOCENAS'] || 0) - stockReservado;
+  if (requerido > stock) {
+    const um = producto.unidadMedida || 'unidades';
+    return (
+      `Stock insuficiente en Oficina-Docenas: se requieren ${requerido} ${um} ` +
+      `(${cantidadCajas} caja(s) × ${factor}) y hay ${Math.max(0, stock)} disponibles. ` +
+      `Solo se permiten traslados de cajas completas.`
+    );
+  }
+  return null;
 }
 
 export interface RegistroEntrada {
