@@ -7,6 +7,7 @@ import * as api from '../../services/api';
 
 import { PackageMinus, FileDown } from 'lucide-react';
 
+import { ActaLightbox, ActaMiniatura, EtiquetaActasCabecera, actasCoincidenBusqueda } from '../../components/ActaVisor';
 import type { SalidaCascadaDB, ActaMovimientoDB, SalidaDetalleCascadaDB } from '../../services/api';
 import { getOperacionColor } from '../../context/CallaoContext';
 
@@ -123,7 +124,7 @@ export default function CascadaMovimientosSalidas({
   // ─── Actas view ──────────────────────────────────────────────────────────
   const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
   const [actasSeleccionadas, setActasSeleccionadas] = useState<ActaMovimientoDB[]>([]);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [actaLightbox, setActaLightbox] = useState<ActaMovimientoDB | null>(null);
 
   // ─── Observaciones view ─────────────────────────────────────────────────
   const [modalObsOpen, setModalObsOpen] = useState(false);
@@ -166,7 +167,7 @@ export default function CascadaMovimientosSalidas({
         );
       });
 
-      return baseMatch || detailMatch;
+      return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
     });
   }, [cargas, search]);
 
@@ -235,6 +236,7 @@ export default function CascadaMovimientosSalidas({
                           <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
                           <span>{hora || '-'}</span>
                         </span>
+                        <EtiquetaActasCabecera actas={carga.actas} />
 
                         {/* Operación ya se muestra en la tabla interna */}
                       </div>
@@ -435,7 +437,7 @@ export default function CascadaMovimientosSalidas({
               <button
                 onClick={() => {
                   setModalVerActasOpen(false);
-                  setLightboxUrl(null);
+                  setActaLightbox(null);
                 }}
                 className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
               >
@@ -455,18 +457,10 @@ export default function CascadaMovimientosSalidas({
                     <div
                       key={acta.id}
                       className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                      onClick={() => setLightboxUrl(acta.url_imagen)}
+                      onClick={() => setActaLightbox(acta)}
                     >
                       <div className="relative aspect-video bg-gray-100">
-                        <img
-                          src={acta.url_imagen}
-                          alt={acta.nombre_imagen}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src =
-                              'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
-                          }}
-                        />
+                        <ActaMiniatura nombre={acta.nombre_imagen} url={acta.url_imagen} />
                       </div>
                       <div className="p-3">
                         <div className="text-[11px] font-bold text-gray-900 line-clamp-2">{acta.nombre_imagen}</div>
@@ -484,31 +478,14 @@ export default function CascadaMovimientosSalidas({
         </div>
       )}
 
-      {/* Lightbox */}
-      {lightboxUrl && (
-        <div
-          className="modal-backdrop animate-in fade-in duration-300"
-          style={{ zIndex: 30003 }}
-          onClick={() => setLightboxUrl(null)}
-        >
-          <div className="relative w-full h-full flex items-center justify-center p-4">
-            <button
-              onClick={() => setLightboxUrl(null)}
-              className="absolute top-4 right-4 p-2 bg-white/90 hover:bg-white rounded-full transition-colors z-10 shadow"
-            >
-              <X className="w-6 h-6 text-gray-700" />
-            </button>
-            <img
-              src={lightboxUrl}
-              alt="Acta completa"
-              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src =
-                  'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
-              }}
-            />
-          </div>
-        </div>
+      {/* Visor de acta (imagen, PDF u otro archivo) */}
+      {actaLightbox && (
+        <ActaLightbox
+          nombre={actaLightbox.nombre_imagen}
+          url={actaLightbox.url_imagen}
+          onClose={() => setActaLightbox(null)}
+          zIndex={30003}
+        />
       )}
     </>
   );

@@ -24,6 +24,7 @@ import {
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { ExistenciaAlmacenCards } from '../../components/ExistenciaAlmacenCards';
 import { PrettySelect } from '../../components/PrettySelect';
+import { ActaMiniatura, ACCEPT_ACTAS, TEXTO_FORMATOS_ACTAS } from '../../components/ActaVisor';
 import * as api from '../../services/api';
 import CascadaMovimientosSalidas from './CascadaMovimientosSalidas';
 
@@ -313,7 +314,7 @@ function ModalSalida({
         const files = Array.from(e.target.files || []);
         const nuevasActas = files.map(file => ({
             file,
-            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            nombre: file.name.replace(/\.[^/.]+$/, '').toUpperCase(),
             preview: URL.createObjectURL(file),
         }));
         setActas(prev => [...prev, ...nuevasActas]);
@@ -332,7 +333,7 @@ function ModalSalida({
     const handleUpdateNombreActa = (index: number, nuevoNombre: string) => {
         setActas(prev => {
             const nueva = [...prev];
-            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre.toUpperCase() };
             return nueva;
         });
     };
@@ -980,12 +981,12 @@ function ModalSalida({
                     <div className="modal-body">
                         <div className="mb-6">
                             <label className="block mb-2 text-sm font-semibold text-gray-700">
-                                Seleccionar Imágenes
+                                Seleccionar Archivos
                             </label>
                             <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
                                 <input
                                     type="file"
-                                    accept="image/*"
+                                    accept={ACCEPT_ACTAS}
                                     multiple
                                     onChange={handleFileSelectActas}
                                     className="hidden"
@@ -1000,9 +1001,9 @@ function ModalSalida({
                                     </div>
                                     <div>
                                         <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
-                                        <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                        <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra los archivos aquí</span>
                                     </div>
-                                    <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                    <span className="text-[10px] text-gray-400">Formatos: {TEXTO_FORMATOS_ACTAS}</span>
                                 </label>
                             </div>
                         </div>
@@ -1019,12 +1020,8 @@ function ModalSalida({
                                             className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
                                         >
                                             <div className="flex gap-3">
-                                                <div className="flex-shrink-0">
-                                                    <img
-                                                        src={acta.preview}
-                                                        alt={`Preview ${index + 1}`}
-                                                        className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                                                    />
+                                                <div className="flex-shrink-0 w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                                                    <ActaMiniatura nombre={acta.file.name} url={acta.preview} />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className="mb-2">

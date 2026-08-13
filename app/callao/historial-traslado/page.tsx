@@ -46,6 +46,15 @@ import {
 import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { exportToExcel, exportToPDF } from '../../utils/export';
+import { FiltroImportacion, esOrigenImportacion } from '../../components/FiltroImportacion';
+import {
+    ActaLightbox,
+    ActaMiniatura,
+    EtiquetaActasCabecera,
+    actasCoincidenBusqueda,
+    ACCEPT_ACTAS,
+    TEXTO_FORMATOS_ACTAS,
+} from '../../components/ActaVisor';
 import * as api from '../../services/api';
 
 function resolverTiendaDesdeCodigoONombre(valor: string | null | undefined): Tienda {
@@ -375,8 +384,9 @@ export default function HistorialTrasladoPage() {
     const [loadingCargas, setLoadingCargas] = useState(true);
     const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
     const [actasSeleccionadas, setActasSeleccionadas] = useState<api.ActaMovimientoDB[]>([]);
-    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+    const [actaLightbox, setActaLightbox] = useState<api.ActaMovimientoDB | null>(null);
     const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
+    const [soloImportacion, setSoloImportacion] = useState(false);
 
     const [modalSubirActasOpen, setModalSubirActasOpen] = useState(false);
     const [repIdActasTraslado, setRepIdActasTraslado] = useState<number | null>(null);
@@ -415,7 +425,7 @@ export default function HistorialTrasladoPage() {
         const files = Array.from(e.target.files || []);
         const nuevas = files.map(file => ({
             file,
-            nombre: file.name,
+            nombre: file.name.replace(/\.[^/.]+$/, '').toUpperCase(),
             preview: URL.createObjectURL(file),
         }));
         setActasParaSubir(prev => [...prev, ...nuevas]);
@@ -423,7 +433,7 @@ export default function HistorialTrasladoPage() {
     };
 
     const handleUpdateNombreActaParaSubir = (index: number, nombre: string) => {
-        setActasParaSubir(prev => prev.map((a, i) => (i === index ? { ...a, nombre } : a)));
+        setActasParaSubir(prev => prev.map((a, i) => (i === index ? { ...a, nombre: nombre.toUpperCase() } : a)));
     };
 
     const handleRemoveActaParaSubir = (index: number) => {
@@ -470,9 +480,12 @@ export default function HistorialTrasladoPage() {
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase();
-        if (!q.trim()) return cargas;
+        const base = soloImportacion
+            ? cargas.filter(c => c.detalles.some(d => esOrigenImportacion(d.tienda_salida_codigo)))
+            : cargas;
+        if (!q.trim()) return base;
 
-        return cargas.filter(c => {
+        return base.filter(c => {
             const baseMatch =
                 (c.codigo_carga || '').toLowerCase().includes(q) ||
                 (c.operador || '').toLowerCase().includes(q);
@@ -486,9 +499,9 @@ export default function HistorialTrasladoPage() {
                 );
             });
 
-            return baseMatch || detailMatch;
+            return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
         });
-    }, [cargas, search]);
+    }, [cargas, search, soloImportacion]);
 
     const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
     const pagesCargas = Math.max(1, Math.ceil(filteredCargas.length / PER_PAGE));
@@ -681,6 +694,10 @@ export default function HistorialTrasladoPage() {
                                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
+                            <FiltroImportacion
+                                activo={soloImportacion}
+                                onToggle={() => { setSoloImportacion(v => !v); setPage(1); }}
+                            />
                         </div>
                     </div>
 
@@ -729,6 +746,7 @@ export default function HistorialTrasladoPage() {
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
                                                                 <span>{hora || '-'}</span>
                                                             </span>
+                                                            <EtiquetaActasCabecera actas={carga.actas} />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -994,9 +1012,9 @@ export default function HistorialTrasladoPage() {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-2">
                             {actasSeleccionadas.map((acta, i) => (
-                                <div key={i} className="group relative bg-gray-50 rounded-2xl p-4 border-2 border-transparent hover:border-blue-200 transition-all cursor-pointer shadow-sm hover:shadow-md" onClick={() => setLightboxUrl(acta.url_imagen)}>
+                                <div key={i} className="group relative bg-gray-50 rounded-2xl p-4 border-2 border-transparent hover:border-blue-200 transition-all cursor-pointer shadow-sm hover:shadow-md" onClick={() => setActaLightbox(acta)}>
                                     <div className="aspect-[4/3] rounded-xl overflow-hidden mb-3 bg-gray-200 relative">
-                                        <img src={acta.url_imagen} alt={acta.nombre_imagen} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                                        <ActaMiniatura nombre={acta.nombre_imagen} url={acta.url_imagen} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                             <Eye className="w-10 h-10 text-white" />
                                         </div>
@@ -1046,12 +1064,12 @@ export default function HistorialTrasladoPage() {
                         <div className="modal-body">
                             <div className="mb-6">
                                 <label className="block mb-2 text-sm font-semibold text-gray-700">
-                                    Seleccionar Imágenes
+                                    Seleccionar Archivos
                                 </label>
                                 <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
                                     <input
                                         type="file"
-                                        accept="image/*"
+                                        accept={ACCEPT_ACTAS}
                                         multiple
                                         onChange={handleFileSelectSubirActas}
                                         className="hidden"
@@ -1066,9 +1084,9 @@ export default function HistorialTrasladoPage() {
                                         </div>
                                         <div>
                                             <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
-                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra los archivos aquí</span>
                                         </div>
-                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                        <span className="text-[10px] text-gray-400">Formatos: {TEXTO_FORMATOS_ACTAS}</span>
                                     </label>
                                 </div>
                             </div>
@@ -1082,12 +1100,8 @@ export default function HistorialTrasladoPage() {
                                         {actasParaSubir.map((acta, index) => (
                                             <div key={index} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
                                                 <div className="flex gap-3">
-                                                    <div className="flex-shrink-0">
-                                                        <img
-                                                            src={acta.preview}
-                                                            alt={`Preview ${index + 1}`}
-                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                                                        />
+                                                    <div className="flex-shrink-0 w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                                                        <ActaMiniatura nombre={acta.file.name} url={acta.preview} />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="mb-2">
@@ -1151,14 +1165,14 @@ export default function HistorialTrasladoPage() {
                 </div>
             )}
 
-            {/* Lightbox */}
-            {lightboxUrl && (
-                <div className="fixed inset-0 z-[40000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
-                    <button className="absolute top-6 right-6 p-3 bg-white/90 hover:bg-white rounded-2xl text-gray-700 transition-all shadow-2xl">
-                        <X className="w-8 h-8" />
-                    </button>
-                    <img src={lightboxUrl} alt="Vista previa" className="max-w-full max-h-full object-contain shadow-2xl animate-in zoom-in-95 duration-300 bg-white rounded-xl" />
-                </div>
+            {/* Visor de acta (imagen, PDF u otro archivo) */}
+            {actaLightbox && (
+                <ActaLightbox
+                    nombre={actaLightbox.nombre_imagen}
+                    url={actaLightbox.url_imagen}
+                    onClose={() => setActaLightbox(null)}
+                    zIndex={40000}
+                />
             )}
 
             {modalObsOpen && (

@@ -47,6 +47,15 @@ import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { ExistenciaAlmacenCards } from '../../components/ExistenciaAlmacenCards';
 import { PrettySelect } from '../../components/PrettySelect';
+import { FiltroImportacion, esOrigenImportacion } from '../../components/FiltroImportacion';
+import {
+    ActaLightbox,
+    ActaMiniatura,
+    EtiquetaActasCabecera,
+    actasCoincidenBusqueda,
+    ACCEPT_ACTAS,
+    TEXTO_FORMATOS_ACTAS,
+} from '../../components/ActaVisor';
 import * as api from '../../services/api';
 
 // ─── Función para formatear fecha en dos líneas ──────────────────────────────
@@ -424,7 +433,7 @@ function ModalTraslado({
         const files = Array.from(e.target.files || []);
         const nuevasActas = files.map(file => ({
             file,
-            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            nombre: file.name.replace(/\.[^/.]+$/, '').toUpperCase(),
             preview: URL.createObjectURL(file),
         }));
         setActas(prev => [...prev, ...nuevasActas]);
@@ -443,7 +452,7 @@ function ModalTraslado({
     const handleUpdateNombreActa = (index: number, nuevoNombre: string) => {
         setActas(prev => {
             const nueva = [...prev];
-            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre.toUpperCase() };
             return nueva;
         });
     };
@@ -1098,12 +1107,12 @@ function ModalTraslado({
                     <div className="modal-body">
                         <div className="mb-6">
                             <label className="block mb-2 text-sm font-semibold text-gray-700">
-                                Seleccionar Imágenes
+                                Seleccionar Archivos
                             </label>
                             <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
                                 <input
                                     type="file"
-                                    accept="image/*"
+                                    accept={ACCEPT_ACTAS}
                                     multiple
                                     onChange={handleFileSelectActas}
                                     className="hidden"
@@ -1118,9 +1127,9 @@ function ModalTraslado({
                                     </div>
                                     <div>
                                         <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
-                                        <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                        <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra los archivos aquí</span>
                                     </div>
-                                    <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                    <span className="text-[10px] text-gray-400">Formatos: {TEXTO_FORMATOS_ACTAS}</span>
                                 </label>
                             </div>
                         </div>
@@ -1137,12 +1146,8 @@ function ModalTraslado({
                                             className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
                                         >
                                             <div className="flex gap-3">
-                                                <div className="flex-shrink-0">
-                                                    <img
-                                                        src={acta.preview}
-                                                        alt={`Preview ${index + 1}`}
-                                                        className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                                                    />
+                                                <div className="flex-shrink-0 w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                                                    <ActaMiniatura nombre={acta.file.name} url={acta.preview} />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className="mb-2">
@@ -1298,7 +1303,8 @@ export default function TrasladoPage() {
     // Estados para Actas
     const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
     const [actasSeleccionadas, setActasSeleccionadas] = useState<api.ActaMovimientoDB[]>([]);
-    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+    const [actaLightbox, setActaLightbox] = useState<api.ActaMovimientoDB | null>(null);
+    const [soloImportacion, setSoloImportacion] = useState(false);
     
     const [modalSubirActasOpen, setModalSubirActasOpen] = useState(false);
     const [repIdActasTraslado, setRepIdActasTraslado] = useState<number | null>(null);
@@ -1329,9 +1335,12 @@ export default function TrasladoPage() {
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase();
-        if (!q.trim()) return cargas;
+        const base = soloImportacion
+            ? cargas.filter(c => c.detalles.some(d => esOrigenImportacion(d.tienda_salida_codigo)))
+            : cargas;
+        if (!q.trim()) return base;
 
-        return cargas.filter(c => {
+        return base.filter(c => {
             const baseMatch =
                 (c.codigo_carga || '').toLowerCase().includes(q) ||
                 (c.operador || '').toLowerCase().includes(q) ||
@@ -1347,9 +1356,9 @@ export default function TrasladoPage() {
                 );
             });
 
-            return baseMatch || detailMatch;
+            return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
         });
-    }, [cargas, search]);
+    }, [cargas, search, soloImportacion]);
 
     const totalCargas = filteredCargas.length;
     const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
@@ -1382,7 +1391,7 @@ export default function TrasladoPage() {
         const files = Array.from(e.target.files || []);
         const nuevas = files.map(file => ({
             file,
-            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            nombre: file.name.replace(/\.[^/.]+$/, '').toUpperCase(),
             preview: URL.createObjectURL(file),
         }));
         setActasParaSubir(prev => [...prev, ...nuevas]);
@@ -1401,7 +1410,7 @@ export default function TrasladoPage() {
     const handleUpdateNombreActaParaSubir = (index: number, nuevoNombre: string) => {
         setActasParaSubir(prev => {
             const nueva = [...prev];
-            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre.toUpperCase() };
             return nueva;
         });
     };
@@ -1491,6 +1500,10 @@ export default function TrasladoPage() {
                                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
+                            <FiltroImportacion
+                                activo={soloImportacion}
+                                onToggle={() => { setSoloImportacion(v => !v); setPage(1); }}
+                            />
                         </div>
                     </div>
 
@@ -1501,7 +1514,7 @@ export default function TrasladoPage() {
                                 <div className="p-10 text-center text-gray-400">Cargando datos en cascada...</div>
                             ) : totalCargas === 0 ? (
                                 <div className="p-10 text-center text-gray-400">
-                                    {search ? 'No se encontraron traslados con ese criterio' : 'No hay traslados en cascada aún.'}
+                                    {search || soloImportacion ? 'No se encontraron traslados con ese criterio' : 'No hay traslados en cascada aún.'}
                                 </div>
                             ) : (
                                 paginatedCargas.map((carga, idx) => {
@@ -1545,6 +1558,7 @@ export default function TrasladoPage() {
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
                                                                 <span>{hora || '-'}</span>
                                                             </span>
+                                                            <EtiquetaActasCabecera actas={carga.actas} />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1756,17 +1770,13 @@ export default function TrasladoPage() {
                                         <div
                                             key={acta.id}
                                             className="group border border-gray-100 rounded-2xl overflow-hidden bg-white shadow-sm hover:shadow-xl transition-all cursor-pointer hover:-translate-y-1"
-                                            onClick={() => setLightboxUrl(acta.url_imagen)}
+                                            onClick={() => setActaLightbox(acta)}
                                         >
                                             <div className="relative aspect-video bg-gray-50 overflow-hidden">
-                                                <img
-                                                    src={acta.url_imagen}
-                                                    alt={acta.nombre_imagen}
+                                                <ActaMiniatura
+                                                    nombre={acta.nombre_imagen}
+                                                    url={acta.url_imagen}
                                                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                                    onError={(e) => {
-                                                        (e.target as HTMLImageElement).src =
-                                                            'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23f9fafb" width="400" height="300"/%3E%3Ctext fill="%23d1d5db" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
-                                                    }}
                                                 />
                                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                                                     <Eye className="w-8 h-8 text-white drop-shadow-lg" />
@@ -1790,29 +1800,14 @@ export default function TrasladoPage() {
                 </div>
             )}
 
-            {/* Lightbox */}
-            {lightboxUrl && (
-                <div
-                    className="modal-backdrop animate-in fade-in duration-300 z-[40001] bg-black/95 backdrop-blur-xl"
-                    onClick={() => setLightboxUrl(null)}
-                >
-                    <div className="relative w-full h-full flex items-center justify-center p-8">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setLightboxUrl(null);
-                            }}
-                            className="absolute top-8 right-8 w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all flex items-center justify-center backdrop-blur-md shadow-2xl"
-                        >
-                            <X className="w-6 h-6" />
-                        </button>
-                        <img
-                            src={lightboxUrl}
-                            alt="Acta completa"
-                            className="max-w-full max-h-full object-contain rounded-lg shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-300 select-none"
-                        />
-                    </div>
-                </div>
+            {/* Visor de acta (imagen, PDF u otro archivo) */}
+            {actaLightbox && (
+                <ActaLightbox
+                    nombre={actaLightbox.nombre_imagen}
+                    url={actaLightbox.url_imagen}
+                    onClose={() => setActaLightbox(null)}
+                    zIndex={40001}
+                />
             )}
 
             {/* Modal Subir Actas (Subir más) */}
@@ -1847,12 +1842,12 @@ export default function TrasladoPage() {
                         <div className="modal-body">
                             <div className="mb-6">
                                 <label className="block mb-2 text-sm font-semibold text-gray-700">
-                                    Seleccionar Imágenes
+                                    Seleccionar Archivos
                                 </label>
                                 <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
                                     <input
                                         type="file"
-                                        accept="image/*"
+                                        accept={ACCEPT_ACTAS}
                                         multiple
                                         onChange={handleFileSelectSubirActas}
                                         className="hidden"
@@ -1867,9 +1862,9 @@ export default function TrasladoPage() {
                                         </div>
                                         <div>
                                             <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
-                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra los archivos aquí</span>
                                         </div>
-                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                        <span className="text-[10px] text-gray-400">Formatos: {TEXTO_FORMATOS_ACTAS}</span>
                                     </label>
                                 </div>
                             </div>
@@ -1883,12 +1878,8 @@ export default function TrasladoPage() {
                                         {actasParaSubir.map((acta, index) => (
                                             <div key={index} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
                                                 <div className="flex gap-3">
-                                                    <div className="flex-shrink-0">
-                                                        <img
-                                                            src={acta.preview}
-                                                            alt={`Preview ${index + 1}`}
-                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                                                        />
+                                                    <div className="flex-shrink-0 w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                                                        <ActaMiniatura nombre={acta.file.name} url={acta.preview} />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="mb-2">

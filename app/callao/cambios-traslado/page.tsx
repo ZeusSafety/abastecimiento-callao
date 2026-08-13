@@ -4,6 +4,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useCallao, getOperacionColor } from '../../context/CallaoContext';
 import { Search, TrendingUp, FileDown, FileSpreadsheet, Eye, Info, X, ChevronDown, ChevronRight, PackagePlus, FileImage, Calendar, Clock3, ArrowRightLeft } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '../../utils/export';
+import { EtiquetaActasCabecera, actasCoincidenBusqueda } from '../../components/ActaVisor';
+import { FiltroImportacion, esOrigenImportacion } from '../../components/FiltroImportacion';
+import { actasDeMovimientos, useActasPorMovimiento } from '../../hooks/useActasPorMovimiento';
 
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
     if (!fechaStr) return { fecha: '-', hora: '' };
@@ -44,6 +47,8 @@ export default function CambiosTrasladoPage() {
     const [modalObservaciones, setModalObservaciones] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
     const [modalMotivo, setModalMotivo] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
     const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
+    const [soloImportacion, setSoloImportacion] = useState(false);
+    const actasPorMovimiento = useActasPorMovimiento('traslado');
 
     useEffect(() => {
         const loadData = async () => {
@@ -63,23 +68,31 @@ export default function CambiosTrasladoPage() {
             map.set(key, prev);
         });
         return Array.from(map.entries())
-            .map(([key, items]) => ({ codigo_carga: key, fecha_primera: items[0]?.updatedAt || items[0]?.fecha || '', detalles: items }))
+            .map(([key, items]) => ({
+                codigo_carga: key,
+                fecha_primera: items[0]?.updatedAt || items[0]?.fecha || '',
+                detalles: items,
+                actas: actasDeMovimientos(items.map(i => i.id), actasPorMovimiento),
+            }))
             .sort((a, b) => new Date(b.fecha_primera).getTime() - new Date(a.fecha_primera).getTime());
-    }, [state.cambiosTraslado]);
+    }, [state.cambiosTraslado, actasPorMovimiento]);
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase().trim();
-        if (!q) return cargas;
-        return cargas.filter(c =>
+        const base = soloImportacion
+            ? cargas.filter(c => c.detalles.some(d => esOrigenImportacion(d.almacenSalida)))
+            : cargas;
+        if (!q) return base;
+        return base.filter(c =>
             c.detalles.some(d =>
                 d.producto.toLowerCase().includes(q) ||
                 d.operacion.toLowerCase().includes(q) ||
                 (d.almacenSalida || '').toLowerCase().includes(q) ||
                 (d.almacenIngreso || '').toLowerCase().includes(q) ||
                 (d.operador || '').toLowerCase().includes(q)
-            )
+            ) || actasCoincidenBusqueda(c.actas, q)
         );
-    }, [cargas, search]);
+    }, [cargas, search, soloImportacion]);
 
     const totalCargas = filteredCargas.length;
     const pages = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
@@ -197,6 +210,10 @@ export default function CambiosTrasladoPage() {
                                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
+                            <FiltroImportacion
+                                activo={soloImportacion}
+                                onToggle={() => { setSoloImportacion(v => !v); setPage(1); }}
+                            />
                         </div>
                     </div>
 
@@ -241,6 +258,7 @@ export default function CambiosTrasladoPage() {
                                                             <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
                                                             <span>{hora || '-'}</span>
                                                         </span>
+                                                        <EtiquetaActasCabecera actas={carga.actas} />
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">

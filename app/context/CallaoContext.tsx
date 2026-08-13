@@ -523,7 +523,7 @@ function convertirEntradaDB(entradaDB: api.EntradaDB, productos: Producto[]): Re
   const fechaCambio = entradaDB.fecha || entradaDB.fecha_actualizacion;
 
   return {
-    id: entradaDB.id ? entradaDB.id.toString() : '',
+    id: (entradaDB.id ?? entradaDB.id_entrada)?.toString() || '',
     fecha: fechaOriginal ? fmtDate(fechaOriginal) : '',
     productoId: producto?.id || '',
     producto: entradaDB.producto_nombre || '',
@@ -561,7 +561,7 @@ function convertirSalidaDB(salidaDB: api.SalidaDB, productos: Producto[]): Regis
   const fechaCambio = salidaDB.fecha || salidaDB.fecha_actualizacion;
 
   return {
-    id: salidaDB.id ? salidaDB.id.toString() : '',
+    id: (salidaDB.id ?? salidaDB.id_salida)?.toString() || '',
     fecha: fechaOriginal ? fmtDate(fechaOriginal) : '',
     productoId: producto?.id || '',
     producto: salidaDB.producto_nombre || '',
@@ -603,7 +603,7 @@ function convertirTrasladoDB(trasladoDB: api.TrasladoDB, productos: Producto[]):
   const fechaCambio = trasladoDB.fecha || trasladoDB.fecha_actualizacion;
 
   return {
-    id: trasladoDB.id ? trasladoDB.id.toString() : '',
+    id: (trasladoDB.id ?? trasladoDB.id_traslado)?.toString() || '',
     fecha: fechaOriginal ? fmtDate(fechaOriginal) : '',
     productoId: producto?.id || '',
     producto: trasladoDB.producto_nombre || '',

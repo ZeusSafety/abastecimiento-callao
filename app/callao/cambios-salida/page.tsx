@@ -7,6 +7,8 @@ import {
     ChevronDown, ChevronRight, PackageMinus, FileImage, Calendar, Clock3
 } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '../../utils/export';
+import { EtiquetaActasCabecera, actasCoincidenBusqueda } from '../../components/ActaVisor';
+import { actasDeMovimientos, useActasPorMovimiento } from '../../hooks/useActasPorMovimiento';
 
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
     if (!fechaStr) return { fecha: '-', hora: '' };
@@ -46,6 +48,7 @@ export default function CambiosSalidaPage() {
     const [modalObservaciones, setModalObservaciones] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
     const [modalMotivo, setModalMotivo] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
     const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
+    const actasPorMovimiento = useActasPorMovimiento('salida');
 
     useEffect(() => {
         const loadData = async () => {
@@ -65,9 +68,14 @@ export default function CambiosSalidaPage() {
             map.set(key, prev);
         });
         return Array.from(map.entries())
-            .map(([key, items]) => ({ codigo_carga: key, fecha_primera: items[0]?.updatedAt || items[0]?.fecha || '', detalles: items }))
+            .map(([key, items]) => ({
+                codigo_carga: key,
+                fecha_primera: items[0]?.updatedAt || items[0]?.fecha || '',
+                detalles: items,
+                actas: actasDeMovimientos(items.map(i => i.id), actasPorMovimiento),
+            }))
             .sort((a, b) => new Date(b.fecha_primera).getTime() - new Date(a.fecha_primera).getTime());
-    }, [state.cambiosSalida]);
+    }, [state.cambiosSalida, actasPorMovimiento]);
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase().trim();
@@ -79,7 +87,7 @@ export default function CambiosSalidaPage() {
                 (d.comprobante || '').toLowerCase().includes(q) ||
                 (d.asesor || '').toLowerCase().includes(q) ||
                 (d.almacen || '').toLowerCase().includes(q)
-            )
+            ) || actasCoincidenBusqueda(c.actas, q)
         );
     }, [cargas, search]);
 
@@ -236,6 +244,7 @@ export default function CambiosSalidaPage() {
                                                             <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
                                                             <span>{hora || '-'}</span>
                                                         </span>
+                                                        <EtiquetaActasCabecera actas={carga.actas} />
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">

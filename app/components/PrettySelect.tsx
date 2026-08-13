@@ -14,7 +14,7 @@ export function PrettySelect({
   portal = false,
   /** z-index del panel en modo portal (p. ej. dentro de modal con z alto). */
   portalZIndex = 25000,
-  /** Dirección del menú. Por defecto `above` (hacia arriba). Usa `below` si hace falta espacio arriba. */
+  /** Dirección del menú. Por defecto `below` (hacia abajo). Usa `above` si hace falta espacio abajo. */
   placement,
 }: {
   value: string;
@@ -37,7 +37,7 @@ export function PrettySelect({
     buttonBottom: number;
   } | null>(null);
 
-  const dropPlacement: 'above' | 'below' = placement ?? 'above';
+  const dropPlacement: 'above' | 'below' = placement ?? 'below';
 
   const selectedLabel = useMemo(() => {
     const found = options.find(o => o.value === value);
@@ -96,6 +96,7 @@ export function PrettySelect({
             top: portalAnchor.buttonBottom + 6,
             left: portalAnchor.left,
             width: Math.max(portalAnchor.width, 140),
+            maxHeight: Math.min(256, Math.max(96, window.innerHeight - portalAnchor.buttonBottom - 16)),
             zIndex: portalZIndex,
           }
         : {
@@ -132,10 +133,7 @@ export function PrettySelect({
     portal ? (
       <div
         ref={panelRef}
-        className={
-          'rounded-xl border border-gray-200 bg-white shadow-xl overflow-y-auto ' +
-          (dropPlacement === 'below' ? 'max-h-64' : '')
-        }
+        className="rounded-xl border border-gray-200 bg-white shadow-xl overflow-y-auto"
         style={portalStyle}
       >
         {optionButtons}

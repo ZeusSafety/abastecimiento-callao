@@ -47,6 +47,15 @@ import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { ExistenciaAlmacenCards } from '../../components/ExistenciaAlmacenCards';
 import { PrettySelect } from '../../components/PrettySelect';
+import { FiltroImportacion, esOrigenImportacion } from '../../components/FiltroImportacion';
+import {
+    ActaLightbox,
+    ActaMiniatura,
+    EtiquetaActasCabecera,
+    actasCoincidenBusqueda,
+    ACCEPT_ACTAS,
+    TEXTO_FORMATOS_ACTAS,
+} from '../../components/ActaVisor';
 import * as api from '../../services/api';
 
 // ─── Función para formatear fecha en dos líneas ──────────────────────────────
@@ -423,7 +432,7 @@ function ModalEntrada({
         const files = Array.from(e.target.files || []);
         const nuevasActas = files.map(file => ({
             file,
-            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            nombre: file.name.replace(/\.[^/.]+$/, '').toUpperCase(),
             preview: URL.createObjectURL(file),
         }));
         setActas(prev => [...prev, ...nuevasActas]);
@@ -442,7 +451,7 @@ function ModalEntrada({
     const handleUpdateNombreActa = (index: number, nuevoNombre: string) => {
         setActas(prev => {
             const nueva = [...prev];
-            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre.toUpperCase() };
             return nueva;
         });
     };
@@ -1089,12 +1098,12 @@ function ModalEntrada({
                         <div className="modal-body">
                             <div className="mb-6">
                                 <label className="block mb-2 text-sm font-semibold text-gray-700">
-                                    Seleccionar Imágenes
+                                    Seleccionar Archivos
                                 </label>
                                 <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
                                     <input
                                         type="file"
-                                        accept="image/*"
+                                        accept={ACCEPT_ACTAS}
                                         multiple
                                         onChange={handleFileSelectActas}
                                         className="hidden"
@@ -1109,9 +1118,9 @@ function ModalEntrada({
                                         </div>
                                         <div>
                                             <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
-                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra los archivos aquí</span>
                                         </div>
-                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                        <span className="text-[10px] text-gray-400">Formatos: {TEXTO_FORMATOS_ACTAS}</span>
                                     </label>
                                 </div>
                             </div>
@@ -1128,12 +1137,8 @@ function ModalEntrada({
                                                 className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
                                             >
                                                 <div className="flex gap-3">
-                                                    <div className="flex-shrink-0">
-                                                        <img
-                                                            src={acta.preview}
-                                                            alt={`Preview ${index + 1}`}
-                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                                                        />
+                                                    <div className="flex-shrink-0 w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                                                        <ActaMiniatura nombre={acta.file.name} url={acta.preview} />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="mb-2">
@@ -1288,7 +1293,8 @@ export default function EntradasPage() {
     // ─── Actas (Ver / Subir) ─────────────────────────────────────────────
     const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
     const [actasSeleccionadas, setActasSeleccionadas] = useState<api.ActaMovimientoDB[]>([]);
-    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+    const [actaLightbox, setActaLightbox] = useState<api.ActaMovimientoDB | null>(null);
+    const [soloImportacion, setSoloImportacion] = useState(false);
 
     // ─── Observaciones (Modal por fila) ──────────────────────────────────
     const [modalObsOpen, setModalObsOpen] = useState(false);
@@ -1330,9 +1336,12 @@ export default function EntradasPage() {
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase();
-        if (!q.trim()) return cargas;
+        const base = soloImportacion
+            ? cargas.filter(c => c.detalles.some(d => esOrigenImportacion(d.tienda_salida_codigo)))
+            : cargas;
+        if (!q.trim()) return base;
 
-        return cargas.filter(c => {
+        return base.filter(c => {
             const baseMatch =
                 (c.codigo_carga || '').toLowerCase().includes(q) ||
                 (c.operador || '').toLowerCase().includes(q) ||
@@ -1348,9 +1357,9 @@ export default function EntradasPage() {
                 );
             });
 
-            return baseMatch || detailMatch;
+            return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
         });
-    }, [cargas, search]);
+    }, [cargas, search, soloImportacion]);
 
     const totalCargas = filteredCargas.length;
     const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
@@ -1383,7 +1392,7 @@ export default function EntradasPage() {
         const files = Array.from(e.target.files || []);
         const nuevas = files.map(file => ({
             file,
-            nombre: file.name.replace(/\.[^/.]+$/, ''),
+            nombre: file.name.replace(/\.[^/.]+$/, '').toUpperCase(),
             preview: URL.createObjectURL(file),
         }));
         setActasParaSubir(prev => [...prev, ...nuevas]);
@@ -1402,7 +1411,7 @@ export default function EntradasPage() {
     const handleUpdateNombreActaParaSubir = (index: number, nuevoNombre: string) => {
         setActasParaSubir(prev => {
             const nueva = [...prev];
-            nueva[index] = { ...nueva[index], nombre: nuevoNombre };
+            nueva[index] = { ...nueva[index], nombre: nuevoNombre.toUpperCase() };
             return nueva;
         });
     };
@@ -1494,6 +1503,10 @@ export default function EntradasPage() {
                                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
                                 />
                             </div>
+                            <FiltroImportacion
+                                activo={soloImportacion}
+                                onToggle={() => { setSoloImportacion(v => !v); setPage(1); }}
+                            />
                         </div>
                     </div>
 
@@ -1504,7 +1517,7 @@ export default function EntradasPage() {
                                 <div className="p-10 text-center text-gray-400">Cargando datos en cascada...</div>
                             ) : totalCargas === 0 ? (
                                 <div className="p-10 text-center text-gray-400">
-                                    {search ? 'No se encontraron cargas con ese criterio' : 'No hay movimientos en cascada aún.'}
+                                    {search || soloImportacion ? 'No se encontraron cargas con ese criterio' : 'No hay movimientos en cascada aún.'}
                                 </div>
                             ) : (
                                 paginatedCargas.map((carga, idx) => {
@@ -1553,6 +1566,7 @@ export default function EntradasPage() {
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
                                                                 <span>{hora || '-'}</span>
                                                             </span>
+                                                            <EtiquetaActasCabecera actas={carga.actas} />
                                                             {/* Operación ya se muestra en la tabla interna */}
                                                         </div>
                                                     </div>
@@ -1753,7 +1767,7 @@ export default function EntradasPage() {
                             <button
                                 onClick={() => {
                                     setModalVerActasOpen(false);
-                                    setLightboxUrl(null);
+                                    setActaLightbox(null);
                                 }}
                                 className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                             >
@@ -1773,18 +1787,10 @@ export default function EntradasPage() {
                                         <div
                                             key={acta.id}
                                             className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                                            onClick={() => setLightboxUrl(acta.url_imagen)}
+                                            onClick={() => setActaLightbox(acta)}
                                         >
                                             <div className="relative aspect-video bg-gray-100">
-                                                <img
-                                                    src={acta.url_imagen}
-                                                    alt={acta.nombre_imagen}
-                                                    className="w-full h-full object-cover"
-                                                    onError={(e) => {
-                                                        (e.target as HTMLImageElement).src =
-                                                            'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
-                                                    }}
-                                                />
+                                                <ActaMiniatura nombre={acta.nombre_imagen} url={acta.url_imagen} />
                                             </div>
                                             <div className="p-3">
                                                 <div className="text-[11px] font-bold text-gray-900 line-clamp-2">
@@ -1803,34 +1809,14 @@ export default function EntradasPage() {
                 </div>
             )}
 
-            {/* Lightbox */}
-            {lightboxUrl && (
-                <div
-                    className="modal-backdrop animate-in fade-in duration-300"
-                    style={{ zIndex: 30003 }}
-                    onClick={() => setLightboxUrl(null)}
-                >
-                    <div className="relative w-full h-full flex items-center justify-center p-4">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setLightboxUrl(null);
-                            }}
-                            className="absolute top-4 right-4 p-2 bg-white/90 hover:bg-white rounded-full transition-colors z-10 shadow"
-                        >
-                            <X className="w-6 h-6 text-gray-700" />
-                        </button>
-                        <img
-                            src={lightboxUrl}
-                            alt="Acta completa"
-                            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
-                            onError={(e) => {
-                                (e.target as HTMLImageElement).src =
-                                    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23e5e7eb" width="400" height="300"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="18" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
-                            }}
-                        />
-                    </div>
-                </div>
+            {/* Visor de acta (imagen, PDF u otro archivo) */}
+            {actaLightbox && (
+                <ActaLightbox
+                    nombre={actaLightbox.nombre_imagen}
+                    url={actaLightbox.url_imagen}
+                    onClose={() => setActaLightbox(null)}
+                    zIndex={30003}
+                />
             )}
 
             {/* Modal Subir Acta (Listado de Entradas) */}
@@ -1865,12 +1851,12 @@ export default function EntradasPage() {
                         <div className="modal-body">
                             <div className="mb-6">
                                 <label className="block mb-2 text-sm font-semibold text-gray-700">
-                                    Seleccionar Imágenes
+                                    Seleccionar Archivos
                                 </label>
                                 <div className="border-2 border-dashed border-[#002D5A]/30 rounded-xl p-4 text-center hover:border-[#002D5A]/50 transition-colors bg-[#002D5A]/5">
                                     <input
                                         type="file"
-                                        accept="image/*"
+                                        accept={ACCEPT_ACTAS}
                                         multiple
                                         onChange={handleFileSelectSubirActas}
                                         className="hidden"
@@ -1885,9 +1871,9 @@ export default function EntradasPage() {
                                         </div>
                                         <div>
                                             <span className="text-[#002D5A] font-bold text-xs">Haz clic para seleccionar</span>
-                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra las imágenes aquí</span>
+                                            <span className="text-gray-500 text-[10px] block mt-0.5">o arrastra los archivos aquí</span>
                                         </div>
-                                        <span className="text-[10px] text-gray-400">Formatos: JPG, PNG, WEBP</span>
+                                        <span className="text-[10px] text-gray-400">Formatos: {TEXTO_FORMATOS_ACTAS}</span>
                                     </label>
                                 </div>
                             </div>
@@ -1901,12 +1887,8 @@ export default function EntradasPage() {
                                         {actasParaSubir.map((acta, index) => (
                                             <div key={index} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
                                                 <div className="flex gap-3">
-                                                    <div className="flex-shrink-0">
-                                                        <img
-                                                            src={acta.preview}
-                                                            alt={`Preview ${index + 1}`}
-                                                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                                                        />
+                                                    <div className="flex-shrink-0 w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                                                        <ActaMiniatura nombre={acta.file.name} url={acta.preview} />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="mb-2">

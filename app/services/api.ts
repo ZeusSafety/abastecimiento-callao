@@ -56,6 +56,7 @@ export interface EntradaDB {
   motivo_cambio: string | null;
   fecha_movimiento_orig?: string | null; // Para historial de cambios
   fecha?: string | null; // Para historial de cambios (fecha_cambio)
+  id_entrada?: number; // El historial de cambios identifica el movimiento con este campo
 }
 
 export interface SalidaDB {
@@ -79,6 +80,7 @@ export interface SalidaDB {
   motivo_cambio: string | null;
   fecha_movimiento_orig?: string | null; // Para historial de cambios
   fecha?: string | null; // Para historial de cambios (fecha_cambio)
+  id_salida?: number; // El historial de cambios identifica el movimiento con este campo
 }
 
 export interface TrasladoDB {
@@ -103,6 +105,7 @@ export interface TrasladoDB {
   motivo_cambio: string | null;
   fecha_movimiento_orig?: string | null; // Para historial de cambios
   fecha?: string | null; // Para historial de cambios (fecha_cambio)
+  id_traslado?: number; // El historial de cambios identifica el movimiento con este campo
 }
 
 /**
@@ -501,6 +504,22 @@ export async function createSalida(data: {
   return response.data;
 }
 
+/**
+ * El backend usa el nombre del archivo como `nombre_imagen`. Se renombra con el
+ * nombre que puso el usuario conservando la extensión original, para poder
+ * identificar después si el acta es imagen, PDF u otro documento.
+ */
+function renombrarActaConservandoExtension(file: File, nombre?: string): File {
+  const nombreBase = (nombre || '').trim() || file.name;
+  const extensionOriginal = (/\.([a-z0-9]{1,6})$/i.exec(file.name)?.[1] || '').toLowerCase();
+  const yaTieneExtension = extensionOriginal
+    ? nombreBase.toLowerCase().endsWith(`.${extensionOriginal}`)
+    : true;
+  const nombreFinal = yaTieneExtension ? nombreBase : `${nombreBase}.${extensionOriginal}`;
+  const blob = file.slice(0, file.size, file.type);
+  return new File([blob], nombreFinal, { type: file.type });
+}
+
 export async function createEntradasMasivo(entradas: Array<{
   producto: string;
   operacion: string;
@@ -529,10 +548,7 @@ options?: {
 
   if (options?.actas && options.actas.length > 0) {
     options.actas.forEach(({ file, nombre }) => {
-      // Backend usa file.filename como nombre_imagen, así que renombramos.
-      const blob = file.slice(0, file.size, file.type);
-      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
-      formData.append('actas', renamedFile);
+      formData.append('actas', renombrarActaConservandoExtension(file, nombre));
     });
   }
 
@@ -581,9 +597,7 @@ options?: {
 
   if (options?.actas && options.actas.length > 0) {
     options.actas.forEach(({ file, nombre }) => {
-      const blob = file.slice(0, file.size, file.type);
-      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
-      formData.append('actas', renamedFile);
+      formData.append('actas', renombrarActaConservandoExtension(file, nombre));
     });
   }
 
@@ -632,9 +646,7 @@ options?: {
 
   if (options?.actas && options.actas.length > 0) {
     options.actas.forEach(({ file, nombre }) => {
-      const blob = file.slice(0, file.size, file.type);
-      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
-      formData.append('actas', renamedFile);
+      formData.append('actas', renombrarActaConservandoExtension(file, nombre));
     });
   }
 
@@ -817,9 +829,7 @@ export async function agregarActaEntrada(
   formData.append('data', JSON.stringify({ id_entrada: idEntrada, nombre_acta: '' }));
 
   actas.forEach(({ file, nombre }) => {
-    const blob = file.slice(0, file.size, file.type);
-    const renamedFile = new File([blob], nombre || file.name, { type: file.type });
-    formData.append('archivo', renamedFile);
+    formData.append('archivo', renombrarActaConservandoExtension(file, nombre));
   });
 
   const response = await fetch(`${API_BASE_URL}/api/actas/entrada`, {
@@ -846,9 +856,7 @@ export async function agregarActaSalida(
   formData.append('data', JSON.stringify({ id_salida: idSalida, nombre_acta: '' }));
 
   actas.forEach(({ file, nombre }) => {
-    const blob = file.slice(0, file.size, file.type);
-    const renamedFile = new File([blob], nombre || file.name, { type: file.type });
-    formData.append('archivo', renamedFile);
+    formData.append('archivo', renombrarActaConservandoExtension(file, nombre));
   });
 
   const response = await fetch(`${API_BASE_URL}/api/actas/salida`, {
@@ -875,9 +883,7 @@ export async function agregarActaTraslado(
   formData.append('data', JSON.stringify({ id_traslado: idTraslado, nombre_acta: '' }));
 
   actas.forEach(({ file, nombre }) => {
-    const blob = file.slice(0, file.size, file.type);
-    const renamedFile = new File([blob], nombre || file.name, { type: file.type });
-    formData.append('archivo', renamedFile);
+    formData.append('archivo', renombrarActaConservandoExtension(file, nombre));
   });
 
   const response = await fetch(`${API_BASE_URL}/api/actas/traslado`, {
@@ -972,10 +978,7 @@ export async function guardarAbastecimiento(
   // Agregar archivos si existen
   if (archivos && archivos.length > 0) {
     archivos.forEach(({ file, nombre }) => {
-      // Renombrar el archivo antes de agregarlo
-      const blob = file.slice(0, file.size, file.type);
-      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
-      formData.append('actas', renamedFile);
+      formData.append('actas', renombrarActaConservandoExtension(file, nombre));
     });
   }
 
@@ -1022,9 +1025,7 @@ export async function subirActasAbastecimiento(
   // Agregar archivos
   if (archivos && archivos.length > 0) {
     archivos.forEach(({ file, nombre }) => {
-      const blob = file.slice(0, file.size, file.type);
-      const renamedFile = new File([blob], nombre || file.name, { type: file.type });
-      formData.append('actas', renamedFile);
+      formData.append('actas', renombrarActaConservandoExtension(file, nombre));
     });
   }
 
