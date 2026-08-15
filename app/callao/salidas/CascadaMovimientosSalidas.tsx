@@ -10,6 +10,7 @@ import { PackageMinus, FileDown } from 'lucide-react';
 import { ActaLightbox, ActaMiniatura, EtiquetaActasCabecera, actasCoincidenBusqueda } from '../../components/ActaVisor';
 import type { SalidaCascadaDB, ActaMovimientoDB, SalidaDetalleCascadaDB } from '../../services/api';
 import { getOperacionColor } from '../../context/CallaoContext';
+import { fechaEnRango, hayRangoFechas } from '../../utils/filtroFechas';
 
 // ─── Función para formatear fecha y hora ─────────────────────────────────────
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
@@ -106,12 +107,16 @@ function formatActaFecha(acta: ActaMovimientoDB): string {
 
 export default function CascadaMovimientosSalidas({
   search,
+  fechaInicio = '',
+  fechaFin = '',
   page,
   setPage,
   PER_PAGE = 15,
   refreshKey = 0,
 }: {
   search: string;
+  fechaInicio?: string;
+  fechaFin?: string;
   page: number;
   setPage: (n: number | ((p: number) => number)) => void;
   PER_PAGE?: number;
@@ -149,9 +154,10 @@ export default function CascadaMovimientosSalidas({
 
   const filteredCargas = useMemo(() => {
     const q = search.toLowerCase();
-    if (!q.trim()) return cargas;
+    const porFecha = cargas.filter(c => fechaEnRango(c.fecha_primera, fechaInicio, fechaFin));
+    if (!q.trim()) return porFecha;
 
-    return cargas.filter(c => {
+    return porFecha.filter(c => {
       const baseMatch =
         (c.codigo_carga || '').toLowerCase().includes(q) ||
         (c.asesor || '').toLowerCase().includes(q) ||
@@ -169,7 +175,7 @@ export default function CascadaMovimientosSalidas({
 
       return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
     });
-  }, [cargas, search]);
+  }, [cargas, search, fechaInicio, fechaFin]);
 
   const totalCargas = filteredCargas.length;
   const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
@@ -191,7 +197,7 @@ export default function CascadaMovimientosSalidas({
             <div className="p-10 text-center text-gray-500">Cargando datos en cascada...</div>
           ) : totalCargas === 0 ? (
             <div className="p-10 text-center text-gray-500">
-              {search ? 'No se encontraron cargas con ese criterio' : 'No hay movimientos en cascada aún.'}
+              {search || hayRangoFechas(fechaInicio, fechaFin) ? 'No se encontraron cargas con ese criterio' : 'No hay movimientos en cascada aún.'}
             </div>
           ) : (
             paginatedCargas.map((carga, idx) => {

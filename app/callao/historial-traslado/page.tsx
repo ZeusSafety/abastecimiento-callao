@@ -47,6 +47,8 @@ import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { exportToExcel, exportToPDF } from '../../utils/export';
 import { FiltroImportacion, esOrigenImportacion } from '../../components/FiltroImportacion';
+import { FiltroRangoFechas } from '../../components/FiltroRangoFechas';
+import { fechaEnRango } from '../../utils/filtroFechas';
 import {
     ActaLightbox,
     ActaMiniatura,
@@ -387,6 +389,8 @@ export default function HistorialTrasladoPage() {
     const [actaLightbox, setActaLightbox] = useState<api.ActaMovimientoDB | null>(null);
     const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
     const [soloImportacion, setSoloImportacion] = useState(false);
+    const [fechaInicio, setFechaInicio] = useState('');
+    const [fechaFin, setFechaFin] = useState('');
 
     const [modalSubirActasOpen, setModalSubirActasOpen] = useState(false);
     const [repIdActasTraslado, setRepIdActasTraslado] = useState<number | null>(null);
@@ -480,9 +484,10 @@ export default function HistorialTrasladoPage() {
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase();
-        const base = soloImportacion
+        let base = soloImportacion
             ? cargas.filter(c => c.detalles.some(d => esOrigenImportacion(d.tienda_salida_codigo)))
             : cargas;
+        base = base.filter(c => fechaEnRango(c.fecha_primera, fechaInicio, fechaFin));
         if (!q.trim()) return base;
 
         return base.filter(c => {
@@ -501,7 +506,7 @@ export default function HistorialTrasladoPage() {
 
             return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
         });
-    }, [cargas, search, soloImportacion]);
+    }, [cargas, search, soloImportacion, fechaInicio, fechaFin]);
 
     const paginatedCargas = filteredCargas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
     const pagesCargas = Math.max(1, Math.ceil(filteredCargas.length / PER_PAGE));
@@ -667,7 +672,7 @@ export default function HistorialTrasladoPage() {
                     </header>
 
                     {/* Toolbar */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                    <div className="flex flex-col lg:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                         <div className="flex items-center gap-2">
                             <div className="p-2 bg-blue-50 rounded-lg">
                                 <Search className="w-4 h-4 text-[#002D5A]" />
@@ -676,7 +681,12 @@ export default function HistorialTrasladoPage() {
                                 Total: {filteredCargas.length} cargas
                             </span>
                         </div>
-                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap justify-end">
+                            <FiltroRangoFechas
+                                fechaInicio={fechaInicio}
+                                fechaFin={fechaFin}
+                                onChange={(inicio, fin) => { setFechaInicio(inicio); setFechaFin(fin); setPage(1); }}
+                            />
                             <div className="relative flex-1 sm:w-72">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input

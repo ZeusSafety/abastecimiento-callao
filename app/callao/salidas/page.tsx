@@ -27,6 +27,7 @@ import { PrettySelect } from '../../components/PrettySelect';
 import { ActaMiniatura, ACCEPT_ACTAS, TEXTO_FORMATOS_ACTAS } from '../../components/ActaVisor';
 import * as api from '../../services/api';
 import CascadaMovimientosSalidas from './CascadaMovimientosSalidas';
+import { FiltroRangoFechas } from '../../components/FiltroRangoFechas';
 
 // ─── Modal Salida ─────────────────────────────────────────────────────────────
 function ModalSalida({
@@ -1164,6 +1165,8 @@ export default function SalidasPage() {
     const [modalOpen, setModalOpen] = useState(false);
     const [editData, setEditData] = useState<RegistroSalida | null>(null);
     const [search, setSearch] = useState('');
+    const [fechaInicio, setFechaInicio] = useState('');
+    const [fechaFin, setFechaFin] = useState('');
     const [page, setPage] = useState(1);
     const PER_PAGE = 15;
     const [cascadaRefreshKey, setCascadaRefreshKey] = useState(0);
@@ -1205,7 +1208,7 @@ export default function SalidasPage() {
                     </header>
 
                     {/* Toolbar - Moved out of the card table area */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                    <div className="flex flex-col lg:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                         <div className="flex items-center gap-2">
                             <div className="p-2 bg-pink-50 rounded-lg">
                                 <Search className="w-4 h-4 text-[#9d174d]" />
@@ -1214,7 +1217,12 @@ export default function SalidasPage() {
                                 Listado de Salidas
                             </span>
                         </div>
-                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap justify-end">
+                            <FiltroRangoFechas
+                                fechaInicio={fechaInicio}
+                                fechaFin={fechaFin}
+                                onChange={(inicio, fin) => { setFechaInicio(inicio); setFechaFin(fin); setPage(1); }}
+                            />
                             <div className="relative flex-1 sm:w-72">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
@@ -1231,6 +1239,8 @@ export default function SalidasPage() {
                     {/* Cascada Accordion */}
                     <CascadaMovimientosSalidas
                         search={search}
+                        fechaInicio={fechaInicio}
+                        fechaFin={fechaFin}
                         page={page}
                         setPage={setPage}
                         PER_PAGE={PER_PAGE}

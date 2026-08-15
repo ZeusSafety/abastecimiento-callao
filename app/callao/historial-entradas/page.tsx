@@ -45,6 +45,8 @@ import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { exportToExcel, exportToPDF } from '../../utils/export';
 import { FiltroImportacion, esOrigenImportacion } from '../../components/FiltroImportacion';
+import { FiltroRangoFechas } from '../../components/FiltroRangoFechas';
+import { fechaEnRango } from '../../utils/filtroFechas';
 import {
     ActaLightbox,
     ActaMiniatura,
@@ -549,6 +551,8 @@ export default function HistorialEntradasPage() {
     const [loadingCargas, setLoadingCargas] = useState(true);
     const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
     const [soloImportacion, setSoloImportacion] = useState(false);
+    const [fechaInicio, setFechaInicio] = useState('');
+    const [fechaFin, setFechaFin] = useState('');
 
     // ─── Actas (Ver / Subir) ───────────────────────────────────────────────────
     const [modalVerActasOpen, setModalVerActasOpen] = useState(false);
@@ -600,9 +604,10 @@ export default function HistorialEntradasPage() {
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase();
-        const base = soloImportacion
+        let base = soloImportacion
             ? cargas.filter(c => c.detalles.some(d => esOrigenImportacion(d.tienda_salida_codigo)))
             : cargas;
+        base = base.filter(c => fechaEnRango(c.fecha_primera, fechaInicio, fechaFin));
         if (!q.trim()) return base;
 
         return base.filter(c => {
@@ -622,7 +627,7 @@ export default function HistorialEntradasPage() {
 
             return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
         });
-    }, [cargas, search, soloImportacion]);
+    }, [cargas, search, soloImportacion, fechaInicio, fechaFin]);
 
     const totalCargas = filteredCargas.length;
     const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
@@ -856,14 +861,19 @@ export default function HistorialEntradasPage() {
                         </header>
 
                         {/* Toolbar */}
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                        <div className="flex flex-col lg:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                             <div className="flex items-center gap-2">
                                 <div className="p-2 bg-blue-50 rounded-lg">
                                     <Search className="w-4 h-4 text-[#002D5A]" />
                                 </div>
                                 <span className="font-bold text-gray-800" style={{ fontSize: 13 }}>Total: {totalCargas} cargas</span>
                             </div>
-                            <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap justify-end">
+                                <FiltroRangoFechas
+                                    fechaInicio={fechaInicio}
+                                    fechaFin={fechaFin}
+                                    onChange={(inicio, fin) => { setFechaInicio(inicio); setFechaFin(fin); setPage(1); }}
+                                />
                                 <div className="relative flex-1 sm:w-72">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input

@@ -39,6 +39,8 @@ import {
 import TableSkeleton from '../../components/TableSkeleton';
 import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { exportToExcel, exportToPDF } from '../../utils/export';
+import { FiltroRangoFechas } from '../../components/FiltroRangoFechas';
+import { fechaEnRango } from '../../utils/filtroFechas';
 import {
     ActaLightbox,
     ActaMiniatura,
@@ -384,6 +386,8 @@ export default function HistorialSalidasPage() {
     const { state, refreshSalidas, refreshHistorialSalidas, showToast, updateSalida } = useCallao();
     const [search, setSearch] = useState('');
     const [searchUnlocked, setSearchUnlocked] = useState(false);
+    const [fechaInicio, setFechaInicio] = useState('');
+    const [fechaFin, setFechaFin] = useState('');
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const PER_PAGE = 30;
@@ -456,9 +460,10 @@ export default function HistorialSalidasPage() {
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase();
-        if (!q.trim()) return cargas;
+        const porFecha = cargas.filter(c => fechaEnRango(c.fecha_primera, fechaInicio, fechaFin));
+        if (!q.trim()) return porFecha;
 
-        return cargas.filter(c => {
+        return porFecha.filter(c => {
             const baseMatch =
                 (c.codigo_carga || '').toLowerCase().includes(q) ||
                 (c.asesor || '').toLowerCase().includes(q);
@@ -475,7 +480,7 @@ export default function HistorialSalidasPage() {
 
             return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
         });
-    }, [cargas, search]);
+    }, [cargas, search, fechaInicio, fechaFin]);
 
     const totalCargas = filteredCargas.length;
     const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
@@ -708,14 +713,19 @@ export default function HistorialSalidasPage() {
                         </header>
 
                         {/* Toolbar */}
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                        <div className="flex flex-col lg:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                             <div className="flex items-center gap-2">
                                 <div className="p-2 bg-pink-50 rounded-lg">
                                     <Search className="w-4 h-4 text-[#9d174d]" />
                                 </div>
                                 <span className="font-bold text-gray-800" style={{ fontSize: 13 }}>Total: {totalCargas} cargas</span>
                             </div>
-                            <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap justify-end">
+                                <FiltroRangoFechas
+                                    fechaInicio={fechaInicio}
+                                    fechaFin={fechaFin}
+                                    onChange={(inicio, fin) => { setFechaInicio(inicio); setFechaFin(fin); setPage(1); }}
+                                />
                                 <div className="relative flex-1 sm:w-72">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input

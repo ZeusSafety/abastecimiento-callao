@@ -48,6 +48,8 @@ import ProductoAutocomplete from '../../components/ProductoAutocomplete';
 import { ExistenciaAlmacenCards } from '../../components/ExistenciaAlmacenCards';
 import { PrettySelect } from '../../components/PrettySelect';
 import { FiltroImportacion, esOrigenImportacion } from '../../components/FiltroImportacion';
+import { FiltroRangoFechas } from '../../components/FiltroRangoFechas';
+import { fechaEnRango, hayRangoFechas } from '../../utils/filtroFechas';
 import {
     ActaLightbox,
     ActaMiniatura,
@@ -1295,6 +1297,8 @@ export default function EntradasPage() {
     const [actasSeleccionadas, setActasSeleccionadas] = useState<api.ActaMovimientoDB[]>([]);
     const [actaLightbox, setActaLightbox] = useState<api.ActaMovimientoDB | null>(null);
     const [soloImportacion, setSoloImportacion] = useState(false);
+    const [fechaInicio, setFechaInicio] = useState('');
+    const [fechaFin, setFechaFin] = useState('');
 
     // ─── Observaciones (Modal por fila) ──────────────────────────────────
     const [modalObsOpen, setModalObsOpen] = useState(false);
@@ -1336,9 +1340,10 @@ export default function EntradasPage() {
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase();
-        const base = soloImportacion
+        let base = soloImportacion
             ? cargas.filter(c => c.detalles.some(d => esOrigenImportacion(d.tienda_salida_codigo)))
             : cargas;
+        base = base.filter(c => fechaEnRango(c.fecha_primera, fechaInicio, fechaFin));
         if (!q.trim()) return base;
 
         return base.filter(c => {
@@ -1359,7 +1364,7 @@ export default function EntradasPage() {
 
             return baseMatch || detailMatch || actasCoincidenBusqueda(c.actas, q);
         });
-    }, [cargas, search, soloImportacion]);
+    }, [cargas, search, soloImportacion, fechaInicio, fechaFin]);
 
     const totalCargas = filteredCargas.length;
     const pagesCargas = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
@@ -1483,7 +1488,7 @@ export default function EntradasPage() {
                     </header>
 
                     {/* Toolbar - Moved out of the card table area */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                    <div className="flex flex-col lg:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                         <div className="flex items-center gap-2">
                             <div className="p-2 bg-blue-50 rounded-lg">
                                 <Search className="w-4 h-4 text-[#002D5A]" />
@@ -1491,8 +1496,16 @@ export default function EntradasPage() {
                             <span className="font-bold text-gray-800" style={{ fontSize: 14 }}>
                                 Listado de Entradas
                             </span>
+                            <span className="text-[11px] font-semibold text-gray-400">
+                                {totalCargas} {totalCargas === 1 ? 'carga' : 'cargas'}
+                            </span>
                         </div>
-                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap justify-end">
+                            <FiltroRangoFechas
+                                fechaInicio={fechaInicio}
+                                fechaFin={fechaFin}
+                                onChange={(inicio, fin) => { setFechaInicio(inicio); setFechaFin(fin); setPage(1); }}
+                            />
                             <div className="relative flex-1 sm:w-72">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
@@ -1517,7 +1530,7 @@ export default function EntradasPage() {
                                 <div className="p-10 text-center text-gray-400">Cargando datos en cascada...</div>
                             ) : totalCargas === 0 ? (
                                 <div className="p-10 text-center text-gray-400">
-                                    {search || soloImportacion ? 'No se encontraron cargas con ese criterio' : 'No hay movimientos en cascada aún.'}
+                                    {search || soloImportacion || hayRangoFechas(fechaInicio, fechaFin) ? 'No se encontraron cargas con ese criterio' : 'No hay movimientos en cascada aún.'}
                                 </div>
                             ) : (
                                 paginatedCargas.map((carga, idx) => {

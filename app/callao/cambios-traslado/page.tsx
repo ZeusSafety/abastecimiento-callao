@@ -6,6 +6,8 @@ import { Search, TrendingUp, FileDown, FileSpreadsheet, Eye, Info, X, ChevronDow
 import { exportToExcel, exportToPDF } from '../../utils/export';
 import { EtiquetaActasCabecera, actasCoincidenBusqueda } from '../../components/ActaVisor';
 import { FiltroImportacion, esOrigenImportacion } from '../../components/FiltroImportacion';
+import { FiltroRangoFechas } from '../../components/FiltroRangoFechas';
+import { fechaEnRango } from '../../utils/filtroFechas';
 import { actasDeMovimientos, useActasPorMovimiento } from '../../hooks/useActasPorMovimiento';
 
 function formatFechaDosLineas(fechaStr: string): { fecha: string; hora: string } {
@@ -48,6 +50,8 @@ export default function CambiosTrasladoPage() {
     const [modalMotivo, setModalMotivo] = useState<{ isOpen: boolean; content: string }>({ isOpen: false, content: '' });
     const [expandedCodigos, setExpandedCodigos] = useState<Set<string>>(new Set());
     const [soloImportacion, setSoloImportacion] = useState(false);
+    const [fechaInicio, setFechaInicio] = useState('');
+    const [fechaFin, setFechaFin] = useState('');
     const actasPorMovimiento = useActasPorMovimiento('traslado');
 
     useEffect(() => {
@@ -79,9 +83,10 @@ export default function CambiosTrasladoPage() {
 
     const filteredCargas = useMemo(() => {
         const q = search.toLowerCase().trim();
-        const base = soloImportacion
+        let base = soloImportacion
             ? cargas.filter(c => c.detalles.some(d => esOrigenImportacion(d.almacenSalida)))
             : cargas;
+        base = base.filter(c => fechaEnRango(c.fecha_primera, fechaInicio, fechaFin));
         if (!q) return base;
         return base.filter(c =>
             c.detalles.some(d =>
@@ -92,7 +97,7 @@ export default function CambiosTrasladoPage() {
                 (d.operador || '').toLowerCase().includes(q)
             ) || actasCoincidenBusqueda(c.actas, q)
         );
-    }, [cargas, search, soloImportacion]);
+    }, [cargas, search, soloImportacion, fechaInicio, fechaFin]);
 
     const totalCargas = filteredCargas.length;
     const pages = Math.max(1, Math.ceil(totalCargas / PER_PAGE));
@@ -183,7 +188,7 @@ export default function CambiosTrasladoPage() {
                     </header>
 
                     {/* Toolbar */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
+                    <div className="flex flex-col lg:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
                         <div className="flex items-center gap-2">
                             <div className="p-2 bg-blue-50 rounded-lg">
                                 <Search className="w-4 h-4 text-[#002D5A]" />
@@ -192,7 +197,12 @@ export default function CambiosTrasladoPage() {
                                 Total: {totalCargas} cargas
                             </span>
                         </div>
-                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap justify-end">
+                            <FiltroRangoFechas
+                                fechaInicio={fechaInicio}
+                                fechaFin={fechaFin}
+                                onChange={(inicio, fin) => { setFechaInicio(inicio); setFechaFin(fin); setPage(1); }}
+                            />
                             <div className="relative flex-1 sm:w-72">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
@@ -223,7 +233,11 @@ export default function CambiosTrasladoPage() {
                             {loading ? (
                                 <div className="p-10 text-center text-gray-500">Cargando cambios...</div>
                             ) : totalCargas === 0 ? (
-                                <div className="p-10 text-center text-gray-500">No hay cambios registrados aún.</div>
+                                <div className="p-10 text-center text-gray-500">
+                                    {search || soloImportacion || fechaInicio || fechaFin
+                                        ? 'No se encontraron cambios con ese criterio.'
+                                        : 'No hay cambios registrados aún.'}
+                                </div>
                             ) : (
                                 paginatedCargas.map((carga, idx) => {
                                     const cargaKey = `${carga.codigo_carga || 'sin-codigo'}-${idx}`;
