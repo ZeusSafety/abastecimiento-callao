@@ -49,10 +49,11 @@ export default function HistorialGeneralPage() {
                         unidadMedida: item.unidad_medida as UnidadMedida,
                         tiendas: {
                             'TIENDA OFICINA': item.cant_almacen_oficina ?? 0,
-                            'TIENDA OFICINA-DOCENAS': 0,
-                            'TIENDA CALLAO-1-A': item.cant_almacen_callao_1 ?? 0,
-                            'TIENDA CALLAO-1-B': 0,
-                            'TIENDA CALLAO-2': item.cant_almacen_callao_2 ?? 0,
+                            'TIENDA OFICINA-DOCENAS': item.cant_almacen_oficina_docenas ?? 0,
+                            'TIENDA CALLAO-1-A': item.cant_almacen_callao_1_a ?? 0,
+                            'TIENDA CALLAO-1-B': item.cant_almacen_callao_1_b ?? 0,
+                            'TIENDA SMP-1': item.cant_almacen_smp_1 ?? 0,
+                            'TIENDA SMP-2': item.cant_almacen_smp_2 ?? 0,
                         },
                         abastecerCajas: item.abastecer_cajas || 0,
                         enviar: item.enviar as 'SI' | 'NO',
@@ -154,10 +155,10 @@ export default function HistorialGeneralPage() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {loading ? (
-                                        <TableSkeleton rows={5} cols={11} />
+                                        <TableSkeleton rows={5} cols={14} />
                                     ) : paginated.length === 0 ? (
                                         <tr>
-                                            <td colSpan={11} className="px-6 py-20 text-center">
+                                            <td colSpan={14} className="px-6 py-20 text-center">
                                                 <div className="flex flex-col items-center justify-center opacity-40">
                                                     <Search className="w-12 h-12 mb-4" />
                                                     <p className="font-black text-gray-900 tracking-tight uppercase italic text-sm">No se encontraron registros</p>

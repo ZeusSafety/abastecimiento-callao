@@ -29,7 +29,7 @@ export function ExistenciaAlmacenCards({ producto, titulo = 'Existencia Almacén
                     Vista consolidada
                 </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 {TIENDAS.map(tienda => {
                     const existencia = producto.existencia[tienda] || 0;
                     const stockMinimo = producto.stockMinimo[tienda] || 0;

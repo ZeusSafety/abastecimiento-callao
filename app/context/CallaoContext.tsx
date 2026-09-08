@@ -6,36 +6,51 @@ import * as api from '../services/api';
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type UnidadMedida = 'DOCENAS' | 'DECENAS' | 'UNIDADES' | 'CAJITAS' | 'BOLSITAS' | 'CAJAS';
 
-/** Códigos en BD:OFICINA, OFICINA-DOCENAS, CALLAO 1-A, CALLAO 1-B, CALLAO 2. (`tiendas_gestion_sea_callao`). */
-export type Tienda = 'TIENDA OFICINA' | 'TIENDA OFICINA-DOCENAS' | 'TIENDA CALLAO-1-A' | 'TIENDA CALLAO-1-B' | 'TIENDA CALLAO-2';
+/** Códigos en BD: OFICINA, OFICINA-DOCENAS, CALLAO-1-A, CALLAO-1-B, SMP-1, SMP-2. (`tiendas_gestion_sea_callao`). */
+export type Tienda =
+  | 'TIENDA OFICINA'
+  | 'TIENDA OFICINA-DOCENAS'
+  | 'TIENDA CALLAO-1-A'
+  | 'TIENDA CALLAO-1-B'
+  | 'TIENDA SMP-1'
+  | 'TIENDA SMP-2';
 /** Incluye `ALMACEN CALLAO` solo por compatibilidad con histórico (API CALLAO). */
 export type AlmacenCompleto = 'IMPORTACION' | 'ALMACEN MALVINAS' | Tienda;
 
-export const TIENDAS: Tienda[] = ['TIENDA OFICINA', 'TIENDA OFICINA-DOCENAS', 'TIENDA CALLAO-1-A', 'TIENDA CALLAO-1-B', 'TIENDA CALLAO-2'];
+export const TIENDAS: Tienda[] = [
+  'TIENDA OFICINA',
+  'TIENDA OFICINA-DOCENAS',
+  'TIENDA CALLAO-1-A',
+  'TIENDA CALLAO-1-B',
+  'TIENDA SMP-1',
+  'TIENDA SMP-2',
+];
 
-/** Tiendas mostradas en la tabla Abastecimiento Callao (5 columnas: Stock mínimo y Existencia). */
+/** Tiendas mostradas en la tabla inventario / abastecimiento (Stock mínimo y Existencia). */
 export const TIENDAS_VISTA_INVENTARIO_CALLAO: ReadonlyArray<{ tienda: Tienda; etiqueta: string }> = [
   { tienda: 'TIENDA OFICINA', etiqueta: 'Oficina' },
   { tienda: 'TIENDA OFICINA-DOCENAS', etiqueta: 'Oficina-Docenas' },
   { tienda: 'TIENDA CALLAO-1-A', etiqueta: 'Callao 1-A' },
   { tienda: 'TIENDA CALLAO-1-B', etiqueta: 'Callao 1-B' },
-  { tienda: 'TIENDA CALLAO-2', etiqueta: 'Callao 2' },
+  { tienda: 'TIENDA SMP-1', etiqueta: 'SMP-1' },
+  { tienda: 'TIENDA SMP-2', etiqueta: 'SMP-2' },
 ];
 
-/** Destino (entrada) y almacén (salida) en modales: OFICINA, OFICINA-DOCENAS, CALLAO 1-A, CALLAO 1-B, CALLAO 2. */
+/** Destino (entrada) y almacén (salida) en modales. */
 export const TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO: ReadonlyArray<{ tienda: Tienda; label: string }> = [
   { tienda: 'TIENDA OFICINA', label: 'OFICINA' },
   { tienda: 'TIENDA OFICINA-DOCENAS', label: 'OFICINA-DOCENAS' },
   { tienda: 'TIENDA CALLAO-1-A', label: 'CALLAO 1-A' },
   { tienda: 'TIENDA CALLAO-1-B', label: 'CALLAO 1-B' },
-  { tienda: 'TIENDA CALLAO-2', label: 'CALLAO 2' },
+  { tienda: 'TIENDA SMP-1', label: 'SMP-1' },
+  { tienda: 'TIENDA SMP-2', label: 'SMP-2' },
 ];
 
 export function etiquetaTiendaMovimientosCallao(t: Tienda): string {
   return TIENDAS_ETIQUETA_MOVIMIENTOS_CALLAO.find(x => x.tienda === t)?.label ?? t;
 }
 
-/** Origen en "Registrar entrada": MALVINAS, OFICINA, CALLAO-1, CALLAO-2 (API). */
+/** Origen en "Registrar entrada". */
 export const ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO: ReadonlyArray<{ value: AlmacenCompleto; label: string }> = [
   { value: 'IMPORTACION', label: 'IMPORTACION' },
   { value: 'ALMACEN MALVINAS', label: 'ALMACEN MALVINAS' },
@@ -43,7 +58,8 @@ export const ORIGENES_ALMACEN_SALIDA_ENTRADA_CALLAO: ReadonlyArray<{ value: Alma
   { value: 'TIENDA OFICINA-DOCENAS', label: 'OFICINA-DOCENAS' },
   { value: 'TIENDA CALLAO-1-A', label: 'CALLAO 1-A' },
   { value: 'TIENDA CALLAO-1-B', label: 'CALLAO 1-B' },
-  { value: 'TIENDA CALLAO-2', label: 'CALLAO 2' },
+  { value: 'TIENDA SMP-1', label: 'SMP-1' },
+  { value: 'TIENDA SMP-2', label: 'SMP-2' },
 ];
 
 export function etiquetaOrigenAlmacenSalidaEntrada(a: AlmacenCompleto): string {
@@ -143,7 +159,10 @@ function getTiendaFromCodigo(codigo: string): Tienda | null {
     'OFICINA-DOCENAS': 'TIENDA OFICINA-DOCENAS',
     'CALLAO-1-A': 'TIENDA CALLAO-1-A',
     'CALLAO-1-B': 'TIENDA CALLAO-1-B',
-    'CALLAO-2': 'TIENDA CALLAO-2',
+    'SMP-1': 'TIENDA SMP-1',
+    'SMP-2': 'TIENDA SMP-2',
+    // Compatibilidad con código histórico
+    'CALLAO-2': 'TIENDA SMP-1',
   };
   return map[codigo] || null;
 }
@@ -154,7 +173,8 @@ export function getCodigoFromTienda(tienda: Tienda): string {
     'TIENDA OFICINA-DOCENAS': 'OFICINA-DOCENAS',
     'TIENDA CALLAO-1-A': 'CALLAO-1-A',
     'TIENDA CALLAO-1-B': 'CALLAO-1-B',
-    'TIENDA CALLAO-2': 'CALLAO-2',
+    'TIENDA SMP-1': 'SMP-1',
+    'TIENDA SMP-2': 'SMP-2',
   };
   return map[tienda];
 }
@@ -457,14 +477,16 @@ function convertirProductoDB(
     'TIENDA OFICINA-DOCENAS': 0,
     'TIENDA CALLAO-1-A': 0,
     'TIENDA CALLAO-1-B': 0,
-    'TIENDA CALLAO-2': 0,
+    'TIENDA SMP-1': 0,
+    'TIENDA SMP-2': 0,
   };
   let existencia: Record<Tienda, number> = {
     'TIENDA OFICINA': 0,
     'TIENDA OFICINA-DOCENAS': 0,
     'TIENDA CALLAO-1-A': 0,
     'TIENDA CALLAO-1-B': 0,
-    'TIENDA CALLAO-2': 0,
+    'TIENDA SMP-1': 0,
+    'TIENDA SMP-2': 0,
   };
 
   if (stockTotal) {
@@ -474,14 +496,16 @@ function convertirProductoDB(
       'TIENDA OFICINA-DOCENAS': st.sm_oficina_docenas ?? 0,
       'TIENDA CALLAO-1-A': st.sm_callao1_a ?? 0,
       'TIENDA CALLAO-1-B': st.sm_callao1_b ?? 0,
-      'TIENDA CALLAO-2': st.sm_callao2 ?? 0,
+      'TIENDA SMP-1': st.sm_smp1 ?? 0,
+      'TIENDA SMP-2': st.sm_smp2 ?? 0,
     };
     existencia = {
       'TIENDA OFICINA': st.existencia_oficina ?? 0,
       'TIENDA OFICINA-DOCENAS': st.existencia_oficina_docenas ?? 0,
       'TIENDA CALLAO-1-A': st.existencia_callao1_a ?? 0,
       'TIENDA CALLAO-1-B': st.existencia_callao1_b ?? 0,
-      'TIENDA CALLAO-2': st.existencia_callao2 ?? 0,
+      'TIENDA SMP-1': st.existencia_smp1 ?? 0,
+      'TIENDA SMP-2': st.existencia_smp2 ?? 0,
     };
   }
 
@@ -1094,7 +1118,8 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
             'TIENDA OFICINA-DOCENAS': item.cant_almacen_oficina_docenas ?? 0,
             'TIENDA CALLAO-1-A': item.cant_almacen_callao_1_a ?? 0,
             'TIENDA CALLAO-1-B': item.cant_almacen_callao_1_b ?? 0,
-            'TIENDA CALLAO-2': item.cant_almacen_callao_2 ?? 0,
+            'TIENDA SMP-1': item.cant_almacen_smp_1 ?? 0,
+            'TIENDA SMP-2': item.cant_almacen_smp_2 ?? 0,
           },
           abastecerCajas: item.abastecer_cajas,
           enviar: item.enviar as 'SI' | 'NO',
@@ -1127,7 +1152,8 @@ export function CallaoProvider({ children }: { children: ReactNode }) {
           cant_almacen_oficina_docenas: Math.max(0, item.tiendas['TIENDA OFICINA-DOCENAS']),
           cant_almacen_callao_1_a: Math.max(0, item.tiendas['TIENDA CALLAO-1-A']),
           cant_almacen_callao_1_b: Math.max(0, item.tiendas['TIENDA CALLAO-1-B']),
-          cant_almacen_callao_2: Math.max(0, item.tiendas['TIENDA CALLAO-2']),
+          cant_almacen_smp_1: Math.max(0, item.tiendas['TIENDA SMP-1']),
+          cant_almacen_smp_2: Math.max(0, item.tiendas['TIENDA SMP-2']),
           abastecer_cajas: item.abastecerCajas,
           enviar: item.enviar,
         };

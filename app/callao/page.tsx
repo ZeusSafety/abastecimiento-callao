@@ -60,7 +60,8 @@ const TIENDAS_DISPONIBLES_CALLAO: ReadonlyArray<Tienda> = [
     'TIENDA OFICINA',
     'TIENDA CALLAO-1-A',
     'TIENDA CALLAO-1-B',
-    'TIENDA CALLAO-2',
+    'TIENDA SMP-1',
+    'TIENDA SMP-2',
 ];
 
 function UnidadMedidaFilter({
@@ -468,6 +469,7 @@ export default function StockTotalPage() {
             '',
             '',
             '',
+            '',
             'DISPONIBLES',
             '',
             'DOC,DEC,UNI SUELTAS',
@@ -498,12 +500,18 @@ export default function StockTotalPage() {
                 p.nombre, // 1
                 cantidadReg, // 2
                 p.unidadMedida, // 3
-                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0), // 4..8 (5 tiendas)
-                disponibles, // 9 — Total bajo «Disponibles» (misma tabla en pantalla)
-                p.unidadMedida, // 10 — U.MED (Disponibles)
-                medidaValor, // 11 — Doc,Dec,Uni sueltas
+                ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0),
+                disponibles,
+                p.unidadMedida,
+                medidaValor,
             ];
         });
+
+        const nTiendas = TIENDAS_VISTA_INVENTARIO_CALLAO.length;
+        const colExistEnd = 3 + nTiendas; // inclusive index of last tienda col
+        const colDispTotal = colExistEnd + 1;
+        const colDispUmed = colDispTotal + 1;
+        const colMedida = colDispUmed + 1;
 
         const ws = XLSX.utils.aoa_to_sheet([headerTop, headerBottom, ...rows]);
         ws['!merges'] = [
@@ -511,16 +519,16 @@ export default function StockTotalPage() {
             { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // PRODUCTO
             { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // CANT. EN CAJA
             { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } }, // U. MEDIDA
-            { s: { r: 0, c: 4 }, e: { r: 0, c: 8 } }, // EXISTENCIA ALMACEN (solo 5 tiendas, sin TOTAL duplicado)
-            { s: { r: 0, c: 9 }, e: { r: 0, c: 10 } }, // DISPONIBLES (TOTAL + U.MED)
-            { s: { r: 0, c: 11 }, e: { r: 1, c: 11 } }, // DOC,DEC,UNI SUELTAS
+            { s: { r: 0, c: 4 }, e: { r: 0, c: colExistEnd } }, // EXISTENCIA ALMACEN
+            { s: { r: 0, c: colDispTotal }, e: { r: 0, c: colDispUmed } }, // DISPONIBLES
+            { s: { r: 0, c: colMedida }, e: { r: 1, c: colMedida } }, // DOC,DEC,UNI SUELTAS
         ];
         ws['!cols'] = [
             { wch: 12 }, // CODIGO
             { wch: 34 }, // PRODUCTO
             { wch: 14 }, // CANT. EN CAJA
             { wch: 12 }, // U. MEDIDA
-            { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, // 5 tiendas
+            ...Array.from({ length: nTiendas }, () => ({ wch: 12 })),
             { wch: 12 }, // DISPONIBLES total
             { wch: 10 }, // U.MED
             { wch: 18 }, // DOC,DEC,UNI SUELTAS
@@ -612,7 +620,8 @@ export default function StockTotalPage() {
                 (exist['OFICINA-DOCENAS']?.delta || 0) !== 0 ||
                 (exist['CALLAO-1-A']?.delta || 0) !== 0 ||
                 (exist['CALLAO-1-B']?.delta || 0) !== 0 ||
-                (exist['CALLAO-2']?.delta || 0) !== 0;
+                (exist['SMP-1']?.delta || 0) !== 0 ||
+                (exist['SMP-2']?.delta || 0) !== 0;
             return cantCajaCambio || hayDelta;
         });
     }, [importPreviewDetalle]);
@@ -883,7 +892,7 @@ export default function StockTotalPage() {
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] min-w-[200px]">Producto</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">Cant. en Caja</th>
                                         <th rowSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center">U. Medida</th>
-                                        <th colSpan={5} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
+                                        <th colSpan={6} className="px-4 py-2 border-r border-[#ffffff20] text-center bg-[#1a4a7a]">
                                             Existencia Almacén
                                         </th>
                                         <th colSpan={2} className="px-4 py-3 border-r border-[#ffffff20] text-center bg-[#002D5A]">Disponibles</th>
@@ -909,10 +918,10 @@ export default function StockTotalPage() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {isLoading ? (
-                                        <TableSkeleton rows={20} cols={12} />
+                                        <TableSkeleton rows={20} cols={13} />
                                     ) : filtered.length === 0 ? (
                                         <tr>
-                                            <td colSpan={12} className="px-4 py-12 text-center">
+                                            <td colSpan={13} className="px-4 py-12 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <Package className="w-12 h-12 text-gray-300" />
                                                     <p className="text-gray-400 text-sm font-medium">
@@ -1206,7 +1215,8 @@ export default function StockTotalPage() {
                                             { value: 'OFICINA-DOCENAS', label: 'OFICINA-DOCENAS' },
                                             { value: 'CALLAO-1-A', label: 'CALLAO 1-A' },
                                             { value: 'CALLAO-1-B', label: 'CALLAO 1-B' },
-                                            { value: 'CALLAO-2', label: 'CALLAO 2' },
+                                            { value: 'SMP-1', label: 'SMP-1' },
+                                            { value: 'SMP-2', label: 'SMP-2' },
                                         ]}
                                         size="md"
                                         placement="below"
@@ -1364,14 +1374,15 @@ export default function StockTotalPage() {
                                                 <th className="px-4 py-3 text-right">Δ Docenas</th>
                                                 <th className="px-4 py-3 text-right">Δ 1-A</th>
                                                 <th className="px-4 py-3 text-right">Δ 1-B</th>
-                                                <th className="px-4 py-3 text-right">Δ 2</th>
+                                                <th className="px-4 py-3 text-right">Δ SMP-1</th>
+                                                <th className="px-4 py-3 text-right">Δ SMP-2</th>
                                                 <th className="px-4 py-3 text-right">Δ Cant/Caja</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
                                             {importCambiosDetectados.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan={8} className="px-4 py-10 text-center text-xs font-semibold text-gray-500">
+                                                    <td colSpan={9} className="px-4 py-10 text-center text-xs font-semibold text-gray-500">
                                                         No se detectaron diferencias entre Excel y sistema para ninguna fila.
                                                     </td>
                                                 </tr>
@@ -1388,7 +1399,8 @@ export default function StockTotalPage() {
                                                             <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['OFICINA-DOCENAS']?.delta || 0)}</td>
                                                             <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['CALLAO-1-A']?.delta || 0)}</td>
                                                             <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['CALLAO-1-B']?.delta || 0)}</td>
-                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['CALLAO-2']?.delta || 0)}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['SMP-1']?.delta || 0)}</td>
+                                                            <td className="px-4 py-2 text-right font-extrabold">{fmt(ex?.['SMP-2']?.delta || 0)}</td>
                                                             <td className="px-4 py-2 text-right font-extrabold">{fmt(dc)}</td>
                                                         </tr>
                                                     );

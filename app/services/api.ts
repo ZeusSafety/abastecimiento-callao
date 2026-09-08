@@ -109,7 +109,8 @@ export interface TrasladoDB {
 }
 
 /**
- * Respuesta de GET /api/stock-total — tiendas `tiendas_gestion_sea_callao`: OFICINA, CALLAO-1, CALLAO-2.
+ * Respuesta de GET /api/stock-total — tiendas `tiendas_gestion_sea_callao`:
+ * OFICINA, OFICINA-DOCENAS, CALLAO-1-A, CALLAO-1-B, SMP-1, SMP-2.
  */
 export interface StockTotalDB {
   id: number;
@@ -121,12 +122,14 @@ export interface StockTotalDB {
   sm_oficina_docenas: number | null;
   sm_callao1_a: number | null;
   sm_callao1_b: number | null;
-  sm_callao2: number | null;
+  sm_smp1: number | null;
+  sm_smp2: number | null;
   existencia_oficina: number;
   existencia_oficina_docenas: number;
   existencia_callao1_a: number;
   existencia_callao1_b: number;
-  existencia_callao2: number;
+  existencia_smp1: number;
+  existencia_smp2: number;
   stock_global_minimo: number;
   disponibles: number;
   stock_detallado_cajas: number;
@@ -140,8 +143,11 @@ export interface AbastecimientoDB {
   cantidad: number;
   unidad_medida: string;
   abastecer_oficina: number;
-  abastecer_callao1: number;
-  abastecer_callao2: number;
+  abastecer_oficina_docenas: number;
+  abastecer_callao1a: number;
+  abastecer_callao1b: number;
+  abastecer_smp1: number;
+  abastecer_smp2: number;
   abastecer_cajas: number;
   enviar: string;
 }
@@ -153,7 +159,7 @@ export interface HistorialAbastecimientoDB {
   fecha_registro: string;
 }
 
-/** Alineado con `abastecimiento_detalle_callao` (columna BD `cant_alamacen_callao_1` expuesta como cant_almacen_callao_1). */
+/** Alineado con `abastecimiento_detalle_callao`. */
 export interface DetalleAbastecimientoDB {
   codigo: string;
   nombre: string;
@@ -163,7 +169,8 @@ export interface DetalleAbastecimientoDB {
   cant_almacen_oficina_docenas: number;
   cant_almacen_callao_1_a: number;
   cant_almacen_callao_1_b: number;
-  cant_almacen_callao_2: number;
+  cant_almacen_smp_1: number;
+  cant_almacen_smp_2: number;
   abastecer_cajas: number;
   enviar: string;
 }
@@ -718,7 +725,7 @@ export interface ImportStockTotalResult {
     nombre?: string;
     operacion: string; // OTROS
     almacen_salida: string; // CALLAO
-    almacen_ingreso: string; // OFICINA / CALLAO-1 / CALLAO-2
+    almacen_ingreso: string; // OFICINA / CALLAO-1-A / CALLAO-1-B / SMP-1 / SMP-2
     cantidad: number; // delta positivo
     unidad_medida: string;
     cantidad_anterior: number;
@@ -753,7 +760,7 @@ export interface ImportStockTotalResult {
     unidad_medida_excel: string;
     unidad_medida_sistema: string;
     existencias: Record<
-      'OFICINA' | 'OFICINA-DOCENAS' | 'CALLAO-1-A' | 'CALLAO-1-B' | 'CALLAO-2',
+      'OFICINA' | 'OFICINA-DOCENAS' | 'CALLAO-1-A' | 'CALLAO-1-B' | 'SMP-1' | 'SMP-2',
       { excel: number; sistema: number; delta: number }
     >;
   }>;
@@ -962,7 +969,8 @@ export async function guardarAbastecimiento(
       cant_almacen_oficina_docenas: number;
       cant_almacen_callao_1_a: number;
       cant_almacen_callao_1_b: number;
-      cant_almacen_callao_2: number;
+      cant_almacen_smp_1: number;
+      cant_almacen_smp_2: number;
       abastecer_cajas: number;
       enviar: 'SI' | 'NO';
     }>;
