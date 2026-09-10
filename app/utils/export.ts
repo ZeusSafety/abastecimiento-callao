@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
+ 
 // Función para exportar a Excel
 export function exportToExcel(
   data: any[],
