@@ -352,13 +352,13 @@ function DatePicker({
         : null;
 
     return (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-1 min-w-0 flex-1 sm:flex-initial sm:flex-row sm:items-center sm:gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</span>
             <button
                 ref={triggerRef}
                 type="button"
                 onClick={() => setOpen(v => !v)}
-                className={`flex items-center gap-2 min-w-[128px] px-2.5 py-2 text-sm bg-white border rounded-xl text-left outline-none transition-all shadow-sm ${
+                className={`flex items-center gap-2 w-full sm:w-auto sm:min-w-[128px] min-w-0 px-2.5 py-2 text-sm bg-white border rounded-xl text-left outline-none transition-all shadow-sm ${
                     open
                         ? 'border-[#002D5A] ring-4 ring-blue-50'
                         : value
@@ -367,7 +367,7 @@ function DatePicker({
                 }`}
             >
                 <Calendar className={`w-3.5 h-3.5 flex-shrink-0 ${value || open ? 'text-[#002D5A]' : 'text-slate-400'}`} />
-                <span className={`text-[12px] tabular-nums ${value ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>
+                <span className={`text-[12px] tabular-nums truncate ${value ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>
                     {value ? formatDisplay(value) : placeholder}
                 </span>
             </button>
@@ -381,33 +381,35 @@ export function FiltroRangoFechas({ fechaInicio, fechaFin, onChange }: FiltroRan
 
     return (
         <div
-            className={`flex items-center gap-2.5 px-3 py-1.5 rounded-xl border shadow-sm ${
+            className={`flex items-end sm:items-center gap-2 sm:gap-2.5 w-full min-w-0 max-w-full px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-xl border shadow-sm ${
                 activo
                     ? 'bg-blue-50/80 border-[#002D5A]/30'
                     : 'bg-white border-gray-200'
             }`}
         >
-            <DatePicker
-                label="Inicio"
-                placeholder="dd/mm/aaaa"
-                value={fechaInicio}
-                max={fechaFin || undefined}
-                onChange={v => onChange(v, fechaFin && v && fechaFin < v ? '' : fechaFin)}
-            />
-            <span className="text-slate-300 text-xs">—</span>
-            <DatePicker
-                label="Fin"
-                placeholder="dd/mm/aaaa"
-                value={fechaFin}
-                min={fechaInicio || undefined}
-                onChange={v => onChange(fechaInicio, v)}
-            />
+            <div className="grid grid-cols-2 gap-2 flex-1 min-w-0 sm:flex sm:items-center sm:gap-2.5 sm:flex-initial">
+                <DatePicker
+                    label="Inicio"
+                    placeholder="dd/mm/aaaa"
+                    value={fechaInicio}
+                    max={fechaFin || undefined}
+                    onChange={v => onChange(v, fechaFin && v && fechaFin < v ? '' : fechaFin)}
+                />
+                <span className="hidden sm:inline text-slate-300 text-xs self-center">—</span>
+                <DatePicker
+                    label="Fin"
+                    placeholder="dd/mm/aaaa"
+                    value={fechaFin}
+                    min={fechaInicio || undefined}
+                    onChange={v => onChange(fechaInicio, v)}
+                />
+            </div>
             {activo && (
                 <button
                     type="button"
                     onClick={() => onChange('', '')}
                     title="Quitar filtro de fechas"
-                    className="p-1 rounded-lg text-slate-400 hover:text-[#002D5A] hover:bg-white transition-colors"
+                    className="p-1.5 sm:p-1 mb-0.5 sm:mb-0 flex-shrink-0 rounded-lg text-slate-400 hover:text-[#002D5A] hover:bg-white transition-colors"
                 >
                     <X className="w-3.5 h-3.5" />
                 </button>

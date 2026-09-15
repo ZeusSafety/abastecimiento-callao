@@ -47,8 +47,8 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
                 </button>
 
                 {/* Title branding */}
-                <div className="flex items-center text-center">
-                    <h2 className="font-extrabold tracking-tight text-[#002D5A] m-0" style={{ fontSize: '13px', letterSpacing: '0.05em' }}>
+                <div className="flex items-center min-w-0">
+                    <h2 className="font-extrabold tracking-tight text-[#002D5A] m-0 truncate text-[11px] sm:text-[13px]" style={{ letterSpacing: '0.05em' }}>
                         SISTEMA DE ABASTECIMIENTO CALLAO
                     </h2>
                 </div>

@@ -212,13 +212,29 @@ export function EtiquetaActasCabecera({ actas }: { actas?: ActaConNombre[] | nul
     const restantes = nombres.length - 1;
     return (
         <>
-            <span className="hidden sm:block w-px h-4 bg-gray-300" />
-            <span className="inline-flex items-center gap-2 min-w-0" title={nombres.join(' • ')}>
-                <FileImage className="w-3.5 h-3.5 text-[#002D5A]" />
-                <span className="text-[10px] text-gray-500 uppercase tracking-widest">Acta</span>
-                <span className="truncate max-w-[220px]">{nombres[0]}</span>
+            <span className="hidden sm:block w-px h-4 bg-gray-300 self-center" />
+            {/* Móvil: etiqueta arriba, nombre truncado abajo */}
+            <span className="flex flex-col gap-0.5 min-w-0 w-full sm:hidden" title={nombres.join(' • ')}>
+                <span className="inline-flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">
+                    <FileImage className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                    Acta
+                    {restantes > 0 && (
+                        <span className="text-[9px] font-bold text-[#002D5A] bg-[#002D5A]/10 rounded-full px-1.5 py-0.5">
+                            +{restantes}
+                        </span>
+                    )}
+                </span>
+                <span className="block text-[12px] font-semibold text-gray-900 truncate pl-5">
+                    {nombres[0]}
+                </span>
+            </span>
+            {/* Desktop: en línea */}
+            <span className="hidden sm:inline-flex items-center gap-2 min-w-0 max-w-full" title={nombres.join(' • ')}>
+                <FileImage className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                <span className="text-[10px] text-gray-500 uppercase tracking-widest flex-shrink-0">Acta</span>
+                <span className="truncate min-w-0 max-w-[220px]">{nombres[0]}</span>
                 {restantes > 0 && (
-                    <span className="text-[9px] font-bold text-[#002D5A] bg-[#002D5A]/10 rounded-full px-1.5 py-0.5">
+                    <span className="text-[9px] font-bold text-[#002D5A] bg-[#002D5A]/10 rounded-full px-1.5 py-0.5 flex-shrink-0">
                         +{restantes}
                     </span>
                 )}

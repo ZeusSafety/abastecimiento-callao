@@ -1535,9 +1535,9 @@ export default function TrasladoPage() {
                                     const itemsTotales = carga.detalles.reduce((acc, d) => acc + d.cantidad, 0);
 
                                     return (
-                                        <div key={cargaKey} className="px-4">
+                                        <div key={cargaKey} className="px-3 sm:px-4">
                                             <div
-                                                className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                                                className="py-3.5 sm:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between cursor-pointer hover:bg-gray-50 transition-colors rounded-xl"
                                                 onClick={() =>
                                                     setExpandedCodigos(prev => {
                                                         const next = new Set(prev);
@@ -1547,22 +1547,71 @@ export default function TrasladoPage() {
                                                     })
                                                 }
                                             >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
+                                                <div className="flex items-start sm:items-center gap-3 min-w-0 w-full">
+                                                    <div className="w-8 h-8 flex-shrink-0 rounded-xl bg-[#002D5A] flex items-center justify-center text-white mt-0.5 sm:mt-0">
                                                         {isOpen ? (
                                                             <ChevronDown className="w-4 h-4 text-white" />
                                                         ) : (
                                                             <ChevronRight className="w-4 h-4 text-white" />
                                                         )}
                                                     </div>
-                                                    <div className="min-w-0">
+
+                                                    {/* Móvil: metadatos en cuadrícula legible */}
+                                                    <div className="min-w-0 flex-1 sm:hidden">
+                                                        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <Calendar className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Fecha
+                                                                </div>
+                                                                <div className="text-[12px] font-semibold text-gray-900 tabular-nums truncate">
+                                                                    {fecha}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <Clock3 className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Hora
+                                                                </div>
+                                                                <div className="text-[12px] font-semibold text-gray-900 truncate">
+                                                                    {hora || '-'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <ArrowRightLeft className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Productos
+                                                                </div>
+                                                                <div className="text-[12px] font-bold text-gray-900">
+                                                                    {itemsTotales}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <FileImage className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Actas
+                                                                </div>
+                                                                <div className="text-[12px] font-bold text-gray-900">
+                                                                    {carga.actas.length}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {carga.actas.length > 0 && (
+                                                            <div className="mt-2.5 min-w-0 w-full overflow-hidden">
+                                                                <EtiquetaActasCabecera actas={carga.actas} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Desktop: layout horizontal original */}
+                                                    <div className="hidden sm:block min-w-0">
                                                         <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-gray-900">
                                                             <span className="inline-flex items-center gap-2 whitespace-nowrap">
                                                                 <Calendar className="w-3.5 h-3.5 text-[#002D5A]" />
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Fecha</span>
                                                                 <span>{fecha}</span>
                                                             </span>
-                                                            <span className="hidden sm:block w-px h-4 bg-gray-300" />
+                                                            <span className="w-px h-4 bg-gray-300" />
                                                             <span className="inline-flex items-center gap-2 whitespace-nowrap">
                                                                 <Clock3 className="w-3.5 h-3.5 text-[#002D5A]" />
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
@@ -1573,7 +1622,7 @@ export default function TrasladoPage() {
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
+                                                <div className="hidden sm:flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
                                                     <span className="inline-flex items-center gap-2">
                                                         <ArrowRightLeft className="w-4 h-4 text-[#002D5A]" />
                                                         <span>
@@ -1591,25 +1640,25 @@ export default function TrasladoPage() {
 
                                             {isOpen && (
                                                 <div className="pb-5">
-                                                    <div className="bg-white rounded-2xl border border-gray-100 p-4">
-                                                        <div className="flex items-start justify-between gap-4 mb-4">
-                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-                                                                <div className="w-full sm:w-[180px]">
+                                                    <div className="bg-white rounded-2xl border border-gray-100 p-3 sm:p-4 overflow-hidden">
+                                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 min-w-0">
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full min-w-0 sm:max-w-none">
+                                                                <div className="w-full sm:w-[180px] min-w-0">
                                                                     <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
+                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900 truncate">
                                                                         {detalleRep?.registrado_por || '-'}
                                                                     </div>
                                                                 </div>
-                                                                <div className="w-full sm:w-[180px]">
+                                                                <div className="w-full sm:w-[180px] min-w-0">
                                                                     <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">OPERADOR</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
+                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900 truncate">
                                                                         {detalleRep?.operador || '-'}
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="flex items-center gap-4">
-                                                                <div className="text-[10px] text-gray-500">
-                                                                    Actas: {' '}
+                                                            <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto flex-shrink-0">
+                                                                <div className="text-[10px] text-gray-500 whitespace-nowrap">
+                                                                    Actas:{' '}
                                                                     <span className="text-gray-900 font-bold">{carga.actas.length}</span>
                                                                 </div>
                                                                 <button
@@ -1618,9 +1667,9 @@ export default function TrasladoPage() {
                                                                         setModalVerActasOpen(true);
                                                                     }}
                                                                     disabled={carga.actas.length === 0}
-                                                                    className="shrink-0 px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-start"
+                                                                    className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center whitespace-nowrap"
                                                                 >
-                                                                    <span>Ver Actas</span>
+                                                                    Ver Actas
                                                                 </button>
                                                             </div>
                                                         </div>

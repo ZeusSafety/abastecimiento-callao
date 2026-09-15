@@ -167,11 +167,11 @@ function ModalEntrada({
         operacionPersonalizada: '',
         almacenSalida: (editData?.almacenSalida ?? 'IMPORTACION') as AlmacenCompleto,
         almacenIngreso: (editData?.almacenIngreso ?? 'TIENDA OFICINA') as Tienda,
-        operador: OPERADORES[0],
+        operador: '',
         operadorCustom: '',
         cantidad: editData?.cantidad ?? 0,
         unidadMedida: (editData?.unidadMedida ?? 'CAJAS') as UnidadMedida,
-        registradoPor: REGISTRADORES[0],
+        registradoPor: '',
         registradoCustom: '',
         observaciones: editData?.observaciones ?? '',
         motivoCambio: '',
@@ -214,11 +214,11 @@ function ModalEntrada({
                 operacionPersonalizada: '',
                 almacenSalida: 'IMPORTACION',
                 almacenIngreso: 'TIENDA OFICINA',
-                operador: OPERADORES[0],
+                operador: '',
                 operadorCustom: '',
                 cantidad: 0,
                 unidadMedida: 'CAJAS' as UnidadMedida,
-                registradoPor: REGISTRADORES[0],
+                registradoPor: '',
                 registradoCustom: '',
                 observaciones: '',
                 motivoCambio: '',
@@ -228,7 +228,7 @@ function ModalEntrada({
 
     const mapPersonaCombo = (valor: string | undefined, lista: readonly string[]) => {
         const v = (valor || '').trim();
-        if (!v) return { sel: lista[0], custom: '' };
+        if (!v) return { sel: '', custom: '' };
         const up = v.toUpperCase();
         const found = lista.find(x => x === up);
         if (found) return { sel: found, custom: '' };
@@ -314,6 +314,14 @@ function ModalEntrada({
 
         const operador = resolvePersonaCombo(form.operador, form.operadorCustom);
         const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
+        if (!form.operador) {
+            showToast('error', 'Selecciona un operador');
+            return;
+        }
+        if (!form.registradoPor) {
+            showToast('error', 'Selecciona quién registra');
+            return;
+        }
         if (form.operador === COMBO_OTROS_VALUE && !operador) {
             showToast('error', 'Indica el nombre del operador (OTROS)');
             return;
@@ -545,6 +553,14 @@ function ModalEntrada({
             try {
                 const operador = resolvePersonaCombo(form.operador, form.operadorCustom);
                 const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
+                if (!form.operador) {
+                    showToast('error', 'Selecciona un operador');
+                    return;
+                }
+                if (!form.registradoPor) {
+                    showToast('error', 'Selecciona quién registra');
+                    return;
+                }
                 if (form.operador === COMBO_OTROS_VALUE && !operador) {
                     showToast('error', 'Indica el nombre del operador (OTROS)');
                     return;
@@ -730,6 +746,7 @@ function ModalEntrada({
                                         ...OPERADORES.map(o => ({ value: o, label: o })),
                                         { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
                                     ]}
+                                    placeholder="Seleccionar..."
                                     size="sm"
                                 />
                                 {form.operador === COMBO_OTROS_VALUE && (
@@ -782,10 +799,10 @@ function ModalEntrada({
 
 
                             {/* Registrado por */}
-                            <div>
+                            <div className="col-span-2">
                                 <label className="form-label">Registrado Por</label>
-                                <div className="flex items-end gap-2">
-                                    <div className="flex-1">
+                                <div className="flex flex-col sm:flex-row sm:items-end gap-2 min-w-0">
+                                    <div className="flex-1 min-w-0 w-full">
                                         <PrettySelect
                                             value={form.registradoPor}
                                             onChange={v =>
@@ -799,6 +816,7 @@ function ModalEntrada({
                                                 ...REGISTRADORES.map(r => ({ value: r, label: r })),
                                                 { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
                                             ]}
+                                            placeholder="Seleccionar..."
                                             size="sm"
                                         />
                                     </div>
@@ -806,10 +824,9 @@ function ModalEntrada({
                                         <button
                                             type="button"
                                             onClick={() => setModalActasOpen(true)}
-                                            className="flex items-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm"
-                                            style={{ whiteSpace: 'nowrap' }}
+                                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm flex-shrink-0"
                                         >
-                                            <Upload className="w-4 h-4" />
+                                            <Upload className="w-4 h-4 flex-shrink-0" />
                                             <span>Subir Acta</span>
                                             {actas.length > 0 && (
                                                 <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
@@ -1462,14 +1479,14 @@ export default function EntradasPage() {
     return (
         <div id="view-entradas" className="animate-in fade-in duration-500 font-poppins">
             <div className="container mx-auto">
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 transition-all">
+                <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-100 mb-6 transition-all overflow-hidden">
                     {/* Header Principal */}
                     <header className="flex justify-between items-center flex-wrap gap-4 mb-8">
-                        <div className="flex items-center space-x-3">
-                            <div className="w-11 h-11 bg-gradient-to-br from-[#002D5A] to-[#0056b3] rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-900/10 transition-transform hover:scale-110">
+                        <div className="flex items-center space-x-3 min-w-0">
+                            <div className="w-11 h-11 flex-shrink-0 bg-gradient-to-br from-[#002D5A] to-[#0056b3] rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-900/10 transition-transform hover:scale-110">
                                 <PackagePlus className="w-5 h-5" />
                             </div>
-                            <div>
+                            <div className="min-w-0">
                                 <h1 className="font-bold text-gray-900 m-0 tracking-tight" style={{ fontSize: '18px' }}>
                                     Movimientos de Entradas
                                 </h1>
@@ -1488,8 +1505,8 @@ export default function EntradasPage() {
                     </header>
 
                     {/* Toolbar - Moved out of the card table area */}
-                    <div className="flex flex-col lg:flex-row items-center justify-between gap-4 py-4 mb-2 bg-transparent">
-                        <div className="flex items-center gap-2">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 py-4 mb-2 bg-transparent min-w-0">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                             <div className="p-2 bg-blue-50 rounded-lg">
                                 <Search className="w-4 h-4 text-[#002D5A]" />
                             </div>
@@ -1500,26 +1517,28 @@ export default function EntradasPage() {
                                 {totalCargas} {totalCargas === 1 ? 'carga' : 'cargas'}
                             </span>
                         </div>
-                        <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap justify-end">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:w-auto min-w-0">
                             <FiltroRangoFechas
                                 fechaInicio={fechaInicio}
                                 fechaFin={fechaFin}
                                 onChange={(inicio, fin) => { setFechaInicio(inicio); setFechaFin(fin); setPage(1); }}
                             />
-                            <div className="relative flex-1 sm:w-72">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder="Buscar producto, operador..."
-                                    value={search}
-                                    onChange={e => { setSearch(e.target.value); setPage(1); }}
-                                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
+                            <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
+                                <div className="relative flex-1 sm:w-72 min-w-0">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar producto, operador..."
+                                        value={search}
+                                        onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                        className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#002D5A] outline-none transition-all shadow-sm"
+                                    />
+                                </div>
+                                <FiltroImportacion
+                                    activo={soloImportacion}
+                                    onToggle={() => { setSoloImportacion(v => !v); setPage(1); }}
                                 />
                             </div>
-                            <FiltroImportacion
-                                activo={soloImportacion}
-                                onToggle={() => { setSoloImportacion(v => !v); setPage(1); }}
-                            />
                         </div>
                     </div>
 
@@ -1546,9 +1565,9 @@ export default function EntradasPage() {
                                     const itemsTotales = carga.cantidad_items;
 
                                     return (
-                                        <div key={cargaKey} className="px-4">
+                                        <div key={cargaKey} className="px-3 sm:px-4">
                                             <div
-                                                className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                                                className="py-3.5 sm:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between cursor-pointer hover:bg-gray-50 transition-colors rounded-xl"
                                                 onClick={() =>
                                                     setExpandedCodigos(prev => {
                                                         const next = new Set(prev);
@@ -1558,34 +1577,82 @@ export default function EntradasPage() {
                                                     })
                                                 }
                                             >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
+                                                <div className="flex items-start sm:items-center gap-3 min-w-0 w-full">
+                                                    <div className="w-8 h-8 flex-shrink-0 rounded-xl bg-[#002D5A] flex items-center justify-center text-white mt-0.5 sm:mt-0">
                                                         {isOpen ? (
                                                             <ChevronDown className="w-4 h-4 text-white" />
                                                         ) : (
                                                             <ChevronRight className="w-4 h-4 text-white" />
                                                         )}
                                                     </div>
-                                                    <div className="min-w-0">
+
+                                                    {/* Móvil: metadatos en cuadrícula legible */}
+                                                    <div className="min-w-0 flex-1 sm:hidden">
+                                                        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <Calendar className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Fecha
+                                                                </div>
+                                                                <div className="text-[12px] font-semibold text-gray-900 tabular-nums truncate">
+                                                                    {fecha}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <Clock3 className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Hora
+                                                                </div>
+                                                                <div className="text-[12px] font-semibold text-gray-900 truncate">
+                                                                    {hora || '-'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <PackagePlus className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Productos
+                                                                </div>
+                                                                <div className="text-[12px] font-bold text-gray-900">
+                                                                    {itemsTotales}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <FileImage className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Actas
+                                                                </div>
+                                                                <div className="text-[12px] font-bold text-gray-900">
+                                                                    {carga.actas.length}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {carga.actas.length > 0 && (
+                                                            <div className="mt-2.5 min-w-0 w-full overflow-hidden">
+                                                                <EtiquetaActasCabecera actas={carga.actas} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Desktop: layout horizontal original */}
+                                                    <div className="hidden sm:block min-w-0">
                                                         <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-gray-900">
                                                             <span className="inline-flex items-center gap-2 whitespace-nowrap">
                                                                 <Calendar className="w-3.5 h-3.5 text-[#002D5A]" />
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Fecha</span>
                                                                 <span>{fecha}</span>
                                                             </span>
-                                                            <span className="hidden sm:block w-px h-4 bg-gray-300" />
+                                                            <span className="w-px h-4 bg-gray-300" />
                                                             <span className="inline-flex items-center gap-2 whitespace-nowrap">
                                                                 <Clock3 className="w-3.5 h-3.5 text-[#002D5A]" />
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
                                                                 <span>{hora || '-'}</span>
                                                             </span>
                                                             <EtiquetaActasCabecera actas={carga.actas} />
-                                                            {/* Operación ya se muestra en la tabla interna */}
                                                         </div>
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
+                                                <div className="hidden sm:flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
                                                     <span className="inline-flex items-center gap-2">
                                                         <PackagePlus className="w-4 h-4 text-[#002D5A]" />
                                                         <span>
@@ -1603,24 +1670,24 @@ export default function EntradasPage() {
 
                                             {isOpen && (
                                                 <div className="pb-5">
-                                                    <div className="bg-white rounded-2xl border border-gray-100 p-4">
-                                                        <div className="flex items-start justify-between gap-4 mb-4">
-                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-                                                                <div className="w-full sm:w-[180px]">
+                                                    <div className="bg-white rounded-2xl border border-gray-100 p-3 sm:p-4 overflow-hidden">
+                                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 min-w-0">
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full min-w-0 sm:max-w-none">
+                                                                <div className="w-full sm:w-[180px] min-w-0">
                                                                     <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">REGISTRADOR</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
+                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900 truncate">
                                                                         {detalleRep?.registrado_por || '-'}
                                                                     </div>
                                                                 </div>
-                                                                <div className="w-full sm:w-[180px]">
+                                                                <div className="w-full sm:w-[180px] min-w-0">
                                                                     <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">OPERADOR</div>
-                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900">
+                                                                    <div className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-[11px] font-bold text-gray-900 truncate">
                                                                         {detalleRep?.operador || '-'}
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="flex items-center gap-4">
-                                                                <div className="text-[10px] text-gray-500">
+                                                            <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto flex-shrink-0">
+                                                                <div className="text-[10px] text-gray-500 whitespace-nowrap">
                                                                     Actas:{' '}
                                                                     <span className="text-gray-900 font-bold">{carga.actas.length}</span>
                                                                 </div>
@@ -1630,9 +1697,9 @@ export default function EntradasPage() {
                                                                         setModalVerActasOpen(true);
                                                                     }}
                                                                     disabled={carga.actas.length === 0}
-                                                                    className="shrink-0 px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-start"
+                                                                    className="px-4 py-2 text-[10px] rounded-xl font-bold bg-[#002D5A] hover:bg-[#001f3d] text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center whitespace-nowrap"
                                                                 >
-                                                                    <span>Ver Actas</span>
+                                                                    Ver Actas
                                                                 </button>
                                                             </div>
                                                         </div>

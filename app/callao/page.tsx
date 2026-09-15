@@ -28,6 +28,7 @@ import {
     FileSpreadsheet,
     Upload,
     Trash2,
+    MoreHorizontal,
 } from 'lucide-react';
 import TableSkeleton from '../components/TableSkeleton';
 import { PrettySelect } from '../components/PrettySelect';
@@ -162,6 +163,9 @@ export default function StockTotalPage() {
     const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
     const [editingProducts, setEditingProducts] = useState<Map<string, EditingProduct>>(new Map());
     const [isSaving, setIsSaving] = useState(false);
+    const [isRefreshingTable, setIsRefreshingTable] = useState(false);
+    const [showDataActions, setShowDataActions] = useState(false);
+    const dataActionsRef = useRef<HTMLDivElement | null>(null);
     const [isRestoring, setIsRestoring] = useState(true);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [password, setPassword] = useState('');
@@ -194,6 +198,17 @@ export default function StockTotalPage() {
     const [importActasModalOpen, setImportActasModalOpen] = useState(false);
     const [showImportPasswordModal, setShowImportPasswordModal] = useState(false);
     const [importPassword, setImportPassword] = useState('');
+
+    useEffect(() => {
+        if (!showDataActions) return;
+        const onDown = (e: MouseEvent) => {
+            if (!dataActionsRef.current) return;
+            if (e.target instanceof Node && dataActionsRef.current.contains(e.target)) return;
+            setShowDataActions(false);
+        };
+        window.addEventListener('mousedown', onDown);
+        return () => window.removeEventListener('mousedown', onDown);
+    }, [showDataActions]);
 
     // Restaurar datos del localStorage al cargar (solo una vez cuando los productos estén listos)
     useEffect(() => {
@@ -498,12 +513,12 @@ export default function StockTotalPage() {
             return [
                 p.codigo, // 0
                 p.nombre, // 1
-                cantidadReg, // 2
-                p.unidadMedida, // 3
+                cantidadReg, // 2 — Cant. en Caja
+                p.unidadMedida, // 3 — U. Medida (info)
                 ...TIENDAS_VISTA_INVENTARIO_CALLAO.map(({ tienda }) => p.existencia[tienda] || 0),
-                disponibles,
-                p.unidadMedida,
-                medidaValor,
+                disponibles, // TOTAL
+                p.unidadMedidaRegCalculo, // U.MED (unidad de medida reg. cálculo)
+                medidaValor, // Doc,Dec,Uni Sueltas
             ];
         });
 
@@ -821,62 +836,94 @@ export default function StockTotalPage() {
                             <UnidadMedidaFilter value={unidadFilter} onChange={setUnidadFilter} counts={unidadCounts} />
                             <div className="flex items-center justify-start lg:justify-end gap-2 w-full lg:w-auto flex-nowrap overflow-x-auto">
                                 <button
-                                    onClick={handleExportExcel}
-                                    className="px-5 py-2.5 text-sm font-bold text-white bg-green-600 border border-green-600 rounded-2xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 whitespace-nowrap"
+                                    type="button"
+                                    onClick={() => {
+                                        handleExportExcel();
+                                        showToast('success', 'Excel de productos detallados descargado');
+                                    }}
+                                    disabled={isLoading || filtered.length === 0}
+                                    className="px-4 py-2.5 text-sm font-bold text-white bg-emerald-600 border border-emerald-600 rounded-2xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                                    title="Exportar tabla Productos Detallados a Excel"
+                                    aria-label="Exportar tabla a Excel"
                                 >
                                     <FileSpreadsheet className="w-4 h-4" />
-                                    <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Exportar Excel</span>
+                                    <span className="uppercase tracking-wider text-[10px]">Excel</span>
                                 </button>
-                                <input
-                                    id="stock-total-import-excel-input"
-                                    type="file"
-                                    accept=".xlsx,.xlsm,.xltx,.xltm"
-                                    className="hidden"
-                                    onChange={e => handleImportExcelSelected(e.target.files?.[0] || null)}
-                                />
+                                <div ref={dataActionsRef} className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDataActions(v => !v)}
+                                        className={`p-2.5 text-sm font-bold border rounded-2xl transition-all flex items-center justify-center shadow-sm active:scale-95 whitespace-nowrap ${
+                                            showDataActions
+                                                ? 'bg-[#002D5A] border-[#002D5A] text-white'
+                                                : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50 hover:text-[#002D5A]'
+                                        }`}
+                                        aria-label={showDataActions ? 'Ocultar importar' : 'Mostrar importar'}
+                                        aria-expanded={showDataActions}
+                                        title={showDataActions ? 'Ocultar importar' : 'Importar datos'}
+                                    >
+                                        {showDataActions ? <X className="w-4 h-4" /> : <MoreHorizontal className="w-4 h-4" />}
+                                    </button>
+
+                                    <div
+                                        className={`flex items-center gap-2 overflow-hidden transition-all duration-300 ease-out ${
+                                            showDataActions
+                                                ? 'max-w-[280px] opacity-100 translate-x-0'
+                                                : 'max-w-0 opacity-0 -translate-x-2 pointer-events-none'
+                                        }`}
+                                    >
+                                        <input
+                                            id="stock-total-import-excel-input"
+                                            type="file"
+                                            accept=".xlsx,.xlsm,.xltx,.xltm"
+                                            className="hidden"
+                                            onChange={e => handleImportExcelSelected(e.target.files?.[0] || null)}
+                                        />
+                                        <button
+                                            onClick={handleImportExcelClick}
+                                            disabled={isImportingPreview || isLoading}
+                                            className="relative overflow-hidden px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-60 whitespace-nowrap"
+                                        >
+                                            {isImportingPreview && (
+                                                <>
+                                                    <div className="absolute inset-0 bg-black/10" />
+                                                    <div className="absolute inset-y-0 left-0 w-1/2 bg-white/25 animate-[importbar_1.1s_ease-in-out_infinite]" />
+                                                    <style jsx>{`
+                                                        @keyframes importbar {
+                                                            0% {
+                                                                transform: translateX(-120%);
+                                                            }
+                                                            100% {
+                                                                transform: translateX(240%);
+                                                            }
+                                                        }
+                                                    `}</style>
+                                                </>
+                                            )}
+                                            <Upload className={`w-4 h-4 ${isImportingPreview ? 'animate-pulse' : ''}`} />
+                                            <span className="relative hidden sm:inline uppercase tracking-wider text-[10px]">
+                                                {isImportingPreview ? 'Leyendo...' : 'Importar datos'}
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
                                 <button
-                                    onClick={handleImportExcelClick}
-                                    disabled={isImportingPreview || isLoading}
-                                    className="relative overflow-hidden px-5 py-2.5 text-sm font-bold text-white bg-[#002D5A] border border-[#002D5A] rounded-2xl hover:bg-[#001f3d] transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-60 whitespace-nowrap"
-                                >
-                                    {isImportingPreview && (
-                                        <>
-                                            {/* Capa oscura sutil */}
-                                            <div className="absolute inset-0 bg-black/10" />
-                                            {/* Barra de carga indeterminada */}
-                                            <div className="absolute inset-y-0 left-0 w-1/2 bg-white/25 animate-[importbar_1.1s_ease-in-out_infinite]" />
-                                            <style jsx>{`
-                                                @keyframes importbar {
-                                                    0% {
-                                                        transform: translateX(-120%);
-                                                    }
-                                                    100% {
-                                                        transform: translateX(240%);
-                                                    }
-                                                }
-                                            `}</style>
-                                        </>
-                                    )}
-                                    <Upload className={`w-4 h-4 ${isImportingPreview ? 'animate-pulse' : ''}`} />
-                                    <span className="relative hidden sm:inline uppercase tracking-wider text-[10px]">
-                                        {isImportingPreview ? 'Leyendo...' : 'Importar datos'}
-                                    </span>
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setSearch('');
-                                        refreshProductos();
-                                        refreshEntradas();
-                                        refreshSalidas();
-                                        refreshHistorialEntradas();
-                                        refreshHistorialSalidas();
-                                        showToast('info', 'Datos actualizados');
+                                    onClick={async () => {
+                                        if (isRefreshingTable) return;
+                                        setIsRefreshingTable(true);
+                                        try {
+                                            await refreshProductos();
+                                            showToast('info', 'Tabla de productos actualizada');
+                                        } finally {
+                                            setIsRefreshingTable(false);
+                                        }
                                     }}
-                                    className="p-2.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:text-[#002D5A] transition-all flex items-center justify-center shadow-sm active:scale-95 whitespace-nowrap"
-                                    aria-label="Recargar"
-                                    title="Recargar"
+                                    disabled={isRefreshingTable || isLoading}
+                                    className="p-2.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:text-[#002D5A] transition-all flex items-center justify-center shadow-sm active:scale-95 whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                                    aria-label="Recargar tabla de productos"
+                                    title="Recargar tabla de productos"
                                 >
-                                    <RefreshCw className="w-4 h-4" />
+                                    <RefreshCw className={`w-4 h-4 ${isRefreshingTable ? 'animate-spin' : ''}`} />
                                 </button>
                             </div>
                         </div>
@@ -917,7 +964,7 @@ export default function StockTotalPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {isLoading ? (
+                                    {isLoading || isRefreshingTable ? (
                                         <TableSkeleton rows={20} cols={13} />
                                     ) : filtered.length === 0 ? (
                                         <tr>

@@ -730,27 +730,85 @@ export default function HistorialTrasladoPage() {
                                     const pendientes = carga.detalles.filter(d => pendingUpdates[String(d.id)]);
                                     
                                     return (
-                                        <div key={cargaKey} className="px-4">
+                                        <div key={cargaKey} className="px-3 sm:px-4">
                                             <div
-                                                className="py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                                                className="py-3.5 sm:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between cursor-pointer hover:bg-gray-50 transition-colors rounded-xl"
                                                 onClick={() => setExpandedCodigos(prev => {
                                                     const next = new Set(prev);
                                                     if (next.has(cargaKey)) next.delete(cargaKey); else next.add(cargaKey);
                                                     return next;
                                                 })}
                                             >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-xl bg-[#002D5A] flex items-center justify-center text-white">
+                                                <div className="flex items-start sm:items-center gap-3 min-w-0 w-full">
+                                                    <div className="w-8 h-8 flex-shrink-0 rounded-xl bg-[#002D5A] flex items-center justify-center text-white mt-0.5 sm:mt-0">
                                                         {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                                     </div>
-                                                    <div className="min-w-0">
+
+                                                    {/* Móvil: metadatos en cuadrícula legible */}
+                                                    <div className="min-w-0 flex-1 sm:hidden">
+                                                        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <Calendar className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Fecha
+                                                                </div>
+                                                                <div className="text-[12px] font-semibold text-gray-900 tabular-nums truncate">
+                                                                    {fecha}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <Clock3 className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Hora
+                                                                </div>
+                                                                <div className="text-[12px] font-semibold text-gray-900 truncate">
+                                                                    {hora || '-'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <PackagePlus className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Productos
+                                                                </div>
+                                                                <div className="text-[12px] font-bold text-gray-900">
+                                                                    {itemsTotales}
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+                                                                    <FileImage className="w-3.5 h-3.5 text-[#002D5A] flex-shrink-0" />
+                                                                    Actas
+                                                                </div>
+                                                                <div className="text-[12px] font-bold text-gray-900">
+                                                                    {carga.actas.length}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {carga.actas.length > 0 && (
+                                                            <div className="mt-2.5 min-w-0 w-full overflow-hidden">
+                                                                <EtiquetaActasCabecera actas={carga.actas} />
+                                                            </div>
+                                                        )}
+                                                        {pendientes.length > 0 && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); aplicarActualizacionCarga(carga); }}
+                                                                className="mt-2.5 w-full flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-[10px] font-black transition-all animate-pulse"
+                                                            >
+                                                                <Save className="w-3.5 h-3.5" />
+                                                                APLICAR {pendientes.length} CAMBIOS
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Desktop: layout horizontal original */}
+                                                    <div className="hidden sm:block min-w-0">
                                                         <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-gray-900">
                                                             <span className="inline-flex items-center gap-2 whitespace-nowrap">
                                                                 <Calendar className="w-3.5 h-3.5 text-[#002D5A]" />
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Fecha</span>
                                                                 <span>{fecha}</span>
                                                             </span>
-                                                            <span className="hidden sm:block w-px h-4 bg-gray-300" />
+                                                            <span className="w-px h-4 bg-gray-300" />
                                                             <span className="inline-flex items-center gap-2 whitespace-nowrap">
                                                                 <Clock3 className="w-3.5 h-3.5 text-[#002D5A]" />
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">Hora</span>
@@ -760,7 +818,7 @@ export default function HistorialTrasladoPage() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
+                                                <div className="hidden sm:flex items-center gap-4 text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
                                                     {pendientes.length > 0 && (
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); aplicarActualizacionCarga(carga); }}

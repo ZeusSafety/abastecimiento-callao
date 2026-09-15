@@ -54,7 +54,7 @@ function ModalSalida({
         almacen: (editData?.almacen ?? 'TIENDA OFICINA') as Tienda,
         entregado: OPERADORES[0],
         entregadoCustom: '',
-        registradoPor: editData?.registradoPor ?? REGISTRADORES[0],
+        registradoPor: editData?.registradoPor ?? '',
         registradoCustom: '',
         observaciones: editData?.observaciones ?? '',
         motivoCambio: '',
@@ -103,7 +103,7 @@ function ModalSalida({
                 almacen: 'TIENDA OFICINA',
                 entregado: OPERADORES[0],
                 entregadoCustom: '',
-                registradoPor: REGISTRADORES[0],
+                registradoPor: '',
                 registradoCustom: '',
                 observaciones: '',
                 motivoCambio: '',
@@ -113,7 +113,7 @@ function ModalSalida({
 
     const mapPersonaCombo = (valor: string | undefined, lista: readonly string[]) => {
         const v = (valor || '').trim();
-        if (!v) return { sel: lista[0], custom: '' };
+        if (!v) return { sel: '', custom: '' };
         const up = v.toUpperCase();
         const found = lista.find(x => x === up);
         if (found) return { sel: found, custom: '' };
@@ -197,6 +197,10 @@ function ModalSalida({
         }
 
         const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
+        if (!form.registradoPor) {
+            showToast('error', 'Selecciona quién registra');
+            return;
+        }
         if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
             showToast('error', 'Indica quién registra (OTROS)');
             return;
@@ -423,6 +427,10 @@ function ModalSalida({
 
             try {
                 const registradoPor = resolvePersonaCombo(form.registradoPor, form.registradoCustom);
+                if (!form.registradoPor) {
+                    showToast('error', 'Selecciona quién registra');
+                    return;
+                }
                 if (form.registradoPor === COMBO_OTROS_VALUE && !registradoPor) {
                     showToast('error', 'Indica quién registra (OTROS)');
                     return;
@@ -646,10 +654,10 @@ function ModalSalida({
                         </div>
 
                         {/* Registrado por */}
-                        <div>
+                        <div className="col-span-2">
                             <label className="form-label">Registrado Por</label>
-                            <div className="flex items-end gap-2">
-                                <div className="flex-1">
+                            <div className="flex flex-col sm:flex-row sm:items-end gap-2 min-w-0">
+                                <div className="flex-1 min-w-0 w-full">
                                     <PrettySelect
                                         value={form.registradoPor}
                                         onChange={v =>
@@ -663,6 +671,7 @@ function ModalSalida({
                                             ...REGISTRADORES.map(r => ({ value: r, label: r })),
                                             { value: COMBO_OTROS_VALUE, label: 'OTROS (especificar)' },
                                         ]}
+                                        placeholder="Seleccionar..."
                                         size="sm"
                                     />
                                 </div>
@@ -670,10 +679,9 @@ function ModalSalida({
                                     <button
                                         type="button"
                                         onClick={() => setModalActasOpen(true)}
-                                        className="flex items-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm"
-                                        style={{ whiteSpace: 'nowrap' }}
+                                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 bg-[#002D5A] hover:bg-[#001f3d] text-white rounded-xl font-bold text-[10px] transition-all shadow-sm flex-shrink-0"
                                     >
-                                        <Upload className="w-4 h-4" />
+                                        <Upload className="w-4 h-4 flex-shrink-0" />
                                         <span>Subir Acta</span>
                                         {actas.length > 0 && (
                                             <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
